@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  sku             String
+  normalizedSku   String
+  productNumber   String   @default("")
+  description     String   @default("")
+  vendor          String   @default("")
+  brand           String   @default("")
+  listCost        Decimal  @db.Decimal(12, 2) @default(0)
+  price           Decimal  @db.Decimal(12, 2) @default(0)
+  sizeDesc        String   @default("")
+  isInactive      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  priceItems PriceUpdateItem[]
+
+  @@index([normalizedSku])
+  @@index([sku])
+  @@index([vendor])
+  @@index([brand])
+  @@index([isInactive])
+}
+
+model VendorDiscount {
+  id              String   @id @default(cuid())
+  vendor          String   @unique
+  normalizedVendor String  @unique
+  defaultDiscount Decimal  @db.Decimal(6, 2) @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PriceUpdateSession {
+  id        String   @id @default(cuid())
+  vendor    String   @default("")
+  name      String
+  status    String   @default("Draft")
+  notes     String   @default("")
+  createdBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items   PriceUpdateItem[]
+  exports ExportLog[]
+
+  @@index([vendor])
+  @@index([status])
+}
+
+model PriceUpdateItem {
+  id                 String   @id @default(cuid())
+  sessionId          String
+  session            PriceUpdateSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  rawVendorSku       String   @default("")
+  cleanedSku         String   @default("")
+  cleanedOverridden  Boolean  @default(false)
+  productId          String?
+  product            Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productNumber      String   @default("")
+  productName        String   @default("")
+  brand              String   @default("")
+  vendor             String   @default("")
+  discount           Decimal? @db.Decimal(6, 2)
+  currentListPrice   Decimal? @db.Decimal(12, 2)
+  vendorListPriceNew Decimal? @db.Decimal(12, 2)
+  ourNewListPrice    Decimal? @db.Decimal(12, 2)
+  marginDivisor      Decimal? @db.Decimal(10, 4)
+  ourNewRetailPrice  Decimal? @db.Decimal(12, 4)
+  oldRetailPrice     Decimal? @db.Decimal(12, 2)
+  nearest9           Decimal? @db.Decimal(12, 2)
+  notes              String   @default("")
+  isInactive         Boolean  @default(false)
+  matched            Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([sessionId])
+  @@index([cleanedSku])
+  @@index([matched])
+}
+
+model AppUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+}
+
+model ExportLog {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   PriceUpdateSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  kind      String
+  createdBy String   @default("")
+  createdAt DateTime @default(now())
+  detail    String   @default("")
+}
