@@ -24,10 +24,23 @@ All API routes check `DATABASE_URL`: if set they use Prisma/Postgres, otherwise 
 
 ## Production (Vercel + Supabase Postgres)
 
-1. Create a Supabase project, copy the Postgres connection string.
-2. In Vercel set env vars: `DATABASE_URL`, `AUTH_SECRET`.
-3. Run migrations: `DATABASE_URL="..." npm run prisma:deploy`
-4. Push to GitHub, import in Vercel, deploy.
+> **Seeing `P1001: Can't reach database server at db.<ref>.supabase.co:5432`?**
+> That means `DATABASE_URL` is the **direct** connection string. Serverless
+> functions on Vercel can't reliably reach it — switch `DATABASE_URL` to the
+> **Supavisor transaction pooler** URI (port **6543**, `?pgbouncer=true`).
+> Visit `/api/health` on your deployment for an automated diagnosis.
+
+1. In Supabase: Project Settings → Database → Connection string → copy the
+   **Transaction pooler** URI
+   (`postgresql://postgres.<ref>:[PASSWORD]@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true`).
+   If your password contains special characters, URL-encode them.
+2. In Vercel: set `DATABASE_URL` to that pooler URI (Production + Preview +
+   Development) plus `AUTH_SECRET`, then **redeploy**.
+3. Run migrations/seed **from your own machine** using the **direct**
+   (port 5432) URL — never from serverless:
+   `DATABASE_URL="postgresql://postgres:[PASSWORD]@db.<ref>.supabase.co:5432/postgres" npm run prisma:deploy`
+4. Also check: Supabase project is not paused, and the pooler host region
+   matches your project.
 5. Open `/login` and create the first admin account.
 
 See `.env.example`.

@@ -6,7 +6,7 @@ const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-se
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (pathname.startsWith("/api/auth") || pathname.startsWith("/_next") || pathname === "/login") return NextResponse.next();
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/_next") || pathname === "/login" || pathname === "/api/health") return NextResponse.next();
   if (pathname.startsWith("/api/")) {
     const tok = req.cookies.get("pu_session")?.value;
     if (!tok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

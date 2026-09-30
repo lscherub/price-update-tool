@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getPrisma } from "@/lib/db";
+import { dbUnreachableResponse, getPrisma, isDbConnectionError } from "@/lib/db";
 import { loadFileStore, type ItemRow } from "@/lib/store";
 
 export async function GET(req: Request) {
@@ -9,7 +9,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const prisma = getPrisma();
 
-  const totalProducts = prisma ? await prisma.product.count() : loadFileStore().products.length;
+  try {
+    const totalProducts = prisma ? await prisma.product.count() : loadFileStore().products.length;
   const inactiveProducts = prisma
     ? await prisma.product.count({ where: { isInactive: true } })
     : loadFileStore().products.filter((p) => p.isInactive).length;
@@ -64,4 +65,8 @@ export async function GET(req: Request) {
     })),
     sessionStats: stats,
   });
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse() as unknown as NextResponse;
+    throw e;
+  }
 }
