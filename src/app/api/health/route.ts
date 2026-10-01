@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
-import { getPrisma, isDbConnectionError } from "@/lib/db";
+import { getPrisma } from "@/lib/db";
+
+export const runtime = "nodejs";
 
 /** Public endpoint. Reports app + DB reachability without leaking secrets. */
 export async function GET() {
   const prisma = getPrisma();
   if (!prisma) {
-    return NextResponse.json({
-      ok: true,
-      db: { configured: false, reachable: false, mode: "file-store" },
-      hint: "DATABASE_URL is not set, so the app uses the local JSON file store.",
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        db: { configured: false, reachable: false, mode: process.env.NODE_ENV === "production" ? "unconfigured" : "file-store" },
+        hint: "DATABASE_URL is not set. Production requires the Supabase pooler URI; local dev uses the JSON file store.",
+      },
+      { status: 503 },
+    );
   }
   let host = "(hidden)";
   let port = "";
@@ -26,7 +31,7 @@ export async function GET() {
       ok: true,
       db: { configured: true, reachable: true, host, port },
     });
-  } catch (e) {
+  } catch {
     return NextResponse.json(
       {
         ok: false,

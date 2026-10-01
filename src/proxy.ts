@@ -2,9 +2,19 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const secret = () => new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret-change-me-please-32chars");
+function secret(): Uint8Array {
+  const s = process.env.AUTH_SECRET;
+  // Proxy runs on every request; fall back to the dev secret locally so
+  // `next dev` works without env, but production gets a hard 500 (fail closed)
+  // instead of accepting forged/foreign JWTs.
+  if (!s || s.length < 32) {
+    if (process.env.NODE_ENV === "production") throw new Error("AUTH_SECRET is missing or too short (min 32 chars).");
+    return new TextEncoder().encode("dev-secret-change-me-please-32chars");
+  }
+  return new TextEncoder().encode(s);
+}
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (pathname.startsWith("/api/auth") || pathname.startsWith("/_next") || pathname === "/login" || pathname === "/api/health") return NextResponse.next();
   if (pathname.startsWith("/api/")) {

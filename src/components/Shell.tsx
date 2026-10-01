@@ -16,6 +16,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<{ email: string; role: string } | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   useEffect(() => {
     fetch("/api/auth/session").then((r) => r.json()).then((d) => setUser(d.user)).catch(() => {});
   }, [path]);
@@ -43,10 +44,21 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex flex-col gap-2">
                 <span className="truncate">{user.email} ({user.role})</span>
                 <button
-                  className="rounded border px-2 py-1 text-left hover:bg-slate-100"
-                  onClick={async () => { await fetch("/api/auth/session", { method: "DELETE" }); router.push("/login"); }}
+                  className="rounded border px-2 py-1 text-left hover:bg-slate-100 disabled:opacity-60"
+                  disabled={signingOut}
+                  onClick={async () => {
+                    if (signingOut) return;
+                    setSigningOut(true);
+                    try {
+                      await fetch("/api/auth/session", { method: "DELETE" });
+                      router.push("/login");
+                      router.refresh();
+                    } catch {
+                      setSigningOut(false);
+                    }
+                  }}
                 >
-                  Sign out
+                  {signingOut ? "Signing out..." : "Sign out"}
                 </button>
               </div>
             ) : null}

@@ -1,11 +1,23 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { apiErrorText } from "@/lib/apiError";
 
 export default function SessionsPage() {
   const [rows, setRows] = useState<{ id: string; vendor: string; name: string; status: string; updatedAt: string }[]>([]);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch("/api/sessions").then((r) => r.json()).then((d) => setRows(d.rows ?? [])).catch(() => {});
+    (async () => {
+      try {
+        const r = await fetch("/api/sessions");
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { setError(apiErrorText(d, "Could not load price updates.")); return; }
+        setError("");
+        setRows(d.rows ?? []);
+      } catch {
+        setError("Could not reach the server. Check your connection and try again.");
+      }
+    })();
   }, []);
   return (
     <div className="flex flex-col gap-4">
@@ -13,6 +25,7 @@ export default function SessionsPage() {
         <h1 className="text-2xl font-bold">Price Update History</h1>
         <Link href="/sessions/new" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ New Price Update</Link>
       </div>
+      {error && <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</div>}
       <div className="rounded-xl border bg-white">
         <table className="w-full text-sm">
           <thead><tr className="text-left text-slate-500"><th className="px-4 py-2">Vendor</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Updated</th><th className="px-4 py-2"></th></tr></thead>

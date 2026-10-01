@@ -6,6 +6,8 @@ import {
   skuCandidates,
 } from "@/lib/pricing";
 import { calcNearest9, calculateRow } from "@/lib/nearest9";
+import { cellText, parseInactiveFile, parsePastedVendorData, parseVendorFile } from "@/lib/importers";
+import { productionDbGuard } from "@/lib/db";
 
 describe("SKU cleaning", () => {
   it("cleans '0 58854 04522 7' -> '05885404522'", () => {
@@ -55,6 +57,52 @@ describe("nearest 9", () => {
       expect(calcNearest9(input)).toBe(expected);
     });
   }
+});
+
+describe("importers: SKU text + paste parsing", () => {
+  it("paste parser splits tab/comma/space price pairs", () => {
+    expect(parsePastedVendorData("0 58854 04522 7\t19.99\n624-917-74008-0, 24.50")).toEqual([
+      { raw: "0 58854 04522 7", price: "19.99" },
+      { raw: "624-917-74008-0", price: "24.50" },
+    ]);
+  });
+  it("cellText keeps numeric SKUs as plain text (no exponent)", () => {
+    expect(cellText(62491774008)).toBe("62491774008");
+    expect(cellText(" 05885404522 ")).toBe("05885404522");
+    expect(cellText(null)).toBe("");
+  });
+  it("parseVendorFile reads CSV buffer with sku/price mapping", () => {
+    const csv = "Vendor SKU,New Price\n0 58854 04522 7,12.00\n624-917-74008-0,24.50\n";
+    const { rows } = parseVendorFile(Buffer.from(csv), "vendor.csv");
+    expect(rows).toEqual([
+      { raw: "0 58854 04522 7", price: "12.00" },
+      { raw: "624-917-74008-0", price: "24.50" },
+    ]);
+  });
+  it("parseInactiveFile reads first-column SKU list", () => {
+    const csv = "Sku\n62491774008\n62491774007\n";
+    expect(parseInactiveFile(Buffer.from(csv))).toEqual(["62491774008", "62491774007"]);
+  });
+});
+
+describe("auth/db guards", () => {
+  it("productionDbGuard returns 503 in production without DATABASE_URL", async () => {
+    const prevNode = (process.env as Record<string, string | undefined>).NODE_ENV;
+    const prevDb = process.env.DATABASE_URL;
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    delete (process.env as Record<string, string | undefined>).DATABASE_URL;
+    const res = productionDbGuard(null);
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(503);
+    const body = (await res!.json()) as { error: string };
+    expect(body.error).toBe("DatabaseUnavailable");
+    if (prevNode === undefined) delete (process.env as Record<string, string | undefined>).NODE_ENV;
+    else (process.env as Record<string, string | undefined>).NODE_ENV = prevNode;
+    if (prevDb !== undefined) process.env.DATABASE_URL = prevDb;
+  });
+  it("productionDbGuard passes through when prisma exists", () => {
+    expect(productionDbGuard({} as never)).toBeNull();
+  });
 });
 
 describe("full row", () => {

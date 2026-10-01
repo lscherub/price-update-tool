@@ -2,7 +2,7 @@ import Decimal from "decimal.js";
 import { getPrisma } from "./db";
 import { calculateRow } from "./nearest9";
 import { normalizeVendor, skuCandidates } from "./pricing";
-import { loadFileStore, str, type ProductRow } from "./store";
+import { loadFileStore, type ProductRow } from "./store";
 
 function toProductRow(p: {
   id: string; sku: string; normalizedSku: string;
@@ -49,13 +49,33 @@ export async function findProductsByRawSkus(rawSkus: string[]): Promise<Map<stri
   const stripped = (v: string) => v.replace(/^0+/, "") || "0";
   const extra = [...allCands].map(stripped);
   extra.forEach((c) => allCands.add(c));
-  const found = await prisma.product.findMany({
-    where: { normalizedSku: { in: [...allCands] } }, take: 50000,
-  });
-  const byNorm = new Map(found.map((p) => [p.normalizedSku, toProductRow(p as never)]));
+  const keys = [...allCands];
+  const found: { id: string; sku: string; normalizedSku: string; productNumber: string | null; description: string | null; vendor: string | null; brand: string | null; listCost: unknown; price: unknown; sizeDesc: string | null; isInactive: boolean }[] = [];
+  // Query in chunks so 20k-row imports don't exceed Postgres parameter limits.
+  // Match both normalizedSku AND sku columns (stripped variants included).
+  for (let i = 0; i < keys.length; i += 2000) {
+    const chunk = keys.slice(i, i + 2000);
+    const rows = await prisma.product.findMany({
+      where: { OR: [{ normalizedSku: { in: chunk } }, { sku: { in: chunk } }] },
+      take: 50000,
+    });
+    found.push(...(rows as unknown as typeof found));
+  }
+  const byNorm = new Map<string, ProductRow>();
+  const bySku = new Map<string, ProductRow>();
+  const byStripped = new Map<string, ProductRow>();
+  for (const p of found) {
+    const row = toProductRow(p as never);
+    if (!byNorm.has(p.normalizedSku)) byNorm.set(p.normalizedSku, row);
+    if (!bySku.has(p.sku)) bySku.set(p.sku, row);
+    const sn = stripped(p.normalizedSku);
+    const ss = stripped(p.sku);
+    if (!byStripped.has(sn)) byStripped.set(sn, row);
+    if (!byStripped.has(ss)) byStripped.set(ss, row);
+  }
   rawSkus.forEach((raw, idx) => {
     for (const c of perRaw[idx]) {
-      const hit = byNorm.get(c);
+      const hit = byNorm.get(c) ?? bySku.get(c) ?? byStripped.get(stripped(c));
       if (hit) { out.set(raw, hit); return; }
     }
   });
@@ -94,7 +114,6 @@ export async function computeRowsForImport(
       } : null,
       defaultDiscount,
     });
-    void str;
     return { raw, price, calc, productId: prod?.id ?? null };
   });
 }

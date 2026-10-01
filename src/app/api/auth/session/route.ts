@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { clearSessionCookie, getSession } from "@/lib/auth";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   const s = await getSession();
   return NextResponse.json({ user: s });

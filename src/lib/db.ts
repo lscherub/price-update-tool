@@ -1,13 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 import { NextResponse } from "next/server";
-import { calculateRow } from "./nearest9";
-import { normalizeSku, normalizeVendor, skuCandidates } from "./pricing";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
+export const isProduction = (): boolean => process.env.NODE_ENV === "production";
+
 /**
  * Returns a Prisma client when DATABASE_URL is configured, otherwise null
- * (callers fall back to the local JSON file store).
+ * (callers fall back to the local JSON file store in development only).
+ *
+ * PRODUCTION MUST USE POSTGRESQL: every API route must treat a null return
+ * while `isProduction()` is true as a hard 503 (see `productionDbGuard()`)
+ * instead of silently reading/writing ephemeral local JSON on Vercel.
  *
  * NOTE: a configured DATABASE_URL does NOT guarantee the server is reachable
  * (wrong host/port, paused Supabase project, bad password, direct :5432 URL
@@ -26,6 +30,33 @@ export function getPrisma(): PrismaClient | null {
 
 export function hasDb(): boolean {
   return !!process.env.DATABASE_URL;
+}
+
+/**
+ * Fail-closed guard for API routes. In production (Vercel) the app must NEVER
+ * fall back to the local JSON file store — return a 503 response when the
+ * database is not configured. In development, returns null so callers may use
+ * the JSON file fallback.
+ * Usage:
+ *   const prisma = getPrisma();
+ *   const prodErr = productionDbGuard(prisma);
+ *   if (prodErr) return prodErr;
+ */
+export function productionDbGuard(prisma: unknown): NextResponse | null {
+  if (prisma) return null;
+  if (isProduction()) {
+    return NextResponse.json(
+      {
+        error: "DatabaseUnavailable",
+        message:
+          "DATABASE_URL is not configured in production. Set it to the Supabase " +
+          "Supavisor transaction pooler URI (port 6543, ?pgbouncer=true) in Vercel, then redeploy. " +
+          "The app never uses local JSON storage in production.",
+      },
+      { status: 503 },
+    );
+  }
+  return null;
 }
 
 /** True for Prisma connection errors (P1000 auth, P1001 unreachable, P1002 timeout, ...). */
@@ -54,5 +85,3 @@ export function dbUnreachableResponse() {
   );
 }
 
-export { normalizeSku, normalizeVendor, skuCandidates };
-export { calculateRow };

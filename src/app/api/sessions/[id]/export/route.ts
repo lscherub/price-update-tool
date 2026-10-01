@@ -1,24 +1,62 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getPrisma } from "@/lib/db";
+import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 
-async function getItems(sessionId: string) {
-  const prisma = getPrisma();
-  if (!prisma) {
-    const store = loadFileStore();
-    const products = new Map(store.products.map((p) => [p.id, p]));
-    return store.items.filter((i) => i.sessionId === sessionId).map((i) => {
+export const runtime = "nodejs";
+
+type ExportRow = {
+  id: string; rawVendorSku: string; cleanedSku: string;
+  productNumber: string; productName: string; brand: string; vendor: string;
+  discount: string; currentListPrice: string | null; vendorListPriceNew: string | null;
+  ourNewListPrice: string | null; marginDivisor: string;
+  ourNewRetailPrice: string | null; oldRetailPrice: string | null;
+  nearest9: string | null; notes: string; isInactive: boolean; matched: boolean;
+  sizeDesc: string;
+};
+
+/** Dev-only fallback: re-check liveness so inactive products are excluded even
+ *  if the flag was set after the row was calculated. */
+function fileStoreItems(sessionId: string): ExportRow[] {
+  const store = loadFileStore();
+  const products = new Map(store.products.map((p) => [p.id, p]));
+  return store.items
+    .filter((i) => i.sessionId === sessionId)
+    .map((i) => {
       const live = i.productId ? products.get(i.productId) : undefined;
-      return {
-        ...i,
-        // re-check liveness at export time: inactive must be excluded from Store Count
-        // even if the flag was set after the row was calculated
-        isInactive: live ? live.isInactive : i.isInactive,
-        sizeDesc: live?.sizeDesc ?? "",
-      };
+      return { ...i, isInactive: live ? live.isInactive : i.isInactive, sizeDesc: live?.sizeDesc ?? "" };
     });
+}
+
+/** Record an export in ExportLog (Postgres) or the dev file store. Never
+ *  blocks the download: logging failures are swallowed except for DB outages. */
+async function recordExport(
+  prisma: NonNullable<ReturnType<typeof getPrisma>>,
+  sessionId: string,
+  kind: string,
+  createdBy: string,
+  count: number,
+) {
+  const detail = `${count} rows`;
+  try {
+    await prisma.exportLog.create({ data: { sessionId, kind, createdBy, detail } });
+  } catch (e) {
+    if (isDbConnectionError(e)) throw e;
+    // Unknown session/broken FK must not break the download.
   }
+}
+
+function recordFileStoreExport(sessionId: string, kind: string, createdBy: string, count: number, markExported = false) {
+  const store = loadFileStore();
+  store.exports.push({ id: cuid(), sessionId, kind, createdBy, createdAt: new Date().toISOString(), detail: `${count} rows` });
+  if (markExported) {
+    const s = store.sessions.find((x) => x.id === sessionId);
+    if (s) { s.status = "Exported"; s.updatedAt = new Date().toISOString(); }
+  }
+  saveFileStore(store);
+}
+
+async function getItems(sessionId: string, prisma: NonNullable<ReturnType<typeof getPrisma>>): Promise<ExportRow[]> {
   const items = await prisma.priceUpdateItem.findMany({ where: { sessionId }, take: 50000, orderBy: { createdAt: "asc" } });
   const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
   const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
@@ -51,7 +89,7 @@ function toPosCsv(rows: { cleanedSku: string; ourNewListPrice: string | null; ne
     if (!r.cleanedSku) continue;
     lines.push([esc(r.cleanedSku), esc(r.ourNewListPrice), esc(r.nearest9)].join(","));
   }
-  return lines.join("\n");
+  return lines.join("\n") + "\n";
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -60,30 +98,53 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const { id } = await ctx.params;
   const { searchParams } = new URL(req.url);
   const kind = searchParams.get("kind") ?? "pos";
-  const rows = await getItems(id);
+  if (kind !== "pos" && kind !== "storecount") {
+    return NextResponse.json({ error: 'Invalid export kind. Use "pos" or "storecount".' }, { status: 400 });
+  }
+  // Fail closed before touching any data source: in production a missing
+  // DATABASE_URL must be a 503, never an empty CSV built from local JSON.
+  const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
+  let rows: ExportRow[];
+  try {
+    rows = prisma ? await getItems(id, prisma) : fileStoreItems(id);
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not load rows for export." }, { status: 500 });
+  }
   if (kind === "storecount") {
     // Exclude inactive; blank New Price when ourNewList == currentList
     const filtered = rows.filter((r) => !r.isInactive);
     const mapped = filtered.map((r) => ({
       SKU: r.cleanedSku, Description: r.productName,
-      "Size Desc.": (r as { sizeDesc: string }).sizeDesc,
+      "Size Desc.": r.sizeDesc,
       "New Price": r.ourNewListPrice && r.currentListPrice && r.ourNewListPrice === r.currentListPrice ? "" : (r.nearest9 ?? ""),
       QOH: "", Expiry: "", Notes: "",
     }));
+    try {
+      if (prisma) await recordExport(prisma, id, "storecount", session.email, rows.length);
+      else recordFileStoreExport(id, "storecount", session.email, rows.length);
+    } catch (e) {
+      if (isDbConnectionError(e)) return dbUnreachableResponse();
+      // Export logging must never block the download.
+    }
     const header = "SKU,Description,Size Desc.,New Price,QOH,Expiry,Notes";
     const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    const csv = [header, ...mapped.map((m) => [m.SKU, m.Description, m["Size Desc."], m["New Price"], "", "", ""].map(esc).join(","))].join("\n");
+    const csv = [header, ...mapped.map((m) => [m.SKU, m.Description, m["Size Desc."], m["New Price"], "", "", ""].map(esc).join(","))].join("\n") + "\n";
     return new NextResponse(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename=\"storecount-${id}.csv\"` } });
   }
   const csv = toPosCsv(rows.map((r) => ({ cleanedSku: r.cleanedSku, ourNewListPrice: r.ourNewListPrice, nearest9: r.nearest9 })));
-  const prisma = getPrisma();
-  if (!prisma) {
-    const store = loadFileStore();
-    store.exports.push({ id: cuid(), sessionId: id, kind, createdBy: session.email, createdAt: new Date().toISOString(), detail: `${rows.length} rows` });
-    saveFileStore(store);
-  } else {
-    await prisma.exportLog.create({ data: { sessionId: id, kind, createdBy: session.email, detail: `${rows.length} rows` } });
-    await prisma.priceUpdateSession.update({ where: { id }, data: { status: "Exported" } }).catch(() => null);
+  try {
+    if (prisma) {
+      await recordExport(prisma, id, kind, session.email, rows.length);
+      await prisma.priceUpdateSession.update({ where: { id }, data: { status: "Exported" } }).catch(() => null);
+    } else {
+      recordFileStoreExport(id, kind, session.email, rows.length, true);
+    }
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not record export." }, { status: 500 });
   }
   return new NextResponse(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename=\"pos-export-${id}.csv\"` } });
 }

@@ -34,6 +34,23 @@ export function skuCandidates(raw: string | number | null | undefined): string[]
   return out;
 }
 
+/**
+ * Human-readable price-update name, e.g. "A.O.R. INC. - October 1, 2026".
+ *
+ * The New Price Update screen no longer asks the user to type a name: the
+ * backend always derives one from the selected vendor and the current
+ * date/time, which is also what the UI shows as a read-only preview.
+ */
+export function formatUpdateName(vendor: string | null | undefined, when: Date = new Date()): string {
+  const v = String(vendor ?? "").trim().replace(/\s+/g, " ");
+  const stamp = `${toMonthName(when)} ${when.getDate()}, ${when.getFullYear()}`;
+  return v ? `${v} - ${stamp}` : stamp;
+}
+
+function toMonthName(d: Date): string {
+  return d.toLocaleString("en-US", { month: "long" });
+}
+
 export function normalizeVendor(v: string | null | undefined): string {
   return String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }

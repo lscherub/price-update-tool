@@ -1,9 +1,6 @@
 import fs from "fs";
 import path from "path";
 import Decimal from "decimal.js";
-import { getPrisma } from "./db";
-import { calculateRow } from "./nearest9";
-import { normalizeVendor, skuCandidates } from "./pricing";
 
 export type ProductRow = {
   id: string;
@@ -66,6 +63,12 @@ export function loadFileStore(): StoreShape {
 }
 
 export function saveFileStore(s: StoreShape) {
+  // Vercel serverless filesystem is ephemeral/read-only: never persist business
+  // data to JSON in production. All API routes return 503 via productionDbGuard()
+  // before reaching here; this is a last-resort fail-closed guard.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("File store writes are disabled in production. Configure DATABASE_URL (PostgreSQL).");
+  }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(s, null, 2));
 }
@@ -74,4 +77,3 @@ export const decOrNull = (v: unknown): string | null => {
   if (v === null || v === undefined || v === "") return null;
   try { return new Decimal(String(v)).toFixed(2); } catch { return null; }
 };
-export const str = (v: unknown): string => (v === null || v === undefined ? "" : String(v));

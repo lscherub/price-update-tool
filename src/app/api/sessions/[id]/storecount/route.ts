@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { getSession } from "@/lib/auth";
-import { getPrisma } from "@/lib/db";
+import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -12,6 +15,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const onlyIds = Array.isArray(body.ids) ? (body.ids as string[]) : null;
 
   const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
   let sessionName = id, sessionVendor = "";
   let rows: { cleanedSku: string; productName: string; sizeDesc: string; newPrice: string }[] = [];
   if (!prisma) {
@@ -33,23 +38,37 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     store.exports.push({ id: cuid(), sessionId: id, kind: "storecount-pdf", createdBy: session.email, createdAt: new Date().toISOString(), detail: `${rows.length} rows` });
     saveFileStore(store);
   } else {
-    const s = await prisma.priceUpdateSession.findUnique({ where: { id } });
-    sessionName = s?.name ?? id; sessionVendor = s?.vendor ?? "";
-    const items = await prisma.priceUpdateItem.findMany({
-      where: { sessionId: id, ...(onlyIds ? { id: { in: onlyIds } } : {}) },
-      orderBy: { cleanedSku: "asc" }, take: 50000,
-    });
-    const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
-    const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
-    const pmap = new Map(prods.map((p) => [p.id, p]));
-    rows = items
-      .filter((i) => !(i.productId ? pmap.get(i.productId)?.isInactive ?? i.isInactive : i.isInactive))
-      .map((i) => ({
-        cleanedSku: i.cleanedSku, productName: i.productName,
-        sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
-        newPrice: i.ourNewListPrice && i.currentListPrice && String(i.ourNewListPrice) === String(i.currentListPrice) ? "" : (i.nearest9 ? String(i.nearest9) : ""),
-      }));
-    await prisma.exportLog.create({ data: { sessionId: id, kind: "storecount-pdf", createdBy: session.email, detail: `${rows.length} rows` } });
+    try {
+      const s = await prisma.priceUpdateSession.findUnique({ where: { id } });
+      sessionName = s?.name ?? id; sessionVendor = s?.vendor ?? "";
+      const items = await prisma.priceUpdateItem.findMany({
+        where: { sessionId: id, ...(onlyIds ? { id: { in: onlyIds.slice(0, 20000) } } : {}) },
+        orderBy: { cleanedSku: "asc" }, take: 50000,
+      });
+      const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
+      const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
+      const pmap = new Map(prods.map((p) => [p.id, p]));
+      rows = items
+        .filter((i) => !(i.productId ? pmap.get(i.productId)?.isInactive ?? i.isInactive : i.isInactive))
+        .map((i) => ({
+          cleanedSku: i.cleanedSku, productName: i.productName,
+          sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
+          newPrice: i.ourNewListPrice && i.currentListPrice && String(i.ourNewListPrice) === String(i.currentListPrice) ? "" : (i.nearest9 ? String(i.nearest9) : ""),
+        }));
+    } catch (e) {
+      if (isDbConnectionError(e)) return dbUnreachableResponse();
+      return NextResponse.json({ error: "Could not load rows for the Store Count PDF." }, { status: 500 });
+    }
+    try {
+      await prisma.exportLog.create({ data: { sessionId: id, kind: "storecount-pdf", createdBy: session.email, detail: `${rows.length} rows` } });
+    } catch (e) {
+      if (isDbConnectionError(e)) return dbUnreachableResponse();
+      // Export logging must not block the PDF download itself.
+    }
+  }
+
+  if (!rows.length) {
+    return NextResponse.json({ error: "No active rows to print. All rows are inactive or the session is empty." }, { status: 400 });
   }
 
   const pdf = await PDFDocument.create();

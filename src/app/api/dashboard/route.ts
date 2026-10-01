@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { dbUnreachableResponse, getPrisma, isDbConnectionError } from "@/lib/db";
+import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, type ItemRow } from "@/lib/store";
+
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
 
   try {
     const totalProducts = prisma ? await prisma.product.count() : loadFileStore().products.length;
@@ -66,7 +70,7 @@ export async function GET(req: Request) {
     sessionStats: stats,
   });
   } catch (e) {
-    if (isDbConnectionError(e)) return dbUnreachableResponse() as unknown as NextResponse;
-    throw e;
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not load dashboard." }, { status: 500 });
   }
 }

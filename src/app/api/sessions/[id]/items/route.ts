@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import Decimal from "decimal.js";
 import { getSession } from "@/lib/auth";
-import { getPrisma } from "@/lib/db";
+import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { recalcRow } from "@/lib/recalc";
 import { loadFileStore, saveFileStore } from "@/lib/store";
+
+export const runtime = "nodejs";
+
+const EDITABLE = new Set(["rawVendorSku", "cleanedSku", "discount", "vendorListPriceNew", "marginDivisor", "notes"]);
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -12,6 +16,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const body = await req.json().catch(() => ({}));
   const updates = (Array.isArray(body.items) ? body.items : [body]).slice(0, 1000);
   const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
+  for (const u of updates) {
+    for (const k of Object.keys(u as Record<string, unknown>)) {
+      if (k !== "id" && !EDITABLE.has(k)) return NextResponse.json({ error: `Field "${k}" is not editable` }, { status: 400 });
+    }
+    const d = (u as Record<string, unknown>).discount;
+    if (d !== undefined && String(d ?? "").trim() !== "") {
+      let dec: Decimal;
+      try { dec = new Decimal(String(d).trim().replace(/[%$,]/g, "")); } catch { return NextResponse.json({ error: "Discount must be 0-100" }, { status: 400 }); }
+      if (!dec.isFinite() || dec.lt(0) || dec.gt(100)) return NextResponse.json({ error: "Discount must be 0-100" }, { status: 400 });
+    }
+  }
   if (!prisma) {
     const store = loadFileStore();
     const out: unknown[] = [];
@@ -30,18 +47,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ ok: true, items: out });
   }
   const out: unknown[] = [];
-  for (const u of updates) {
-    const cur = await prisma.priceUpdateItem.findFirst({ where: { id: String(u.id), sessionId: id } });
-    if (!cur) continue;
-    const r = await recalcRow({
-      rawVendorSku: cur.rawVendorSku, cleanedSku: cur.cleanedSku,
-      cleanedOverridden: cur.cleanedOverridden, discount: String(cur.discount ?? "0"),
-      vendorListPriceNew: cur.vendorListPriceNew ? String(cur.vendorListPriceNew) : null,
-      marginDivisor: String(cur.marginDivisor ?? "0.605"), notes: cur.notes,
-    }, u);
-    await prisma.priceUpdateItem.update({
-      where: { id: cur.id },
-      data: {
+  try {
+    const ids = updates.map((u: Record<string, unknown>) => String(u.id ?? ""));
+    const curs = await prisma.priceUpdateItem.findMany({ where: { id: { in: ids }, sessionId: id } });
+    const byId = new Map(curs.map((c) => [c.id, c]));
+    const writes: { id: string; data: object }[] = [];
+    for (const u of updates) {
+      const cur = byId.get(String((u as Record<string, unknown>).id ?? ""));
+      if (!cur) continue;
+      const r = await recalcRow({
+        rawVendorSku: cur.rawVendorSku, cleanedSku: cur.cleanedSku,
+        cleanedOverridden: cur.cleanedOverridden, discount: String(cur.discount ?? "0"),
+        vendorListPriceNew: cur.vendorListPriceNew ? String(cur.vendorListPriceNew) : null,
+        marginDivisor: String(cur.marginDivisor ?? "0.605"), notes: cur.notes,
+      }, u as Record<string, unknown>);
+      writes.push({ id: cur.id, data: {
         rawVendorSku: r.rawVendorSku, cleanedSku: r.cleanedSku, cleanedOverridden: r.cleanedOverridden,
         productId: r.productId, productNumber: r.productNumber, productName: r.productName,
         brand: r.brand, vendor: r.vendor, discount: new Decimal(r.discount),
@@ -53,11 +73,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         oldRetailPrice: r.oldRetailPrice ? new Decimal(r.oldRetailPrice) : null,
         nearest9: r.nearest9 ? new Decimal(r.nearest9) : null,
         notes: r.notes, isInactive: r.isInactive, matched: r.matched,
-      },
-    });
-    out.push({ id: cur.id });
+      } });
+      out.push({ id: cur.id });
+    }
+    for (let j = 0; j < writes.length; j += 50) {
+      await prisma.$transaction(writes.slice(j, j + 50).map((w) => prisma.priceUpdateItem.update({ where: { id: w.id }, data: w.data as never })));
+    }
+    return NextResponse.json({ ok: true, items: out });
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not save changes. Please try again." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, items: out });
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -68,6 +94,8 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const itemId = searchParams.get("itemId") ?? "";
   const clear = searchParams.get("clear") === "1";
   const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
   if (!prisma) {
     const store = loadFileStore();
     store.items = clear
@@ -76,7 +104,15 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     saveFileStore(store);
     return NextResponse.json({ ok: true });
   }
-  if (clear) await prisma.priceUpdateItem.deleteMany({ where: { sessionId: id } });
-  else await prisma.priceUpdateItem.deleteMany({ where: { id: itemId, sessionId: id } });
+  try {
+    if (clear) await prisma.priceUpdateItem.deleteMany({ where: { sessionId: id } });
+    else {
+      if (!itemId) return NextResponse.json({ error: "itemId is required" }, { status: 400 });
+      await prisma.priceUpdateItem.deleteMany({ where: { id: itemId, sessionId: id } });
+    }
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not delete row." }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

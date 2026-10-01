@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { apiErrorText } from "@/lib/apiError";
 
 type Dash = {
   totals: { products: number; inactive: number; active: number; vendors: number; sessions: number };
@@ -9,8 +10,19 @@ type Dash = {
 
 export default function Home() {
   const [data, setData] = useState<Dash | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch("/api/dashboard").then((r) => (r.ok ? r.json() : null)).then(setData).catch(() => {});
+    (async () => {
+      try {
+        const r = await fetch("/api/dashboard");
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { setError(apiErrorText(d, "Could not load the dashboard.")); return; }
+        setError("");
+        setData(d as Dash);
+      } catch {
+        setError("Could not reach the server. Check your connection and try again.");
+      }
+    })();
   }, []);
   return (
     <div className="flex flex-col gap-6">
@@ -21,6 +33,7 @@ export default function Home() {
         </div>
         <Link href="/sessions/new" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ New Price Update</Link>
       </div>
+      {error && <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</div>}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {[
           ["Products", data?.totals.products ?? "—"],
