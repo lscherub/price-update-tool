@@ -1,6 +1,7 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { PriceGrid, type Item } from "@/components/PriceGrid";
+import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
@@ -25,6 +26,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [sortKey, setSortKey] = useState<SortableItemKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir | null>(null);
   const [fillBusy, setFillBusy] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addBusy, setAddBusy] = useState(false);
   const pageSize = 200;
 
   const load = useCallback(async () => {
@@ -152,6 +155,36 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       setFillBusy(false);
     }
   };
+  /**
+   * Add a new row to this existing price update. The server reuses the existing
+   * SKU cleaning + inventory matching logic (raw vendor SKU or cleaned SKU), so
+   * the new row calculates exactly like an imported one.
+   */
+  const addItem = async (v: NewItemInput) => {
+    if (addBusy) return;
+    setAddBusy(true);
+    try {
+      const r = await fetch(`/api/sessions/${id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(v),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not add that row.");
+        setMsg(t); toast.error("Could not add that row.", t); return;
+      }
+      setMsg("");
+      setShowAdd(false);
+      await load();
+      toast.success("Product added.");
+    } catch {
+      toast.error("Could not add that row.", "Could not reach the server while adding that row.");
+    } finally {
+      setAddBusy(false);
+    }
+  };
+
   const removeRow = async (row: { id: string }) => {
     if (savingCell) return;
     setSavingCell(row.id);
@@ -268,6 +301,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </div>
       </div>
       <div className="flex flex-wrap gap-2 text-sm">
+        <button
+          type="button"
+          onClick={() => setShowAdd(true)}
+          className="rounded border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800"
+        >
+          + Add Row
+        </button>
         <input className="min-w-60 flex-1 rounded border px-3 py-1.5" placeholder="Search..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
           <option value="all">All rows</option>
@@ -294,6 +334,9 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible}
         sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
       />
+      {showAdd && (
+        <AddItemDialog busy={addBusy} onClose={() => { if (!addBusy) setShowAdd(false); }} onSubmit={addItem} />
+      )}
       {confirmBulk && selected.size > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">

@@ -52,6 +52,29 @@ export function calcNearest9(value: string | number | null | undefined): string 
   return cents.dividedBy(100).toDecimalPlaces(2).toFixed(2);
 }
 
+/**
+ * Final Nearest 9 = the user's Custom Nearest 9 when one was entered, otherwise
+ * the automatically calculated Nearest 9.
+ *
+ * This is the ONLY place the calculated value and the manual override are
+ * combined, so every consumer (flags, filters, sorting, CSV export and the
+ * Store Count PDF) keeps using a single stored "final" Nearest 9 value.
+ *
+ * An empty/blank custom value means "no override" (the user cleared it), which
+ * hands control back to the existing automatic calculation.
+ */
+export function resolveNearest9(
+  calculated: string | null | undefined,
+  custom: string | null | undefined,
+): string | null {
+  const c =
+    custom === null || custom === undefined || String(custom).trim() === ""
+      ? null
+      : String(custom).trim();
+  if (c !== null) return c;
+  return calculated === null || calculated === undefined ? null : calculated;
+}
+
 export type PriceRowInput = {
   rawVendorSku?: string;
   cleanedSku?: string;

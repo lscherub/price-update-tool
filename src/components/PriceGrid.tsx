@@ -9,6 +9,8 @@ export type Item = {
   discount: string; currentListPrice: string | null; vendorListPriceNew: string | null;
   ourNewListPrice: string | null; marginDivisor: string; ourNewRetailPrice: string | null;
   oldRetailPrice: string | null; nearest9: string | null; notes: string;
+  /** User's custom (manually entered) Nearest 9; null/undefined = automatic. */
+  nearest9Custom?: string | null;
   isInactive: boolean; matched: boolean;
 };
 
@@ -26,7 +28,7 @@ export const COLS: { key: string; label: string; editable?: boolean; kind: "text
   { key: "marginDivisor", label: "Margin/Divisor", editable: true, kind: "number" },
   { key: "ourNewRetailPrice", label: "Our New Retail Price", kind: "number" },
   { key: "oldRetailPrice", label: "Old Retail Price", kind: "number" },
-  { key: "nearest9", label: "Nearest 9", kind: "number" },
+  { key: "nearest9", label: "Nearest 9", editable: true, kind: "number" },
   { key: "notes", label: "Notes", editable: true, kind: "text" },
 ];
 
@@ -215,16 +217,30 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     const hi = Math.max(from, to < 0 ? from : to);
                     return rowIdx >= lo && rowIdx <= hi && rowIdx !== from;
                   })();
+                  const customN9 = c.key === "nearest9" && !!r.nearest9Custom;
                   return (
-                    <td key={c.label} className={`relative border px-1 py-0.5 ${inFill ? "bg-blue-100" : "bg-emerald-50/40"}`}>
+                    <td key={c.label} className={`relative border px-1 py-0.5 ${inFill ? "bg-blue-100" : customN9 ? "bg-amber-50" : "bg-emerald-50/40"}`}>
                       <input
                         className="w-full min-w-24 bg-transparent px-1 py-1 pr-4 outline-none focus:bg-white"
                         defaultValue={v ?? ""}
                         key={`${r.id}-${c.key}-${v}`}
                         onBlur={(e) => { if (e.target.value !== (v ?? "")) onEdit(r, c.key, e.target.value); }}
                         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        title={c.key === "nearest9"
+                          ? (customN9
+                            ? "Custom Nearest 9 — clear this cell to go back to the calculated value"
+                            : "Nearest 9 is calculated automatically — type a price to override it")
+                          : undefined}
                         aria-label={`${c.label} for ${r.cleanedSku || r.rawVendorSku}`}
                       />
+                      {customN9 && (
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute right-0.5 top-0.5 rounded bg-amber-400 px-1 text-[9px] font-bold leading-tight text-amber-950"
+                        >
+                          custom
+                        </span>
+                      )}
                       <span
                         role="button"
                         tabIndex={0}

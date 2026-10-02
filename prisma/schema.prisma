@@ -77,6 +77,9 @@ model PriceUpdateItem {
   ourNewRetailPrice  Decimal? @db.Decimal(12, 4)
   oldRetailPrice     Decimal? @db.Decimal(12, 2)
   nearest9           Decimal? @db.Decimal(12, 2)
+  /// User's manually entered (custom) Nearest 9. NULL = use the calculated value.
+  /// `nearest9` above always holds the FINAL value (custom when present, else calculated).
+  nearest9Custom     Decimal? @db.Decimal(12, 2)
   notes              String   @default("")
   isInactive         Boolean  @default(false)
   matched            Boolean  @default(false)

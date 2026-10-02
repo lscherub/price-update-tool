@@ -66,7 +66,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         discount: c.calc.discount, currentListPrice: c.calc.currentListPrice,
         vendorListPriceNew: c.price, ourNewListPrice: c.calc.ourNewListPrice,
         marginDivisor: c.calc.marginDivisor, ourNewRetailPrice: c.calc.ourNewRetailPrice,
-        oldRetailPrice: c.calc.oldRetailPrice, nearest9: c.calc.nearest9, notes: "",
+        oldRetailPrice: c.calc.oldRetailPrice, nearest9: c.calc.nearest9, nearest9Custom: null, notes: "",
         isInactive: c.calc.isInactive, matched: c.calc.matched, updatedAt: now,
       });
     }

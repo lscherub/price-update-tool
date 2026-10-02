@@ -1,4 +1,4 @@
-import { calculateRow } from "./nearest9";
+import { calculateRow, resolveNearest9 } from "./nearest9";
 import { normalizeSku, normalizeVendor } from "./pricing";
 import { getDiscountMap } from "./lookup";
 import { getPrisma } from "./db";
@@ -7,6 +7,8 @@ import { loadFileStore } from "./store";
 export type CurRow = {
   rawVendorSku: string; cleanedSku: string; cleanedOverridden: boolean;
   discount: string; vendorListPriceNew: string | null; marginDivisor: string; notes: string;
+  /** User's manually entered Nearest 9 (null = use the automatic calculation). */
+  nearest9Custom?: string | null;
 };
 
 export async function lookupProduct(cleanedSku: string) {
@@ -43,6 +45,14 @@ export async function recalcRow(cur: CurRow, patch: Record<string, unknown>) {
   const newPrice = patch.vendorListPriceNew !== undefined
     ? (patch.vendorListPriceNew ? String(patch.vendorListPriceNew) : null)
     : cur.vendorListPriceNew;
+  // Nearest 9: the automatic calculation stays exactly as it is; the user's
+  // custom value (when present) is layered on top. Editing ANY other field
+  // recalculates the automatic value but never overwrites a custom override,
+  // and clearing the cell (nearest9: "") removes the override so the automatic
+  // value comes back.
+  const nearest9Custom = patch.nearest9 !== undefined
+    ? (String(patch.nearest9 ?? "").trim() === "" ? null : String(patch.nearest9).trim())
+    : (cur.nearest9Custom ?? null);
   return {
     rawVendorSku: rawNext, cleanedSku: calc.cleanedSku, cleanedOverridden: overridden,
     productId: prod?.id ?? null, productNumber: calc.productNumber, productName: calc.productName,
@@ -50,7 +60,8 @@ export async function recalcRow(cur: CurRow, patch: Record<string, unknown>) {
     currentListPrice: calc.currentListPrice, vendorListPriceNew: newPrice,
     ourNewListPrice: calc.ourNewListPrice, marginDivisor: calc.marginDivisor,
     ourNewRetailPrice: calc.ourNewRetailPrice, oldRetailPrice: calc.oldRetailPrice,
-    nearest9: calc.nearest9, notes: patch.notes !== undefined ? String(patch.notes) : cur.notes,
+    nearest9: resolveNearest9(calc.nearest9, nearest9Custom), nearest9Custom,
+    notes: patch.notes !== undefined ? String(patch.notes) : cur.notes,
     isInactive: calc.isInactive, matched: calc.matched,
   };
 }

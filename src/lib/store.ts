@@ -38,6 +38,8 @@ export type ItemRow = {
   ourNewListPrice: string | null; marginDivisor: string;
   ourNewRetailPrice: string | null; oldRetailPrice: string | null;
   nearest9: string | null; notes: string; isInactive: boolean;
+  /** User's manually entered Nearest 9 (null/undefined = automatic). */
+  nearest9Custom?: string | null;
   matched: boolean; updatedAt: string;
 };
 

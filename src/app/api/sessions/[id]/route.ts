@@ -38,6 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         ourNewRetailPrice: i.ourNewRetailPrice ? String(i.ourNewRetailPrice) : null,
         oldRetailPrice: i.oldRetailPrice ? String(i.oldRetailPrice) : null,
         nearest9: i.nearest9 ? String(i.nearest9) : null, notes: i.notes,
+        nearest9Custom: i.nearest9Custom ? String(i.nearest9Custom) : null,
         isInactive: i.isInactive, matched: i.matched,
       })),
     });
