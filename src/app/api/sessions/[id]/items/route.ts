@@ -92,21 +92,34 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const { id } = await ctx.params;
   const { searchParams } = new URL(req.url);
   const itemId = searchParams.get("itemId") ?? "";
+  const body = itemId ? null : await req.json().catch(() => null);
+  const itemIds = Array.isArray((body as { itemIds?: unknown } | null)?.itemIds)
+    ? [...new Set((body as { itemIds: unknown[] }).itemIds.map((v) => String(v ?? "")).filter(Boolean))].slice(0, 5000)
+    : null;
   const clear = searchParams.get("clear") === "1";
   const prisma = getPrisma();
   const prodErr = productionDbGuard(prisma);
   if (prodErr) return prodErr;
   if (!prisma) {
     const store = loadFileStore();
-    store.items = clear
-      ? store.items.filter((i) => i.sessionId !== id)
-      : store.items.filter((i) => !(i.sessionId === id && i.id === itemId));
+    if (clear) {
+      store.items = store.items.filter((i) => i.sessionId !== id);
+    } else if (itemIds) {
+      if (!itemIds.length) return NextResponse.json({ error: "itemIds is required" }, { status: 400 });
+      const del = new Set(itemIds);
+      store.items = store.items.filter((i) => !(i.sessionId === id && del.has(i.id)));
+    } else {
+      store.items = store.items.filter((i) => !(i.sessionId === id && i.id === itemId));
+    }
     saveFileStore(store);
     return NextResponse.json({ ok: true });
   }
   try {
     if (clear) await prisma.priceUpdateItem.deleteMany({ where: { sessionId: id } });
-    else {
+    else if (itemIds) {
+      if (!itemIds.length) return NextResponse.json({ error: "itemIds is required" }, { status: 400 });
+      await prisma.priceUpdateItem.deleteMany({ where: { id: { in: itemIds }, sessionId: id } });
+    } else {
       if (!itemId) return NextResponse.json({ error: "itemId is required" }, { status: 400 });
       await prisma.priceUpdateItem.deleteMany({ where: { id: itemId, sessionId: id } });
     }

@@ -17,6 +17,9 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [pdfBusy, setPdfBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
   const [savingCell, setSavingCell] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const pageSize = 200;
 
   const load = useCallback(async () => {
@@ -51,11 +54,37 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       rows = rows.filter((r) => [r.rawVendorSku, r.cleanedSku, r.productNumber, r.productName, r.brand, r.vendor].join(" ").toLowerCase().includes(s));
     }
     if (filter === "unmatched") rows = rows.filter((r) => !r.matched);
+    if (filter === "notfound") rows = rows.filter((r) => !r.matched);
     if (filter === "changed") rows = rows.filter((r) => r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice);
     if (filter === "inactive") rows = rows.filter((r) => r.isInactive);
     if (filter === "missing") rows = rows.filter((r) => !r.vendorListPriceNew);
     return rows;
   }, [items, q, filter]);
+  const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+
+  const toggleOne = useCallback((item: Item) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  }, []);
+
+  const toggleAllVisible = useCallback(() => {
+    setSelected((prev) => {
+      const visible = new Set(visibleIds);
+      const allOn = visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
+      if (allOn) {
+        const next = new Set(prev);
+        for (const id of visible) next.delete(id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const id of visible) next.add(id);
+      return next;
+    });
+  }, [visibleIds]);
   const editCell = async (item: Item, key: string, value: string) => {
     if (savingCell) return;
     setSavingCell(`${item.id}:${key}`);
@@ -86,12 +115,40 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         setMsg(t); toast.error("Could not delete that row.", t); return;
       }
       setMsg("");
+      setSelected((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
       await load();
       toast.success("Row deleted.");
     } catch {
       toast.error("Could not delete that row.", "Could not reach the server while deleting that row.");
     } finally {
       setSavingCell(null);
+    }
+  };
+
+  const deleteSelection = async () => {
+    if (bulkBusy || selected.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const r = await fetch(`/api/sessions/${id}/items`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds: [...selected] }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not delete the selected rows.");
+        setMsg(t); toast.error("Could not delete the selected rows.", t); return;
+      }
+      const n = selected.size;
+      setMsg("");
+      setSelected(new Set());
+      setConfirmBulk(false);
+      await load();
+      toast.success(`${n} row${n === 1 ? "" : "s"} deleted.`);
+    } catch {
+      toast.error("Could not delete the selected rows.", "Could not reach the server while deleting.");
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -164,13 +221,45 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
           <option value="all">All rows</option>
           <option value="unmatched">Unmatched</option>
+          <option value="notfound">Not Found</option>
           <option value="changed">Price Changed</option>
           <option value="inactive">Inactive</option>
           <option value="missing">Vendor price missing</option>
         </select>
+        <LoadingButton
+          busy={bulkBusy}
+          busyLabel="Deleting..."
+          disabled={selected.size === 0}
+          onClick={() => setConfirmBulk(true)}
+          className="rounded border border-red-200 bg-red-50 px-3 py-1.5 font-semibold text-red-700 disabled:opacity-50"
+        >
+          {selected.size > 0 ? `Delete Selection (${selected.size})` : "Delete Selection"}
+        </LoadingButton>
       </div>
       {msg && <div className="text-sm text-slate-600">{msg}</div>}
-      <PriceGrid rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow} />
+      <PriceGrid rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow} selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible} />
+      {confirmBulk && selected.size > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-bold">Delete {selected.size} selected row{selected.size === 1 ? "" : "s"}?</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              This will permanently delete the selected price-update items from this price update only.{" "}
+              <span className="font-semibold text-red-700">This cannot be undone.</span>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Inventory, pricing calculations, flags, and all other data are unchanged — only the selected rows are removed.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={bulkBusy} onClick={() => setConfirmBulk(false)}>
+                Cancel
+              </button>
+              <LoadingButton busy={bulkBusy} busyLabel="Deleting..." onClick={deleteSelection} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
+                Delete permanently
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2 text-sm">
         <button disabled={page <= 1} className="rounded border px-3 py-1 disabled:opacity-40" onClick={() => setPage(page - 1)}>Prev</button>
         <span>Page {page} ({filtered.length} rows)</span>

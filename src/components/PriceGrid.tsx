@@ -39,17 +39,31 @@ export function Flags({ r }: { r: Item }) {
   );
 }
 
-export function PriceGrid({ rows, page, pageSize, onEdit, onDelete }: {
+export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll }: {
   rows: Item[]; page: number; pageSize: number;
   onEdit: (item: Item, key: string, value: string) => void;
   onDelete: (item: Item) => void;
+  selected: Set<string>;
+  onToggle: (item: Item) => void;
+  onToggleAll: () => void;
 }) {
   const slice = rows.slice((page - 1) * pageSize, page * pageSize);
+  const sliceSelected = slice.filter((r) => selected.has(r.id)).length;
+  const allChecked = slice.length > 0 && sliceSelected === slice.length;
   return (
     <div className="overflow-auto rounded-xl border bg-white" style={{ maxHeight: "65vh" }}>
       <table className="w-full min-w-[1800px] border-collapse text-xs">
         <thead className="sticky top-0 bg-slate-100">
           <tr>
+            <th className="border px-2 py-2">
+              <input
+                type="checkbox"
+                aria-label="Select all visible rows"
+                checked={allChecked}
+                ref={(el) => { if (el) el.indeterminate = !allChecked && sliceSelected > 0; }}
+                onChange={onToggleAll}
+              />
+            </th>
             {COLS.map((c) => (
               <th key={c.label} className={`border px-2 py-2 text-left font-semibold ${c.editable ? "bg-emerald-50" : ""}`}>{c.label}{c.editable ? " ✎" : ""}</th>
             ))}
@@ -60,6 +74,14 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete }: {
         <tbody>
           {slice.map((r) => (
             <tr key={r.id} className={`border-t ${!r.matched ? "bg-red-50" : ""}`}>
+              <td className="border px-2 py-1 text-center">
+                <input
+                  type="checkbox"
+                  aria-label={`Select row ${r.cleanedSku || r.rawVendorSku}`}
+                  checked={selected.has(r.id)}
+                  onChange={() => onToggle(r)}
+                />
+              </td>
               {COLS.map((c) => {
                 const v = ((r as unknown as Record<string, string | null>)[c.key] ?? "") as string;
                 if (c.editable) {
