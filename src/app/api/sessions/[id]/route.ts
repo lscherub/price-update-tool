@@ -103,6 +103,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     const store = loadFileStore();
     store.sessions = store.sessions.filter((x) => x.id !== id);
     store.items = store.items.filter((x) => x.sessionId !== id);
+    store.exports = store.exports.filter((x) => x.sessionId !== id);
     saveFileStore(store);
     return NextResponse.json({ ok: true });
   }
