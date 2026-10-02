@@ -7,6 +7,27 @@ import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+/**
+ * Store Count PDF "New Price" display rule (mirrors the price update screen):
+ * - If the calculated Nearest 9 equals the current/old retail price -> blank (no change).
+ * - Otherwise -> show the exact Nearest 9 value already stored on the row.
+ * - If there is no Nearest 9 stored, the cell stays blank.
+ * This uses the existing row data only; it performs no new pricing calculation.
+ */
+export function storeCountNewPrice(
+  nearest9: string | { toString(): string } | null | undefined,
+  oldRetailPrice: string | { toString(): string } | null | undefined,
+): string {
+  const n9 = nearest9 === null || nearest9 === undefined ? "" : String(nearest9).trim();
+  if (!n9) return "";
+  const old = oldRetailPrice === null || oldRetailPrice === undefined ? "" : String(oldRetailPrice).trim();
+  if (!old) return n9;
+  const a = Number(n9);
+  const b = Number(old);
+  if (Number.isFinite(a) && Number.isFinite(b)) return a === b ? "" : n9;
+  return n9 === old ? "" : n9;
+}
+
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -33,7 +54,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       .map((i) => ({
         cleanedSku: i.cleanedSku, productName: i.productName,
         sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
-        newPrice: i.ourNewListPrice && i.currentListPrice && i.ourNewListPrice === i.currentListPrice ? "" : (i.nearest9 ?? ""),
+        newPrice: storeCountNewPrice(i.nearest9, i.oldRetailPrice),
       }));
     store.exports.push({ id: cuid(), sessionId: id, kind: "storecount-pdf", createdBy: session.email, createdAt: new Date().toISOString(), detail: `${rows.length} rows` });
     saveFileStore(store);
@@ -53,7 +74,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         .map((i) => ({
           cleanedSku: i.cleanedSku, productName: i.productName,
           sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
-          newPrice: i.ourNewListPrice && i.currentListPrice && String(i.ourNewListPrice) === String(i.currentListPrice) ? "" : (i.nearest9 ? String(i.nearest9) : ""),
+          newPrice: storeCountNewPrice(i.nearest9 ? String(i.nearest9) : null, i.oldRetailPrice ? String(i.oldRetailPrice) : null),
         }));
     } catch (e) {
       if (isDbConnectionError(e)) return dbUnreachableResponse();
@@ -82,13 +103,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const totalPages = () => pageNum;
 
   const drawHeader = (page: ReturnType<typeof pdf.addPage>, y0: number) => {
-    page.drawText(`${sessionVendor ? sessionVendor + " — " : ""}${sessionName}`, { x: 36, y: y0, size: 14, font: fontBold });
+    const heading = sessionVendor || sessionName || "Store Count";
+    page.drawText(heading, { x: 36, y: y0, size: 14, font: fontBold });
     page.drawText(dateStr, { x: 36, y: y0 - 18, size: 10, font });
     page.drawText("Staff: ________________________", { x: 400, y: y0 - 18, size: 10, font });
-    const instructions = "Please check all layaways, holds for transfers, overstock etc. Please note page # on each page. Note: If the New Price is empty, there is no price change. However, all items must still be counted for QOH and Expiry.";
-    page.drawText(instructions.slice(0, 130), { x: 36, y: y0 - 34, size: 7, font });
-    page.drawText(instructions.slice(130), { x: 36, y: y0 - 44, size: 7, font });
-    return y0 - 60;
+    const line1 = "Please check all layaways, holds for transfers, overstock etc. Please note page # on each page.";
+    const line2 = "Note: If the New Price is empty, there is no price change. However, all items must still be counted for QOH and Expiry.";
+    page.drawText(line1, { x: 36, y: y0 - 40, size: 10, font: fontBold });
+    page.drawText(line2.slice(0, 110), { x: 36, y: y0 - 56, size: 10, font: fontBold });
+    page.drawText(line2.slice(110), { x: 36, y: y0 - 70, size: 10, font: fontBold });
+    return y0 - 88;
   };
 
   const drawTableHeader = (page: ReturnType<typeof pdf.addPage>, y: number) => {
