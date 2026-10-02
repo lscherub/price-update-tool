@@ -3,9 +3,8 @@ import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { cuid, loadFileStore, saveFileStore } from "@/lib/store";
 import { parseInactiveFile, parseInventoryFile } from "@/lib/importers";
-import { normalizeSku } from "@/lib/pricing";
-import { importInventoryBatch, markMissingProductsInactive } from "@/lib/inventoryDb";
-import { MAX_BATCH_ROWS, chunk as chunkRows } from "@/lib/inventoryImport";
+import { applyInactiveSkuList, importInventoryBatch, markMissingProductsInactive } from "@/lib/inventoryDb";
+import { exactSkuList, MAX_BATCH_ROWS, chunk as chunkRows } from "@/lib/inventoryImport";
 
 export const runtime = "nodejs";
 // Each request handles ONE bounded batch, so this stays far below the limit
@@ -77,39 +76,29 @@ export async function POST(req: Request) {
   if (mode === "inactive") {
     const skus = parseInactiveFile(buf);
     if (!skus.length) return NextResponse.json({ error: "No SKUs found in the uploaded file. Make sure the first column (or a SKU column) contains SKU values." }, { status: 400 });
-    const normSet = new Set<string>();
-    const strip = (v: string) => v.replace(/^0+/, "") || "0";
-    for (const s of skus) {
-      const t = String(s).trim();
-      if (!t) continue;
-      const spaceless = t.replace(/[\s-]+/g, "");
-      normSet.add(t);
-      normSet.add(spaceless);
-      normSet.add(strip(t));
-      normSet.add(strip(spaceless));
-      const n = normalizeSku(t);
-      if (n) { normSet.add(n); normSet.add(strip(n)); }
-    }
-    const keys = [...normSet];
+    // EXACT matching only. This used to expand every SKU into fuzzy variants
+    // (spaceless, leading-zero-stripped, and normalizeSku() with its last
+    // character removed) and match them against BOTH `sku` and `normalizedSku`.
+    // For a 16,071-row list that produced 29,024 keys and marked 16,559
+    // products Inactive — 488 products that were still on sale were flagged by
+    // coincidence. The file is now the sole source of truth: only a product
+    // whose `sku` appears verbatim is marked Inactive.
+    const keys = exactSkuList(skus);
     if (!prisma) {
       const store = loadFileStore();
+      const listed = new Set(keys);
+      let inactive = 0;
       for (const p of store.products) {
-        p.isInactive = normSet.has(p.normalizedSku) || normSet.has(p.sku)
-          || normSet.has(strip(p.normalizedSku)) || normSet.has(strip(p.sku));
+        p.isInactive = listed.has(p.sku);
+        if (p.isInactive) inactive++;
       }
       saveFileStore(store);
-      return NextResponse.json({ ok: true, keys: keys.length, total: store.products.length });
+      return NextResponse.json({ ok: true, skus: keys.length, fileRows: skus.length, total: store.products.length, inactive });
     }
     try {
-      await prisma.product.updateMany({ data: { isInactive: false } });
-      for (let i = 0; i < keys.length; i += 1000) {
-        const chunk = keys.slice(i, i + 1000);
-        await prisma.product.updateMany({ where: { normalizedSku: { in: chunk } }, data: { isInactive: true } });
-        await prisma.product.updateMany({ where: { sku: { in: chunk } }, data: { isInactive: true } });
-      }
+      const { markedInactive } = await applyInactiveSkuList(prisma, skus);
       const total = await prisma.product.count();
-      const inactive = await prisma.product.count({ where: { isInactive: true } });
-      return NextResponse.json({ ok: true, keys: keys.length, total, inactive, fileRows: skus.length });
+      return NextResponse.json({ ok: true, skus: keys.length, fileRows: skus.length, total, inactive: markedInactive });
     } catch (e) {
       if (isDbConnectionError(e)) return dbUnreachableResponse();
       return NextResponse.json({ error: "Inactive import failed. Check the database connection and try again." }, { status: 500 });
@@ -134,7 +123,11 @@ export async function POST(req: Request) {
         ex.productNumber = p.productNumber; ex.description = p.description;
         ex.vendor = p.vendor; ex.brand = p.brand;
         ex.listCost = p.listCost || "0"; ex.price = p.price || "0";
-        ex.sizeDesc = p.sizeDesc; ex.normalizedSku = normKey; updated++;
+        ex.sizeDesc = p.sizeDesc; ex.normalizedSku = normKey;
+        // A full inventory import defines status: rows in the file come back
+        // Active, matching the ON CONFLICT clause used by the Prisma path.
+        ex.isInactive = false;
+        updated++;
       } else {
         const row = {
           id: cuid(), sku: p.sku, normalizedSku: normKey,

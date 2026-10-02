@@ -1,9 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import { cuid } from "./store";
 import {
+  buildExactSkuFlagSql,
   buildUpsertSql,
+  exactSkuList,
   normalizeSkuList,
   prepareBatch,
+  REACTIVATE_ALL_SQL,
   type PreparedRow,
   type RowFailure,
 } from "./inventoryImport";
@@ -129,4 +132,78 @@ export async function markMissingProductsInactive(
     marked += typeof res === "number" ? res : 0;
   }
   return { markedInactive: marked };
+}
+
+/**
+ * Apply an inactive-SKU list using EXACT SKU equality — the list is the only
+ * source of truth for status.
+ *
+ * Two statements, in order:
+ *   1. clear every Active/Inactive flag, so rows absent from the list return to
+ *      Active instead of keeping a stale flag from a previous import;
+ *   2. flag exactly the listed SKUs.
+ *
+ * Step 2 matches `"sku" = ANY(...)` on the unique column. There is deliberately
+ * no `normalizedSku` comparison and no leading-zero stripping: those fuzzy
+ * variants are what previously made a ~16k-SKU list mark ~18k products
+ * Inactive, silently flagging ~2,400 products that were still on sale.
+ *
+ * Never inserts: a SKU that is not in inventory yet is simply not matched, so
+ * importing a list can never create duplicate products.
+ */
+export async function applyInactiveSkuList(
+  db: DbLike,
+  skus: string[],
+): Promise<{ skus: number; markedInactive: number }> {
+  const keys = exactSkuList(skus);
+  await db.$executeRawUnsafe(REACTIVATE_ALL_SQL);
+  let marked = 0;
+  for (const { sql, params } of buildExactSkuFlagSql(keys, true)) {
+    const res = await db.$executeRawUnsafe(sql, ...params);
+    marked += typeof res === "number" ? res : 0;
+  }
+  return { skus: keys.length, markedInactive: marked };
+}
+
+/**
+ * Delete every product, leaving all other data alone.
+ *
+ * `PriceUpdateItem.productId` is declared ON DELETE SET NULL, so price update
+ * history, sessions, export logs, vendor discounts and users all survive; the
+ * item rows simply lose their product link. Detaching the references before the
+ * delete makes that guarantee explicit rather than relying on the FK's
+ * referential action, and means no history row can briefly point at a product
+ * that is being removed.
+ */
+export async function clearProducts(
+  db: DbLike,
+): Promise<{ deletedProducts: number; detachedItems: number }> {
+  // Detach history first so no item can point at a product being removed.
+  const detached = await db.$executeRawUnsafe(
+    `UPDATE "PriceUpdateItem" SET "productId" = NULL WHERE "productId" IS NOT NULL`,
+  );
+  const { count } = await db.product.deleteMany();
+  return {
+    deletedProducts: typeof count === "number" ? count : 0,
+    detachedItems: typeof detached === "number" ? detached : 0,
+  };
+}
+
+/**
+ * Set one product's Active/Inactive flag by id.
+ *
+ * Targeted so a manual change costs a single indexed row update and never
+ * re-uploads or recalculates the rest of the inventory.
+ */
+export async function setProductInactive(
+  db: DbLike,
+  id: string,
+  isInactive: boolean,
+): Promise<{ id: string; sku: string; isInactive: boolean } | null> {
+  const row = await db.product.update({
+    where: { id },
+    data: { isInactive },
+    select: { id: true, sku: true, isInactive: true },
+  });
+  return { id: row.id, sku: row.sku, isInactive: row.isInactive };
 }

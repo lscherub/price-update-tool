@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { importInventoryBatch } from "@/lib/inventoryDb";
-import { MAX_BATCH_ROWS, prepareBatch } from "@/lib/inventoryImport";
+import { applyInactiveSkuList, importInventoryBatch } from "@/lib/inventoryDb";
+import {
+  buildExactSkuFlagSql,
+  exactSkuList,
+  MAX_BATCH_ROWS,
+  prepareBatch,
+} from "@/lib/inventoryImport";
 
 /**
  * The regression that broke weekly imports was one SQL statement per product.
@@ -117,15 +122,19 @@ describe("importInventoryBatch — failure isolation", () => {
 });
 
 describe("importInventoryBatch — history safety", () => {
-  it("never writes isInactive, so inactive flags and price history survive", async () => {
+  it("resets isInactive to false on conflict but never DELETEs history", async () => {
     const fake = makeFakeDb({ existing: new Set(["SKU-0"]) });
     await importInventoryBatch(fake.db as never, rows(3));
 
     for (const call of fake.calls) {
-      expect(call.sql).not.toContain("isInactive");
+      // A full inventory import is the source of truth for status, so an
+      // existing row is reset to Active; the inactive list is applied after.
+      expect(call.sql).toContain('"isInactive"=false');
       expect(call.sql).not.toContain("DELETE");
+      expect(call.sql).not.toContain("PriceUpdateItem");
     }
-    // 12 bind params per row (numeric/timestamps cast explicitly).
+    // 12 bind params per row (numeric/timestamps cast explicitly). isInactive
+    // is set as a literal, so the parameter count is unchanged.
     expect(fake.calls[0].paramCount).toBe(3 * 12);
   });
 
@@ -140,5 +149,131 @@ describe("importInventoryBatch — history safety", () => {
     let n = 0;
     const prepared = prepareBatch(rows(50), { makeId: () => `id-${n++}` });
     expect(new Set(prepared.rows.map((r) => r.id)).size).toBe(50);
+  });
+});
+
+/**
+ * Regression tests for the inactive-list import.
+ *
+ * The original implementation expanded each SKU from the inactive file into
+ * fuzzy variants (spaceless, leading-zero-stripped, and normalizeSku() with its
+ * final character removed) and matched them against BOTH `sku` and
+ * `normalizedSku`. A 16,071-SKU file expanded to 29,024 keys and marked 16,559
+ * products Inactive, silently flagging hundreds of products that were still on
+ * sale. The inactive file must now be the exact source of truth.
+ */
+describe("exactSkuList — no fuzzy SKU expansion", () => {
+  it("trims and de-duplicates without altering the SKU text", () => {
+    expect(exactSkuList([" 62491774008 ", "62491774008", "62491774007"])).toEqual([
+      "62491774008",
+      "62491774007",
+    ]);
+  });
+
+  it("preserves leading zeros instead of stripping them", () => {
+    // The old code added both "0588123" and "588123", so the two matched each other.
+    expect(exactSkuList(["0588123"])).toEqual(["0588123"]);
+  });
+
+  it("does not drop the last character the way normalizeSku does", () => {
+    expect(exactSkuList(["62491774008"])).toEqual(["62491774008"]);
+  });
+
+  it("does not expand one SKU into several match keys", () => {
+    // The bug: a single row used to yield raw, spaceless, stripped and
+    // last-char-removed variants (up to 6 keys).
+    expect(exactSkuList(["62491774008"]).length).toBe(1);
+  });
+
+  it("keeps SKUs as strings so numeric cells keep their digits", () => {
+    expect(exactSkuList([62491774008, "0001234"])).toEqual(["62491774008", "0001234"]);
+  });
+
+  it("drops blank entries", () => {
+    expect(exactSkuList(["", "   ", null, undefined, "A-1"])).toEqual(["A-1"]);
+  });
+});
+
+describe("buildExactSkuFlagSql — exact equality only", () => {
+  it("matches on the unique sku column with equality", () => {
+    const [stmt] = buildExactSkuFlagSql(["62491774008"], true);
+    expect(stmt?.sql).toContain('"sku" = ANY(');
+    expect(stmt?.sql).not.toContain("normalizedSku");
+    expect(stmt?.params).toEqual(["62491774008", true]);
+  });
+
+  it("chunks large lists so bind parameters stay bounded", () => {
+    const skus = Array.from({ length: 12000 }, (_, i) => `SKU-${i}`);
+    const stmts = buildExactSkuFlagSql(skus, true, 5000);
+    expect(stmts).toHaveLength(3);
+    expect(stmts[0]?.params).toHaveLength(5001);
+    expect(stmts[2]?.params).toHaveLength(2001);
+  });
+
+  it("emits nothing for an empty list", () => {
+    expect(buildExactSkuFlagSql([], true)).toEqual([]);
+  });
+
+  it("can also set rows back to Active", () => {
+    const [stmt] = buildExactSkuFlagSql(["A-1"], false);
+    expect(stmt?.params).toEqual(["A-1", false]);
+  });
+});
+
+describe("applyInactiveSkuList — only listed SKUs go Inactive", () => {
+  /** Records every statement so we can assert on order and parameters. */
+  function makeRecordingDb() {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const db = {
+      $queryRawUnsafe: async () => [],
+      $executeRawUnsafe: async (sql: string, ...params: unknown[]) => {
+        calls.push({ sql, params });
+        // Report the number of SKUs bound as "rows affected".
+        const m = /ARRAY\[/.test(sql) ? params.length - 1 : 0;
+        return m;
+      },
+      product: {} as never,
+    };
+    return { db, calls };
+  }
+
+  it("clears existing flags first, then flags exactly the listed SKUs", async () => {
+    const { db, calls } = makeRecordingDb();
+    const out = await applyInactiveSkuList(db as never, ["62491774008", "62491774007"]);
+
+    expect(calls).toHaveLength(2);
+    // Step 1: everything returns to Active.
+    expect(calls[0]?.sql).toContain('SET "isInactive" = false');
+    // Step 2: only the listed SKUs are flagged, with exact equality.
+    expect(calls[1]?.sql).toContain('"sku" = ANY(');
+    expect(calls[1]?.params).toEqual(["62491774008", "62491774007", true]);
+    expect(out).toEqual({ skus: 2, markedInactive: 2 });
+  });
+
+  it("never matches on normalizedSku (the source of the over-flagging)", async () => {
+    const { db, calls } = makeRecordingDb();
+    await applyInactiveSkuList(db as never, ["62491774008"]);
+    for (const call of calls) expect(call.sql).not.toContain("normalizedSku");
+  });
+
+  it("never inserts a product, so the import cannot create duplicates", async () => {
+    const { db, calls } = makeRecordingDb();
+    await applyInactiveSkuList(db as never, ["NEW-SKU-NOT-IN-INVENTORY"]);
+    for (const call of calls) expect(call.sql).not.toContain("INSERT");
+  });
+
+  it("still reactivates everything when the file is empty", async () => {
+    const { db, calls } = makeRecordingDb();
+    const out = await applyInactiveSkuList(db as never, []);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sql).toContain('SET "isInactive" = false');
+    expect(out).toEqual({ skus: 0, markedInactive: 0 });
+  });
+
+  it("de-duplicates the file so a repeated SKU is counted once", async () => {
+    const { db, calls } = makeRecordingDb();
+    const out = await applyInactiveSkuList(db as never, ["A-1", "A-1", "A-1"]);
+    expect(calls[1]?.params).toEqual(["A-1", true]);
+    expect(out.skus).toBe(1);
   });
 });

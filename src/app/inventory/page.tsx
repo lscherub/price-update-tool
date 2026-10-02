@@ -13,6 +13,19 @@ const MAX_ATTEMPTS = 3;
 
 type Failure = { row: number; sku: string; reason: string };
 
+type ProductRow = {
+  id: string;
+  sku: string;
+  productNumber: string;
+  description: string;
+  vendor: string;
+  brand: string;
+  listCost: string;
+  price: string;
+  sizeDesc: string;
+  isInactive: boolean;
+};
+
 type Progress = {
   total: number;
   processed: number;
@@ -49,6 +62,9 @@ export default function InventoryPage() {
   const [report, setReport] = useState<Report | null>(null);
   const [showFailures, setShowFailures] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  /** Id of the row currently being saved, so only that cell shows a spinner. */
+  const [savingId, setSavingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const inactiveRef = useRef<HTMLInputElement>(null);
 
@@ -225,6 +241,96 @@ for (let i = 0; i < batches.length; i++) {
     }
   };
 
+  /**
+   * Delete all inventory products. Guarded by an explicit confirmation dialog
+   * that spells out what is removed and what is kept, and the count is shown so
+   * the user knows what they are about to lose.
+   */
+  const clearInventory = async () => {
+    if (clearing) return;
+    const confirmed = window.confirm(
+      `Clear ALL inventory data?\n\n` +
+        `This permanently deletes all ${total.toLocaleString()} inventory products ` +
+        `(Active and Inactive alike).\n\n` +
+        `Price update history, price update sessions, exports and vendor discounts ` +
+        `are NOT deleted.\n\n` +
+        `You will need to re-import your full inventory file afterwards.`,
+    );
+    if (!confirmed) return;
+    setClearing(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/inventory/clear", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail = apiErrorText(d, "Could not clear the inventory.");
+        toast.error("Clear Inventory failed.", detail);
+        setMsg(`Clear Inventory failed. ${detail}`);
+      } else {
+        const removed = Number(d.deletedProducts ?? 0);
+        setMsg(`Inventory cleared: ${removed.toLocaleString()} products removed. Price update history was kept.`);
+        toast.success("Inventory cleared.", `${removed.toLocaleString()} products removed. Price update history was kept.`);
+        // Refresh the count and table automatically.
+        setPage(1);
+        await fetchPage(q, 1);
+      }
+    } catch {
+      toast.error("Clear Inventory failed.", "Could not reach the server.");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  /**
+   * Manual Active/Inactive change for a single product.
+   *
+   * Optimistic, then confirmed by the server: only the affected row is patched
+   * locally, so the page, count and other rows are never re-fetched.
+   */
+  const updateStatus = async (row: ProductRow, isInactive: boolean) => {
+    if (savingId) return;
+    if (row.isInactive === isInactive) return;
+    const previous = row.isInactive;
+    setSavingId(row.id);
+    setRows((prev) =>
+      prev.map((r) => ((r as ProductRow).id === row.id ? { ...(r as ProductRow), isInactive } : r)),
+    );
+    try {
+      const r = await fetch("/api/inventory/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, isInactive }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(apiErrorText(d, "Could not update the status."));
+      const saved = (d.product ?? {}) as { id?: string; isInactive?: boolean };
+      // Refresh just this row with the value the database actually stored.
+      setRows((prev) =>
+        prev.map((x) => {
+          const r2 = x as ProductRow;
+          if (r2.id !== row.id) return r2;
+          return { ...r2, isInactive: typeof saved.isInactive === "boolean" ? saved.isInactive : isInactive };
+        }),
+      );
+      toast.success(
+        `${row.sku} set to ${isInactive ? "Inactive" : "Active"}.`,
+      );
+    } catch (e) {
+      // Roll the row back to its previous value so the UI never lies.
+      const detail = e instanceof Error ? e.message : "Could not update the status.";
+      setRows((prev) =>
+        prev.map((x) => ((x as ProductRow).id === row.id ? { ...(x as ProductRow), isInactive: previous } : x)),
+      );
+      toast.error(`Could not update ${row.sku}.`, detail);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const pct = progress && progress.total ? Math.floor((progress.processed / progress.total) * 100) : 0;
 
   return (
@@ -256,6 +362,15 @@ for (let i = 0; i < batches.length; i++) {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInactive(f); }}
             />
           </label>
+          <LoadingButton
+            busy={clearing}
+            busyLabel="Clearing..."
+            className="rounded border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+            onClick={clearInventory}
+            title="Delete all inventory products. Price update history is kept."
+          >
+            Clear Inventory
+          </LoadingButton>
         </div>
 
         <label className="flex items-center gap-2 text-xs text-slate-600">
@@ -352,8 +467,8 @@ for (let i = 0; i < batches.length; i++) {
             </tr>
           </thead>
           <tbody>
-            {(rows as Record<string, string | boolean>[]).map((r, i) => (
-              <tr key={i} className="border-t">
+            {(rows as ProductRow[]).map((r, i) => (
+              <tr key={r.id || i} className="border-t">
                 <td className="px-2 py-1 font-mono">{String(r.sku)}</td>
                 <td className="px-2 py-1">{String(r.productNumber)}</td>
                 <td className="px-2 py-1">{String(r.description)}</td>
@@ -362,7 +477,26 @@ for (let i = 0; i < batches.length; i++) {
                 <td className="px-2 py-1 text-right">{String(r.listCost)}</td>
                 <td className="px-2 py-1 text-right">{String(r.price)}</td>
                 <td className="px-2 py-1">{String(r.sizeDesc)}</td>
-                <td className="px-2 py-1">{r.isInactive ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Inactive</span> : <span className="text-slate-400">Active</span>}</td>
+                <td className="px-2 py-1">
+                  {/* Manual Active/Inactive override: saves one row at a time. */}
+                  <span className="flex items-center gap-1.5">
+                    <select
+                      aria-label={`Status for ${r.sku}`}
+                      value={r.isInactive ? "inactive" : "active"}
+                      disabled={savingId === r.id || !r.id}
+                      onChange={(e) => void updateStatus(r, e.target.value === "inactive")}
+                      className={`rounded border px-1.5 py-0.5 text-xs font-medium disabled:opacity-60 ${
+                        r.isInactive
+                          ? "border-amber-300 bg-amber-50 text-amber-800"
+                          : "border-emerald-300 bg-emerald-50 text-emerald-800"
+                      }`}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                    {savingId === r.id && <Spinner />}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>

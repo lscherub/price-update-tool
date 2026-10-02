@@ -81,8 +81,9 @@ export function chunk<T>(arr: T[], size: number): T[][] {
  * - blank SKU               -> skipped (reported as a failure so it is visible)
  * - duplicate SKU in batch  -> collapsed, last occurrence wins
  * - bad List Cost / Price   -> failed row with a reason (no import abort)
- * - isInactive is NOT touched on update, so manual/imported inactive flags and
- *   every historical PriceUpdateItem survive a weekly re-import.
+ * - isInactive is reset to false on update: a full inventory import defines the
+ *   Active/Inactive state, and the inactive SKU list is applied afterwards to
+ *   re-flag the exceptions. Historical PriceUpdateItem rows still survive.
  *
  * @param raw  rows as parsed from the spreadsheet
  * @param opts.startRow 1-based sheet row number of raw[0] (2 = first data row)
@@ -155,6 +156,13 @@ export function buildUpsertSql(rows: PreparedRow[]): { sql: string; params: unkn
       ` $${i + 11}::timestamptz, $${i + 12}::timestamptz)`,
     );
   }
+  // `isInactive` is NOT bound here on purpose: new rows take the schema default
+  // (false = Active), so the batch still binds exactly 12 parameters per row.
+  // The ON CONFLICT clause resets an existing row to Active, because a full
+  // inventory import is the source of truth for status — that is what stops a
+  // previous inactive-list import from leaving rows wrongly Inactive.
+  // The inactive SKU list is applied separately, afterwards, to re-flag them.
+  // Price history is never touched: this statement still never DELETEs.
   const sql =
     `INSERT INTO "Product" ("sku","normalizedSku","productNumber","description","vendor","brand",` +
     `"listCost","price","sizeDesc","id","createdAt","updatedAt") VALUES ${tuples.join(",")} ` +
@@ -162,6 +170,7 @@ export function buildUpsertSql(rows: PreparedRow[]): { sql: string; params: unkn
     `"normalizedSku"=EXCLUDED."normalizedSku","productNumber"=EXCLUDED."productNumber",` +
     `"description"=EXCLUDED."description","vendor"=EXCLUDED."vendor","brand"=EXCLUDED."brand",` +
     `"listCost"=EXCLUDED."listCost","price"=EXCLUDED."price","sizeDesc"=EXCLUDED."sizeDesc",` +
+    `"isInactive"=false,` +
     `"updatedAt"=EXCLUDED."updatedAt" ` +
     `RETURNING "sku", (xmax = 0) AS "inserted"`;
   return { sql, params };
@@ -176,3 +185,54 @@ export function normalizeSkuList(skus: unknown[]): string[] {
   }
   return [...out];
 }
+
+/**
+ * Distinct SKUs from the inactive list, kept as EXACT strings.
+ *
+ * This is the source of truth for inactive status, so unlike the vendor-SKU
+ * cleaning used elsewhere there is deliberately no normalization here: no
+ * dropping the last character, no stripping leading zeros, no partial
+ * matching. `cellText()` already preserved leading zeros while parsing the
+ * sheet, so trimming surrounding whitespace is the only thing we remove.
+ */
+export function exactSkuList(skus: unknown[]): string[] {
+  const out = new Set<string>();
+  for (const s of skus ?? []) {
+    const v = String(s ?? "").trim();
+    if (v) out.add(v);
+  }
+  return [...out];
+}
+
+/** SKUs per statement. 5,000 binds stays far below PostgreSQL's 65,535 cap. */
+export const EXACT_SKU_CHUNK = 5000;
+
+/**
+ * Chunked statements that flip `isInactive` for exactly the given SKUs.
+ *
+ * Uses `=` against the unique `sku` column, so a product is matched if and only
+ * if its SKU appears verbatim in the inactive file. Emitting one statement per
+ * chunk keeps the bind-parameter count bounded for a ~16k-SKU list.
+ */
+export function buildExactSkuFlagSql(
+  skus: string[],
+  isInactive: boolean,
+  chunkSize = EXACT_SKU_CHUNK,
+): { sql: string; params: unknown[] }[] {
+  const keys = exactSkuList(skus);
+  const out: { sql: string; params: unknown[] }[] = [];
+  for (let i = 0; i < keys.length; i += chunkSize) {
+    const part = keys.slice(i, i + chunkSize);
+    const placeholders = part.map((_, j) => `$${j + 1}`).join(",");
+    out.push({
+      sql:
+        `UPDATE "Product" SET "isInactive" = $${part.length + 1}, "updatedAt" = now() ` +
+        `WHERE "sku" = ANY(ARRAY[${placeholders}]::text[])`,
+      params: [...part, isInactive],
+    });
+  }
+  return out;
+}
+
+/** Clear every Active/Inactive flag, so a fresh list defines the whole state. */
+export const REACTIVATE_ALL_SQL = `UPDATE "Product" SET "isInactive" = false WHERE "isInactive" = true`;

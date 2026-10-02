@@ -102,8 +102,14 @@ describe("buildUpsertSql", () => {
     expect(params).toHaveLength(24); // 12 columns x 2 rows
   });
 
-  it("never touches isInactive, so history and inactive flags survive", () => {
-    expect(sql).not.toContain("isInactive");
+  it("resets isInactive to false on conflict, so a re-import restores Active", () => {
+    // A full inventory import is the source of truth for status: rows present in
+    // the file come back Active, and the inactive list is applied afterwards to
+    // re-flag the exceptions. New rows take the schema default (false).
+    expect(sql).toContain('"isInactive"=false');
+    expect(sql).not.toContain('"isInactive"=EXCLUDED');
+    // Still 12 bound columns: isInactive is a literal, not a bind param.
+    expect(params).toHaveLength(24);
   });
 
   it("stays under PostgreSQL's 65,535 bind-parameter limit at max batch size", () => {
