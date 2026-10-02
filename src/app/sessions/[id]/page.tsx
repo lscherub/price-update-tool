@@ -1,6 +1,8 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { PriceGrid, type Item } from "@/components/PriceGrid";
+import type { SortDir, SortableItemKey } from "@/lib/itemSort";
+import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
@@ -20,6 +22,9 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [sortKey, setSortKey] = useState<SortableItemKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir | null>(null);
+  const [fillBusy, setFillBusy] = useState(false);
   const pageSize = 200;
 
   const load = useCallback(async () => {
@@ -58,9 +63,21 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     if (filter === "changed") rows = rows.filter((r) => r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice);
     if (filter === "inactive") rows = rows.filter((r) => r.isInactive);
     if (filter === "missing") rows = rows.filter((r) => !r.vendorListPriceNew);
-    return rows;
-  }, [items, q, filter]);
+    // Excel-style sort over the FULL filtered set (not just the visible page),
+    // using actual table values via the shared comparator.
+    return sortItems(rows, sortKey, sortDir);
+  }, [items, q, filter, sortKey, sortDir]);
   const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+
+  const changeSort = useCallback((key: SortableItemKey, dir: SortDir | null) => {
+    if (!parseSortParam(key, dir ?? "asc") && dir !== null) return;
+    if (dir === null) {
+      setSortKey(null); setSortDir(null);
+    } else {
+      setSortKey(key); setSortDir(dir);
+    }
+    setPage(1);
+  }, []);
 
   const toggleOne = useCallback((item: Item) => {
     setSelected((prev) => {
@@ -102,6 +119,37 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       toast.error("Could not save that cell.", "Could not reach the server while saving that cell.");
     } finally {
       setSavingCell(null);
+    }
+  };
+
+  /**
+   * Excel-like fill: copy one already-entered editable value down to following
+   * rows. Sends ONE bulk PATCH (existing server recalc per row), so all copied
+   * values recalculate through the unchanged pricing pipeline.
+   */
+  const fillDown = async (item: Item, key: string, value: string, afterIds: string[]) => {
+    if (fillBusy || savingCell) return;
+    const targets = [item.id, ...afterIds.filter((x) => x !== item.id)];
+    if (!targets.length) return;
+    setFillBusy(true);
+    try {
+      const r = await fetch(`/api/sessions/${id}/items`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: targets.map((tid) => ({ id: tid, [key]: value })) }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not fill the selected cells.");
+        setMsg(t); toast.error("Could not fill the selected cells.", t); return;
+      }
+      setMsg("");
+      await load();
+      toast.success(`Copied to ${targets.length} row${targets.length === 1 ? "" : "s"}.`);
+    } catch {
+      toast.error("Could not fill the selected cells.", "Could not reach the server while saving.");
+    } finally {
+      setFillBusy(false);
     }
   };
   const removeRow = async (row: { id: string }) => {
@@ -182,7 +230,10 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     setPdfBusy(true);
     setMsg("Generating PDF...");
     try {
-      const r = await fetch(`/api/sessions/${id}/storecount`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      // Preserve the table's current order: send the sorted visible row ids so
+      // the PDF lists products in that same order (inclusion rules unchanged).
+      const body = sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+      const r = await fetch(`/api/sessions/${id}/storecount`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         const t = apiErrorText(d, "PDF generation failed.");
@@ -237,7 +288,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </LoadingButton>
       </div>
       {msg && <div className="text-sm text-slate-600">{msg}</div>}
-      <PriceGrid rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow} selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible} />
+      {fillBusy && <div className="text-sm text-slate-500">Copying value to selected rows...</div>}
+      <PriceGrid
+        rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
+        selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible}
+        sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
+      />
       {confirmBulk && selected.size > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
