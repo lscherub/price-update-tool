@@ -7,11 +7,28 @@ import {
 } from "./pricing";
 
 /**
- * Nearest-9 rounding (matches spec examples + legacy Excel behavior).
- * Rule: exact .09-cent hits (58.09) move down one candidate (-> 57.99);
- * otherwise round(value + 0.02, 1dp, half-up) - 0.01.
- * Verified: 58.03->58.09, 58.07->58.09, 58.09->57.99, 58.12->58.09,
- * 58.15->58.19, 14.09->13.99, 77.09->76.99.
+ * Nearest-9 rounding: snap a price to the nearest value ending in 9 cents.
+ *
+ * The price points form the sequence ...33.69, 33.79, 33.89, 33.99, 34.19...
+ * i.e. every 10 cents across a whole dollar, with the `.09` tier deliberately
+ * absent (an exact `.09` resolves down to the previous `.99` instead).
+ *
+ * Implemented as two explicit steps rather than one offset expression:
+ *
+ *   1. `tenths = round_half_up(value * 10)` snaps the value onto the nearest
+ *      tenth of a dollar. Because the lattice of `.x9` prices is the set of
+ *      tenths shifted down by one cent, subtracting 1 cent afterwards lands on
+ *      the nearest price ending in 9. Using a half-up rounding *of the tenths*
+ *      is what makes the midpoint behave mathematically: 33.745 and above go up
+ *      to 33.79, below go down to 33.69 (33.75 -> 33.79).
+ *   2. If that result lands exactly on `.09`, step down one candidate to the
+ *      previous `.99` (58.09 -> 57.99, 62.0992 -> 62.09 -> 61.99).
+ *
+ * The previous implementation folded both steps into `value + 0.02`, then
+ * rounded and subtracted 0.01. That 2-cent pre-offset shifted every boundary by
+ * two cents, so values were pushed to the wrong candidate: 33.7355 -> 33.79
+ * (should be 33.69), 62.0992 -> 62.09 (should be 61.99), 63.24 -> 63.29
+ * (should be 63.19) and 54.09 -> 54.09 (should be 53.99).
  */
 export function calcNearest9(value: string | number | null | undefined): string | null {
   if (value === null || value === undefined || value === "") return null;
@@ -22,19 +39,17 @@ export function calcNearest9(value: string | number | null | undefined): string 
     return null;
   }
   if (!v.isFinite()) return null;
-  const cents = v.times(100);
-  const isWholeCent = cents.minus(cents.round()).abs().lt(0.0001);
-  if (isWholeCent && cents.toNumber() % 10 === 9) {
-    return cents.minus(10).dividedBy(100).toDecimalPlaces(2).toFixed(2);
-  }
-  return v
-    .plus(0.02)
-    .times(10)
-    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
-    .dividedBy(10)
-    .minus(0.01)
-    .toDecimalPlaces(2)
-    .toFixed(2);
+
+  // Step 1: nearest tenth of a dollar, rounded half-up at the midpoint.
+  const tenths = v.times(10).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+  // Step 2a: that tenth shifted down one cent is the nearest `.x9` price.
+  let cents = tenths.times(10).minus(1);
+  // Step 2b: an exact `.09` moves down to the previous `.99`.
+  if (cents.modulo(100).eq(9)) cents = cents.minus(10);
+  // A price below $0.05 has no valid candidate; never emit a negative price.
+  if (cents.isNegative()) cents = new Decimal(0);
+
+  return cents.dividedBy(100).toDecimalPlaces(2).toFixed(2);
 }
 
 export type PriceRowInput = {

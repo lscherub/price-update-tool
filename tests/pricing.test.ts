@@ -43,12 +43,34 @@ describe("margin divisor", () => {
 });
 
 describe("nearest 9", () => {
+  // Every example required by the spec, verbatim.
   const cases: [string, string][] = [
-    ["58.03", "58.09"],
-    ["58.07", "58.09"],
+    ["33.7355", "33.69"],
+    ["62.0992", "61.99"],
+    ["49.2397", "49.19"],
+    ["58.03", "57.99"],
+    ["58.07", "57.99"],
     ["58.09", "57.99"],
-    ["58.12", "58.09"],
+    ["58.12", "57.99"],
     ["58.15", "58.19"],
+    ["63.24", "63.19"],
+    ["54.65", "54.69"],
+    ["54.63", "54.59"],
+    ["54.19", "54.19"],
+    ["54.09", "53.99"],
+    ["54.12", "53.99"],
+    ["54.15", "54.19"],
+    ["54.17", "54.19"],
+    // Midpoint rounds up mathematically.
+    ["33.75", "33.79"],
+    ["33.76", "33.79"],
+    // The stated price-point lattice.
+    ["33.69", "33.69"],
+    ["33.79", "33.79"],
+    ["33.89", "33.89"],
+    ["33.99", "33.99"],
+    ["34.19", "34.19"],
+    // Legacy cases that must keep working.
     ["14.09", "13.99"],
     ["77.09", "76.99"],
   ];
@@ -57,6 +79,63 @@ describe("nearest 9", () => {
       expect(calcNearest9(input)).toBe(expected);
     });
   }
+
+  it("regression: no 2-cent pre-offset (33.7355 must not round up to 33.79)", () => {
+    // The old `value + 0.02` offset pushed this across the midpoint.
+    expect(calcNearest9("33.7355")).toBe("33.69");
+    expect(calcNearest9("49.2397")).toBe("49.19");
+    expect(calcNearest9("63.24")).toBe("63.19");
+  });
+
+  it("always lands on a price ending in 9 cents", () => {
+    for (let c = 3300; c <= 3600; c++) {
+      expect(calcNearest9((c / 100).toFixed(2))?.endsWith("9")).toBe(true);
+    }
+  });
+
+  it("is monotonic and idempotent across a whole dollar", () => {
+    let prev = -Infinity;
+    for (let c = 3300; c <= 3600; c++) {
+      const input = (c / 100).toFixed(2);
+      const r = calcNearest9(input) as string;
+      expect(Number(r)).toBeGreaterThanOrEqual(prev);
+      // Re-applying to a price point must not move it again.
+      expect(calcNearest9(r)).toBe(r);
+      prev = Number(r);
+    }
+  });
+
+  it("steps by 10 cents across a dollar boundary (33.99 -> 34.19)", () => {
+    expect(calcNearest9("33.99")).toBe("33.99");
+    expect(calcNearest9("34.19")).toBe("34.19");
+  });
+
+  it("applies the .09 rule to an exact .09 and its neighbourhood", () => {
+    // The .09 tier resolves down, so everything up to the 54.145 midpoint
+    // collapses to the previous .99; only above it does .19 win.
+    expect(calcNearest9("54.08")).toBe("53.99");
+    expect(calcNearest9("54.09")).toBe("53.99");
+    expect(calcNearest9("54.12")).toBe("53.99");
+    expect(calcNearest9("54.14")).toBe("53.99");
+    expect(calcNearest9("54.15")).toBe("54.19");
+  });
+
+  it("handles null, blank and unparseable input", () => {
+    expect(calcNearest9(null)).toBeNull();
+    expect(calcNearest9(undefined)).toBeNull();
+    expect(calcNearest9("")).toBeNull();
+    expect(calcNearest9("abc")).toBeNull();
+  });
+
+  it("strips currency formatting", () => {
+    expect(calcNearest9("$33.7355")).toBe("33.69");
+    expect(calcNearest9("33.74")).toBe("33.69");
+  });
+
+  it("never returns a negative price", () => {
+    expect(calcNearest9("0.01")).toBe("0.00");
+    expect(calcNearest9("0.00")).toBe("0.00");
+  });
 });
 
 describe("importers: SKU text + paste parsing", () => {
