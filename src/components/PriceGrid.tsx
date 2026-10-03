@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
+import { freezeColumn, frozenLeft, isFrozen, unfreezeColumn } from "@/lib/tableUi";
 
 export type Item = {
   id: string; rawVendorSku: string; cleanedSku: string; cleanedOverridden: boolean;
@@ -33,6 +34,31 @@ export const COLS: { key: string; label: string; editable?: boolean; kind: "text
 ];
 
 export const FLAGS_COL_KEY = "flags";
+
+/** Freezable headers in display order: every data column, then Flags. */
+export const FREEZE_KEYS: string[] = [...COLS.map((c) => c.key), FLAGS_COL_KEY];
+
+/** Fixed widths of the always-sticky row-number / checkbox gutter columns. */
+const ROW_NUM_W = 48;
+const CHECK_W = 36;
+/** headRefs keys for the two gutter columns. */
+const ROW_NUM_KEY = "__rownum";
+const CHECK_KEY = "__checkbox";
+/** Right-edge shadow marking the last sticky column. */
+const EDGE_SHADOW = "4px 0 6px -5px rgba(15,23,42,0.65)";
+const HEADER_BG = "#f1f5f9"; // matches <thead className="bg-slate-100">
+const WHITE_BG = "#ffffff";
+const UNMATCHED_BG = "#fef2f2"; // matches bg-red-50 on unmatched rows
+const SELECTED_BG = "#e0f2fe"; // sky-100, matches the selected-row highlight
+
+/** useLayoutEffect that is safe in client components rendered by the server. */
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function sameWidths(a: Readonly<Record<string, number>>, b: Readonly<Record<string, number>>): boolean {
+  const ak = Object.keys(a);
+  if (ak.length !== Object.keys(b).length) return false;
+  return ak.every((k) => a[k] === b[k]);
+}
 
 export function Flags({ r }: { r: Item }) {
   return (
@@ -67,6 +93,144 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   const listRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ rowId: string; key: string; startY: number; currentY: number } | null>(null);
   const [, forceTick] = useState(0);
+
+  // ---- Column freezing: always a contiguous prefix of the column order ----
+  const [frozenCount, setFrozenCount] = useState(0);
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const [gutter, setGutter] = useState({ rowNumbers: ROW_NUM_W, checkboxes: CHECK_W });
+  const headRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
+  const lastStickyKey = frozenCount > 0 ? FREEZE_KEYS[frozenCount - 1] : CHECK_KEY;
+
+  // ---- Row-number selection: click, drag over, or Shift+click a range ----
+  const anchorIdRef = useRef<string | null>(null);
+  const dragSelectRef = useRef(false);
+  const dragPickedRef = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    const end = () => { dragSelectRef.current = false; dragPickedRef.current = null; };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => { window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
+  }, []);
+
+  // Measure real header widths so frozen columns pin next to each other with
+  // exact offsets. Only reads the DOM and only stores changed values, so it
+  // can never loop; ResizeObserver keeps the offsets correct when content,
+  // page, filter, or window size changes.
+  const sliceIds = slice.map((r) => r.id).join(",");
+  useIsoLayoutEffect(() => {
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const measure = () => {
+      const next: Record<string, number> = {};
+      for (const k of FREEZE_KEYS) {
+        const el = headRefs.current[k];
+        if (el) next[k] = round2(el.getBoundingClientRect().width);
+      }
+      const rn = headRefs.current[ROW_NUM_KEY];
+      const cb = headRefs.current[CHECK_KEY];
+      const g = {
+        rowNumbers: rn ? round2(rn.getBoundingClientRect().width) : ROW_NUM_W,
+        checkboxes: cb ? round2(cb.getBoundingClientRect().width) : CHECK_W,
+      };
+      setWidths((prev) => (sameWidths(prev, next) ? prev : next));
+      setGutter((prev) => (prev.rowNumbers === g.rowNumbers && prev.checkboxes === g.checkboxes ? prev : g));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    for (const k of [...FREEZE_KEYS, ROW_NUM_KEY, CHECK_KEY]) {
+      const el = headRefs.current[k];
+      if (el) ro.observe(el);
+    }
+    return () => ro.disconnect();
+  }, [sliceIds, frozenCount]);
+
+  /** Sticky style for a data column, or undefined when the column is not frozen. */
+  const stickyStyle = (key: string, header: boolean, bg: string): CSSProperties | undefined => {
+    const left = frozenLeft(FREEZE_KEYS, frozenCount, key, widths, gutter);
+    if (left === null) return undefined;
+    return {
+      position: "sticky",
+      left,
+      zIndex: header ? 2 : 10,
+      background: bg,
+      boxShadow: key === lastStickyKey ? EDGE_SHADOW : undefined,
+    };
+  };
+
+  /** Sticky style for the always-fixed row-number / checkbox gutter columns. */
+  const gutterStyle = (which: "row" | "check", header: boolean, bg: string): CSSProperties => (
+    which === "row"
+      ? { position: "sticky", left: 0, zIndex: header ? 3 : 11, background: bg }
+      : {
+          position: "sticky",
+          left: gutter.rowNumbers,
+          zIndex: header ? 3 : 11,
+          background: bg,
+          boxShadow: lastStickyKey === CHECK_KEY ? EDGE_SHADOW : undefined,
+        }
+  );
+
+  const selectRow = (r: Item) => {
+    if (selected.has(r.id) || dragPickedRef.current?.has(r.id)) return;
+    dragPickedRef.current?.add(r.id);
+    onToggle(r);
+  };
+
+  /** Keep selecting rows while the pointer is dragged over the row numbers. */
+  const onRowNumEnter = (r: Item) => {
+    if (dragSelectRef.current) selectRow(r);
+  };
+
+  /** Background of a body row (selection wins, then the unmatched tint). */
+  const rowBgOf = (r: Item) => (selected.has(r.id) ? SELECTED_BG : !r.matched ? UNMATCHED_BG : WHITE_BG);
+
+  const onRowNumPointerDown = (r: Item, e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (e.shiftKey && anchorIdRef.current) {
+      const ids = slice.map((x) => x.id);
+      const from = ids.indexOf(anchorIdRef.current);
+      const to = ids.indexOf(r.id);
+      if (from >= 0 && to >= 0) {
+        const lo = Math.min(from, to);
+        const hi = Math.max(from, to);
+        for (const row of slice.slice(lo, hi + 1)) selectRow(row);
+      }
+      return;
+    }
+    anchorIdRef.current = r.id;
+    dragSelectRef.current = true;
+    dragPickedRef.current = new Set<string>();
+    selectRow(r);
+  };
+
+  /** Freeze/Unfreeze entries, appended after the existing sort actions. */
+  const freezeMenu = (key: string) => {
+    const frozen = isFrozen(FREEZE_KEYS, frozenCount, key);
+    const cls = "block w-full px-3 py-1.5 text-left hover:bg-slate-100 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
+    return (
+      <>
+        <div className="my-1 border-t border-slate-200" />
+        <button
+          type="button"
+          className={cls}
+          disabled={frozen}
+          title={frozen ? "This column is already frozen." : "Freeze this column and every column to its left, so they stay in view while you scroll sideways."}
+          onClick={() => { setFrozenCount(freezeColumn(FREEZE_KEYS, frozenCount, key)); setOpenMenu(null); }}
+        >
+          Freeze Column
+        </button>
+        <button
+          type="button"
+          className={cls}
+          disabled={!frozen}
+          title={frozen ? "Unfreeze this column (any frozen columns to its right are unfrozen too)." : "This column is not frozen."}
+          onClick={() => { setFrozenCount(unfreezeColumn(FREEZE_KEYS, frozenCount, key)); setOpenMenu(null); }}
+        >
+          Unfreeze Column
+        </button>
+      </>
+    );
+  };
   useEffect(() => {
     if (!openMenu) return;
     const close = (e: MouseEvent) => {
@@ -93,9 +257,21 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   return (
     <div ref={listRef} className="overflow-auto rounded-xl border bg-white" style={{ maxHeight: "65vh" }}>
       <table className="w-full min-w-[1800px] border-collapse text-xs">
-        <thead className="sticky top-0 bg-slate-100">
+        <thead className="sticky top-0 bg-slate-100" style={{ zIndex: 20 }}>
           <tr>
-            <th className="border px-2 py-2">
+            <th
+              ref={(el) => { headRefs.current[ROW_NUM_KEY] = el; }}
+              className="border px-1 py-2 text-center text-[10px] font-normal text-slate-400"
+              style={{ width: ROW_NUM_W, ...gutterStyle("row", true, HEADER_BG) }}
+              title="Row number — click a row number to select that row"
+            >
+              #
+            </th>
+            <th
+              ref={(el) => { headRefs.current[CHECK_KEY] = el; }}
+              className="border px-2 py-2"
+              style={{ width: CHECK_W, ...gutterStyle("check", true, HEADER_BG) }}
+            >
               <input
                 type="checkbox"
                 aria-label="Select all visible rows"
@@ -107,7 +283,12 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
             {COLS.map((c) => {
               const active = sortKey === c.key;
               return (
-                <th key={c.label} className={`relative border px-2 py-2 text-left font-semibold ${c.editable ? "bg-emerald-50" : ""}`}>
+                <th
+                  key={c.label}
+                  ref={(el) => { headRefs.current[c.key] = el; }}
+                  className={`relative border px-2 py-2 text-left font-semibold ${c.editable ? "bg-emerald-50" : ""}`}
+                  style={stickyStyle(c.key, true, c.editable ? "#ecfdf5" : HEADER_BG)}
+                >
                   <span className="inline-flex items-center gap-1">
                     <span>{c.label}{c.editable ? " ✎" : ""}</span>
                     {active && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
@@ -145,12 +326,17 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                       >
                         Clear sort
                       </button>
+                      {freezeMenu(c.key)}
                     </div>
                   )}
                 </th>
               );
             })}
-            <th className="relative border px-2 py-2 text-left font-semibold">
+            <th
+              ref={(el) => { headRefs.current[FLAGS_COL_KEY] = el; }}
+              className="relative border px-2 py-2 text-left font-semibold"
+              style={stickyStyle(FLAGS_COL_KEY, true, HEADER_BG)}
+            >
               <span className="inline-flex items-center gap-1">
                 <span>Flags</span>
                 {sortKey === FLAGS_COL_KEY && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
@@ -188,6 +374,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                   >
                     Clear sort
                   </button>
+                  {freezeMenu(FLAGS_COL_KEY)}
                 </div>
               )}
             </th>
@@ -195,9 +382,34 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
           </tr>
         </thead>
         <tbody>
-          {slice.map((r) => (
-            <tr key={r.id} data-fill-row={r.id} className={`border-t ${!r.matched ? "bg-red-50" : ""}`}>
-              <td className="border px-2 py-1 text-center">
+          {slice.map((r, i) => (
+            <tr key={r.id} data-fill-row={r.id} className={`border-t ${!r.matched ? "bg-red-50" : ""}`} style={{ background: rowBgOf(r) }}>
+              <td
+                className="border px-1 py-1 text-center"
+                style={{ width: ROW_NUM_W, ...gutterStyle("row", false, rowBgOf(r)) }}
+              >
+                <button
+                  type="button"
+                  className="w-full cursor-pointer select-none rounded px-1 py-0.5 text-[11px] text-slate-500 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  aria-label={`Select row ${r.cleanedSku || r.rawVendorSku}`}
+                  title="Click to select this row — drag or Shift+click to select several"
+                  onPointerDown={(e) => onRowNumPointerDown(r, e)}
+                  onPointerEnter={() => onRowNumEnter(r)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      anchorIdRef.current = r.id;
+                      selectRow(r);
+                    }
+                  }}
+                >
+                  {(page - 1) * pageSize + i + 1}
+                </button>
+              </td>
+              <td
+                className="border px-2 py-1 text-center"
+                style={{ width: CHECK_W, ...gutterStyle("check", false, rowBgOf(r)) }}
+              >
                 <input
                   type="checkbox"
                   aria-label={`Select row ${r.cleanedSku || r.rawVendorSku}`}
@@ -219,7 +431,11 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                   })();
                   const customN9 = c.key === "nearest9" && !!r.nearest9Custom;
                   return (
-                    <td key={c.label} className={`relative border px-1 py-0.5 ${inFill ? "bg-blue-100" : customN9 ? "bg-amber-50" : "bg-emerald-50/40"}`}>
+                    <td
+                      key={c.label}
+                      className={`relative border px-1 py-0.5 ${inFill ? "bg-blue-100" : customN9 ? "bg-amber-50" : "bg-emerald-50/40"}`}
+                      style={stickyStyle(c.key, false, inFill ? "#dbeafe" : customN9 ? "#fffbeb" : "#ecfdf5")}
+                    >
                       <input
                         className="w-full min-w-24 bg-transparent px-1 py-1 pr-4 outline-none focus:bg-white"
                         defaultValue={v ?? ""}
@@ -293,9 +509,9 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     </td>
                   );
                 }
-                return <td key={c.label} className="border px-2 py-1">{v ?? ""}</td>;
+                return <td key={c.label} className="border px-2 py-1" style={stickyStyle(c.key, false, rowBgOf(r))}>{v ?? ""}</td>;
               })}
-              <td className="border px-2 py-1"><Flags r={r} /></td>
+              <td className="border px-2 py-1" style={stickyStyle(FLAGS_COL_KEY, false, rowBgOf(r))}><Flags r={r} /></td>
               <td className="border px-2 py-1"><button className="text-red-600" onClick={() => onDelete(r)}>✕</button></td>
             </tr>
           ))}

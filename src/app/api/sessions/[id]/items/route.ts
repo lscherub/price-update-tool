@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { recalcRow, type CurRow } from "@/lib/recalc";
 import { computeRowsForImport } from "@/lib/lookup";
+import { resolveNearest9 } from "@/lib/nearest9";
 import { DEFAULT_DIVISOR } from "@/lib/pricing";
 import { cuid, loadFileStore, saveFileStore, type ItemRow } from "@/lib/store";
 
@@ -132,6 +133,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const priceIn = str(body.vendorListPriceNew);
   const marginIn = str(body.marginDivisor);
   const notes = String(body.notes ?? "");
+  // Optional Nearest 9 override (same validation as PATCH). It exists so a
+  // deleted row with a custom Nearest 9 can be restored byte-for-byte by Undo;
+  // when it is absent the automatic calculation is used, exactly as before.
+  const nearest9In = str(body.nearest9);
+  if (badNearest9(nearest9In)) return NextResponse.json({ error: "Nearest 9 must be a number" }, { status: 400 });
   if (discountIn !== "") {
     let dec: Decimal;
     try { dec = new Decimal(discountIn.replace(/[%$,]/g, "")); } catch { return NextResponse.json({ error: "Discount must be 0-100" }, { status: 400 }); }
@@ -153,7 +159,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       f = await recalcRow(seed, {
         rawVendorSku, cleanedSku: cleanedSkuIn,
         discount: discountIn, vendorListPriceNew: priceIn || null,
-        marginDivisor: marginIn, notes,
+        marginDivisor: marginIn, notes, nearest9: nearest9In,
       });
     } else {
       // Raw-only: reuse the import pipeline so cleaning + matching are identical.
@@ -172,6 +178,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         nearest9: c.calc.nearest9, nearest9Custom: null, notes,
         isInactive: c.calc.isInactive, matched: c.calc.matched,
       };
+      if (nearest9In !== "") {
+        f.nearest9Custom = nearest9In;
+        f.nearest9 = resolveNearest9(f.nearest9, nearest9In);
+      }
     }
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();

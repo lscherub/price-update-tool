@@ -1,12 +1,36 @@
 "use client";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
-import { PriceGrid, type Item } from "@/components/PriceGrid";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { COLS, PriceGrid, type Item } from "@/components/PriceGrid";
 import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
+import {
+  canRedo, canUndo, EMPTY_HISTORY, pushHistory, redoLabel, takeRedo, takeUndo, undoLabel,
+  type HistoryState,
+} from "@/lib/tableUi";
+
+/**
+ * Field set that re-creates an exact copy of a row through the existing
+ * Add Row endpoint — used when undoing a row deletion. Derived fields (product
+ * details, pricing, flags) are recalculated by the server exactly like on
+ * import, so the restored row matches the original data.
+ */
+function restorePayload(row: Item): Record<string, unknown> {
+  return {
+    rawVendorSku: row.rawVendorSku,
+    // A manually-set Cleaned SKU goes back through the manual path; a derived
+    // one is recomputed from the raw vendor SKU, just like on import.
+    cleanedSku: row.cleanedOverridden || !row.rawVendorSku ? row.cleanedSku : "",
+    discount: row.discount ?? "",
+    vendorListPriceNew: row.vendorListPriceNew ?? "",
+    marginDivisor: row.marginDivisor ?? "",
+    notes: row.notes ?? "",
+    nearest9: row.nearest9Custom ?? "",
+  };
+}
 
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -28,7 +52,16 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [fillBusy, setFillBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
+  // Undo/Redo of table actions (cell edits, fills, add/delete rows). The ref is
+  // the synchronous source of truth; state only drives the buttons/shortcuts.
+  // History is tagged with the price update it belongs to, so switching price
+  // updates simply reads as "nothing to undo" — no reset effect needed.
+  const historyBoxRef = useRef<{ sid: string; state: HistoryState }>({ sid: id, state: EMPTY_HISTORY });
+  const [historyBox, setHistoryBox] = useState<{ sid: string; state: HistoryState }>({ sid: id, state: EMPTY_HISTORY });
+  const histBusyRef = useRef(false);
+  const [histBusy, setHistBusy] = useState(false);
   const pageSize = 200;
+  const history: HistoryState = historyBox.sid === id ? historyBox.state : EMPTY_HISTORY;
 
   const load = useCallback(async () => {
     try {
@@ -105,8 +138,114 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       return next;
     });
   }, [visibleIds]);
+  /** Current history, but only when it belongs to this price update. */
+  const readHistory = useCallback(
+    (): HistoryState => (historyBoxRef.current.sid === id ? historyBoxRef.current.state : EMPTY_HISTORY),
+    [id],
+  );
+
+  const commitHistory = useCallback((next: HistoryState) => {
+    const box = { sid: id, state: next };
+    historyBoxRef.current = box;
+    setHistoryBox(box);
+  }, [id]);
+
+  /** Remember how to reverse (and re-apply) one completed table action. */
+  const recordHistory = useCallback((label: string, undo: () => Promise<void>, redo: () => Promise<void>) => {
+    commitHistory(pushHistory(readHistory(), { label, undo, redo }));
+  }, [commitHistory, readHistory]);
+
+  /** PATCH cells through the existing endpoint (single cell or bulk). */
+  const patchCells = useCallback(async (cells: Record<string, unknown>[]) => {
+    if (!cells.length) return;
+    const r = await fetch(`/api/sessions/${id}/items`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cells.length === 1 ? cells[0] : { items: cells }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(apiErrorText(d, "Could not save that cell."));
+  }, [id]);
+
+  /** Re-create one row through the existing Add Row endpoint; returns its id. */
+  const postRow = useCallback(async (payload: Record<string, unknown>) => {
+    const r = await fetch(`/api/sessions/${id}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(apiErrorText(d, "Could not restore that row."));
+    return ((d as { item?: { id?: string } }).item?.id) ?? "";
+  }, [id]);
+
+  /** Delete rows by id through the existing bulk DELETE endpoint. */
+  const deleteByIds = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const r = await fetch(`/api/sessions/${id}/items`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemIds: ids }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(apiErrorText(d, "Could not delete that row."));
+  }, [id]);
+
+  /** Re-create deleted rows (used by Undo), returning their new ids. */
+  const restoreRows = async (rows: Item[]) => {
+    const ids: string[] = [];
+    for (const row of rows) {
+      const newId = await postRow(restorePayload(row));
+      if (newId) ids.push(newId);
+    }
+    return ids;
+  };
+
+  /** Run the next Undo or Redo entry; every entry re-reads the server state. */
+  const runHistory = useCallback(async (dir: "undo" | "redo") => {
+    if (histBusyRef.current) return;
+    const taken = dir === "undo" ? takeUndo(readHistory()) : takeRedo(readHistory());
+    if (!taken) return;
+    commitHistory(taken.state);
+    histBusyRef.current = true;
+    setHistBusy(true);
+    try {
+      await taken.entry[dir]();
+      toast.success(dir === "undo" ? `Undid: ${taken.entry.label}` : `Redid: ${taken.entry.label}`);
+    } catch (e) {
+      const t = e instanceof Error ? e.message : "";
+      setMsg(t);
+      toast.error(dir === "undo" ? "Undo failed." : "Redo failed.", t || "Could not reach the server.");
+    } finally {
+      histBusyRef.current = false;
+      setHistBusy(false);
+    }
+  }, [toast, readHistory, commitHistory]);
+
+  // Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo — never while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (!e.metaKey && !e.ctrlKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        if (!canUndo(readHistory())) return;
+        e.preventDefault();
+        void runHistory("undo");
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        if (!canRedo(readHistory())) return;
+        e.preventDefault();
+        void runHistory("redo");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [runHistory, readHistory]);
+
   const editCell = async (item: Item, key: string, value: string) => {
     if (savingCell) return;
+    const before = (((item as unknown as Record<string, string | null>)[key] ?? "") as string);
     setSavingCell(`${item.id}:${key}`);
     try {
       const r = await fetch(`/api/sessions/${id}/items`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.id, [key]: value }) });
@@ -116,6 +255,14 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         setMsg(t); toast.error("Could not save that cell.", t); return;
       }
       setMsg("");
+      if (before !== value) {
+        const label = COLS.find((c) => c.key === key)?.label ?? key;
+        recordHistory(
+          `Edit ${label}`,
+          async () => { await patchCells([{ id: item.id, [key]: before }]); await load(); },
+          async () => { await patchCells([{ id: item.id, [key]: value }]); await load(); },
+        );
+      }
       await load();
       toast.success("Row saved.");
     } catch {
@@ -134,6 +281,10 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     if (fillBusy || savingCell) return;
     const targets = [item.id, ...afterIds.filter((x) => x !== item.id)];
     if (!targets.length) return;
+    const beforeCells = targets
+      .map((tid) => items.find((x) => x.id === tid))
+      .filter((x): x is Item => x !== undefined)
+      .map((x) => ({ id: x.id, value: (((x as unknown as Record<string, string | null>)[key] ?? "") as string) }));
     setFillBusy(true);
     try {
       const r = await fetch(`/api/sessions/${id}/items`, {
@@ -147,6 +298,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         setMsg(t); toast.error("Could not fill the selected cells.", t); return;
       }
       setMsg("");
+      const label = COLS.find((c) => c.key === key)?.label ?? key;
+      recordHistory(
+        `Fill ${label} down`,
+        async () => { await patchCells(beforeCells.map((b) => ({ id: b.id, [key]: b.value }))); await load(); },
+        async () => { await patchCells(targets.map((tid) => ({ id: tid, [key]: value }))); await load(); },
+      );
       await load();
       toast.success(`Copied to ${targets.length} row${targets.length === 1 ? "" : "s"}.`);
     } catch {
@@ -176,6 +333,16 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       }
       setMsg("");
       setShowAdd(false);
+      const newId = (d as { item?: { id?: string } })?.item?.id;
+      if (newId) {
+        const payload = { ...v };
+        const holder = { id: newId };
+        recordHistory(
+          "Add row",
+          async () => { await deleteByIds([holder.id]); holder.id = ""; await load(); },
+          async () => { holder.id = await postRow(payload); await load(); },
+        );
+      }
       await load();
       toast.success("Product added.");
     } catch {
@@ -185,7 +352,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
-  const removeRow = async (row: { id: string }) => {
+  const removeRow = async (row: Item) => {
     if (savingCell) return;
     setSavingCell(row.id);
     try {
@@ -197,6 +364,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       }
       setMsg("");
       setSelected((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
+      const holder = { id: row.id };
+      recordHistory(
+        `Delete ${row.cleanedSku || row.rawVendorSku || "row"}`,
+        async () => { holder.id = await postRow(restorePayload(row)); await load(); },
+        async () => { await deleteByIds([holder.id]); await load(); },
+      );
       await load();
       toast.success("Row deleted.");
     } catch {
@@ -208,6 +381,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
 
   const deleteSelection = async () => {
     if (bulkBusy || selected.size === 0) return;
+    const snaps = items.filter((x) => selected.has(x.id));
     setBulkBusy(true);
     try {
       const r = await fetch(`/api/sessions/${id}/items`, {
@@ -224,6 +398,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       setMsg("");
       setSelected(new Set());
       setConfirmBulk(false);
+      const holder = { ids: snaps.map((s) => s.id) };
+      recordHistory(
+        `Delete ${n} row${n === 1 ? "" : "s"}`,
+        async () => { holder.ids = await restoreRows(snaps); await load(); },
+        async () => { await deleteByIds(holder.ids); await load(); },
+      );
       await load();
       toast.success(`${n} row${n === 1 ? "" : "s"} deleted.`);
     } catch {
@@ -307,6 +487,24 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           className="rounded border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800"
         >
           + Add Row
+        </button>
+        <button
+          type="button"
+          onClick={() => void runHistory("undo")}
+          disabled={!canUndo(history) || histBusy}
+          title={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
+          className="rounded border px-3 py-1.5 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ↶ Undo
+        </button>
+        <button
+          type="button"
+          onClick={() => void runHistory("redo")}
+          disabled={!canRedo(history) || histBusy}
+          title={canRedo(history) ? `Redo ${redoLabel(history)} (Ctrl/Cmd+Shift+Z)` : "Nothing to redo"}
+          className="rounded border px-3 py-1.5 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ↷ Redo
         </button>
         <input className="min-w-60 flex-1 rounded border px-3 py-1.5" placeholder="Search..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
