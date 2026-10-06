@@ -24,3 +24,32 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Rendered Markdown (product Notes cells, preview pane, Price Sheet Notes).
+ * Scoped under .md-doc so table/global styles are untouched. */
+.md-doc { font-size: 12px; line-height: 1.45; color: #0f172a; overflow-wrap: anywhere; }
+.md-doc p { margin: 0 0 4px; }
+.md-doc p:last-child { margin-bottom: 0; }
+.md-doc h1, .md-doc h2, .md-doc h3, .md-doc h4, .md-doc h5, .md-doc h6 {
+  font-weight: 700; line-height: 1.3; margin: 6px 0 4px;
+}
+.md-doc h1 { font-size: 15px; }
+.md-doc h2 { font-size: 14px; }
+.md-doc h3, .md-doc h4, .md-doc h5, .md-doc h6 { font-size: 13px; }
+.md-doc ul, .md-doc ol { margin: 2px 0 6px; padding-left: 18px; }
+.md-doc ul { list-style: disc; }
+.md-doc ol { list-style: decimal; }
+.md-doc li { margin: 1px 0; }
+.md-doc a { color: #1d4ed8; text-decoration: underline; }
+.md-doc code {
+  font-family: ui-monospace, monospace; font-size: 11px;
+  background: #f1f5f9; border-radius: 3px; padding: 0 4px;
+}
+.md-doc pre {
+  background: #f1f5f9; border-radius: 6px; padding: 6px 8px;
+  overflow: auto; margin: 4px 0;
+}
+.md-doc pre code { background: none; padding: 0; }
+/* Compact (table-cell) rendering: clamp long notes, hide big tables. */
+.md-doc-compact { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.md-doc-compact table { display: none; }

@@ -2,6 +2,8 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLS, PriceGrid, type Item } from "@/components/PriceGrid";
 import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
+import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
+import { applyPinnedOrder } from "@/lib/markdown";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
@@ -67,6 +69,20 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
+  const [sheetNotes, setSheetNotes] = useState("");
+  const [sheetNotesBusy, setSheetNotesBusy] = useState(false);
+  const [sheetNotesEditing, setSheetNotesEditing] = useState(false);
+  const [sheetNotesDraft, setSheetNotesDraft] = useState("");
+  const [noteRow, setNoteRow] = useState<Item | null>(null);
+  const [noteBusy, setNoteBusy] = useState(false);
+  /**
+   * Pinned visual row order ("stay where you are" after a save).
+   * Set by fill-down / notes saves from the pre-save displayed order; applied
+   * to freshly loaded rows so the user's working set never rearranges. Never
+   * changes sorting itself — cleared on any explicit sort/filter/search change
+   * or row add/delete, when re-sorting is the correct behaviour.
+   */
+  const [pinnedOrder, setPinnedOrder] = useState<string[] | null>(null);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
   const [msg, setMsg] = useState("");
@@ -101,7 +117,14 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setMsg(apiErrorText(d, "Could not load this price update.")); setItems([]); return; }
       setMsg("");
-      setItems(d.items ?? []); setName(d.session?.name ?? "");
+      let next: Item[] = d.items ?? [];
+      // A save-triggered pin ("stay where you are") wins over re-sorting: keep
+      // the pre-save visual order with fresh values merged in.
+      setPinnedOrder((pin) => {
+        if (pin && pin.length) next = applyPinnedOrder(next, pin);
+        return pin;
+      });
+      setItems(next); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? ""));
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
     }
@@ -115,7 +138,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         const d = await r.json().catch(() => ({}));
         if (!active) return;
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load this price update.")); setItems([]); return; }
-        setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? "");
+        setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? ""));
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });
     return () => { active = false; };
@@ -133,9 +156,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     if (filter === "missing") rows = rows.filter((r) => !r.vendorListPriceNew);
     if (filter === "custom") rows = rows.filter((r) => !!r.nearest9Custom && String(r.nearest9Custom).trim() !== "");
     // Excel-style sort over the FULL filtered set (not just the visible page),
-    // using actual table values via the shared comparator.
-    return sortItems(rows, sortKey, sortDir);
-  }, [items, q, filter, sortKey, sortDir]);
+    // using actual table values via the shared comparator. A save-triggered
+    // pin ("stay where you are", e.g. after a fill-down) keeps the pre-save
+    // visual order instead — it never changes the sort itself.
+    const sorted = sortItems(rows, sortKey, sortDir);
+    return pinnedOrder && pinnedOrder.length ? applyPinnedOrder(sorted, pinnedOrder) : sorted;
+  }, [items, q, filter, sortKey, sortDir, pinnedOrder]);
   const lowerCount = useMemo(
     () => lowerCandidates(items.filter((r) => selected.has(r.id))).length,
     [items, selected],
@@ -149,6 +175,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     } else {
       setSortKey(key); setSortDir(dir);
     }
+    setPinnedOrder(null); // explicit re-sort replaces any save pin
     setPage(1);
   }, []);
 
@@ -284,6 +311,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     if (savingCell) return;
     const before = (((item as unknown as Record<string, string | null>)[key] ?? "") as string);
     setSavingCell(`${item.id}:${key}`);
+    // Notes saves must not rearrange the working set either.
+    if (key === "notes") setPinnedOrder(visibleIds);
     try {
       const r = await fetch(`/api/sessions/${id}/items`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.id, [key]: value }) });
       const d = await r.json().catch(() => ({}));
@@ -306,6 +335,69 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       toast.error("Could not save that cell.", "Could not reach the server while saving that cell.");
     } finally {
       setSavingCell(null);
+    }
+  };
+
+  /**
+   * Save a product note from the Markdown popup. Reuses the exact same
+   * `editCell("notes")` PATCH + history path as the old inline editor, so
+   * storage, recalc, flags, filters, CSV export and the Store Count PDF are
+   * unchanged. The order pin keeps the working set in place (never resets
+   * sort/filter/page/selection), and the modal closes on success.
+   */
+  const saveNoteRow = async (value: string) => {
+    if (!noteRow || noteBusy) return;
+    const before = noteRow.notes ?? "";
+    if (value === before) { setNoteRow(null); return; }
+    setNoteBusy(true);
+    setPinnedOrder(visibleIds);
+    try {
+      await patchCells([{ id: noteRow.id, notes: value }]);
+      setMsg("");
+      recordHistory(
+        "Edit Notes",
+        async () => { await patchCells([{ id: noteRow.id, notes: before }]); await load(); },
+        async () => { await patchCells([{ id: noteRow.id, notes: value }]); await load(); },
+      );
+      setNoteRow(null);
+      await load();
+      toast.success("Note saved.");
+    } catch {
+      toast.error("Could not save that note.", "Could not reach the server while saving that note.");
+    } finally {
+      setNoteBusy(false);
+    }
+  };
+
+  /**
+   * Save the Price Sheet Notes (whole-update notes). Uses the existing session
+   * PATCH `notes` field — the same storage that already backs the session on
+   * both the Prisma and file-store backends — so no migration or new table.
+   * Updates local state only: the items table is never reloaded, so sort,
+   * filter, page, and selection cannot move.
+   */
+  const saveSheetNotes = async () => {
+    if (sheetNotesBusy) return;
+    setSheetNotesBusy(true);
+    try {
+      const r = await fetch(`/api/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: sheetNotesDraft }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not save the price sheet notes.");
+        setMsg(t); toast.error("Could not save the price sheet notes.", t); return;
+      }
+      setSheetNotes(sheetNotesDraft);
+      setSheetNotesEditing(false);
+      setMsg("");
+      toast.success("Price sheet notes saved.");
+    } catch {
+      toast.error("Could not save the price sheet notes.", "Could not reach the server while saving.");
+    } finally {
+      setSheetNotesBusy(false);
     }
   };
 
@@ -375,6 +467,10 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       .map((tid) => items.find((x) => x.id === tid))
       .filter((x): x is Item => x !== undefined)
       .map((x) => ({ id: x.id, value: (((x as unknown as Record<string, string | null>)[key] ?? "") as string) }));
+    // Snapshot the CURRENT visual order before saving, so the refresh keeps
+    // the user's working set in exactly the same positions. Sort/filter/page
+    // state is left untouched.
+    setPinnedOrder(visibleIds);
     setFillBusy(true);
     try {
       const r = await fetch(`/api/sessions/${id}/items`, {
@@ -423,6 +519,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       }
       setMsg("");
       setShowAdd(false);
+      setPinnedOrder(null); // membership changed: re-sort normally
       const newId = (d as { item?: { id?: string } })?.item?.id;
       if (newId) {
         const payload = { ...v };
@@ -454,6 +551,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       }
       setMsg("");
       setSelected((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
+      setPinnedOrder(null); // membership changed: re-sort normally
       const holder = { id: row.id };
       recordHistory(
         `Delete ${row.cleanedSku || row.rawVendorSku || "row"}`,
@@ -488,6 +586,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       setMsg("");
       setSelected(new Set());
       setConfirmBulk(false);
+      setPinnedOrder(null); // membership changed: re-sort normally
       const holder = { ids: snaps.map((s) => s.id) };
       recordHistory(
         `Delete ${n} row${n === 1 ? "" : "s"}`,
@@ -596,8 +695,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         >
           ↷ Redo
         </button>
-        <input className="min-w-60 flex-1 rounded border px-3 py-1.5" placeholder="Search..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-        <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
+        <input className="min-w-60 flex-1 rounded border px-3 py-1.5" placeholder="Search..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); setPinnedOrder(null); }} />
+        <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); setPinnedOrder(null); }}>
           <option value="all">All rows</option>
           <option value="unmatched">Unmatched</option>
           <option value="notfound">Not Found</option>
@@ -642,6 +741,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
         selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible}
         sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
+        onOpenNotes={(item) => setNoteRow(item)}
       />
       {showAdd && (
         <AddItemDialog busy={addBusy} onClose={() => { if (!addBusy) setShowAdd(false); }} onSubmit={addItem} />
@@ -709,6 +809,63 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         <span>Page {page} ({filtered.length} rows)</span>
         <button className="rounded border px-3 py-1" onClick={() => setPage(page + 1)}>Next</button>
       </div>
+      {noteRow && (
+        <NotesModal
+          title={`Notes — ${noteRow.productName || noteRow.cleanedSku || noteRow.rawVendorSku || "product"}`}
+          subtitle="Markdown supported: bold, italic, headings, lists, links, tables."
+          initial={noteRow.notes ?? ""}
+          busy={noteBusy}
+          saveLabel="Save"
+          onSave={(v) => void saveNoteRow(v)}
+          onClose={() => { if (!noteBusy) setNoteRow(null); }}
+        />
+      )}
+      <section aria-label="Price Sheet Notes" className="rounded-xl border bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold">Price Sheet Notes</h2>
+          {!sheetNotesEditing && (
+            <button
+              type="button"
+              className="rounded border px-3 py-1.5 text-sm font-semibold text-slate-700"
+              onClick={() => { setSheetNotesDraft(sheetNotes); setSheetNotesEditing(true); }}
+            >
+              {sheetNotes ? "Edit" : "Add notes"}
+            </button>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-slate-600">
+          General notes for this entire price update (e.g. vendor comparisons). Markdown supported — including tables — with no changes to the table structure.
+        </p>
+        {sheetNotesEditing ? (
+          <div className="mt-3">
+            <MarkdownEditor value={sheetNotesDraft} onChange={setSheetNotesDraft} />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded border px-3 py-1.5 text-sm disabled:opacity-60"
+                disabled={sheetNotesBusy}
+                onClick={() => setSheetNotesEditing(false)}
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                busy={sheetNotesBusy}
+                busyLabel="Saving..."
+                onClick={saveSheetNotes}
+                className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                Save Notes
+              </LoadingButton>
+            </div>
+          </div>
+        ) : sheetNotes ? (
+          <div className="mt-3 rounded border bg-slate-50 px-3 py-2">
+            <MarkdownDoc source={sheetNotes} />
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-slate-400">No price sheet notes yet. Use “Add notes” to record vendor comparisons or general remarks.</p>
+        )}
+      </section>
     </div>
   );
 }

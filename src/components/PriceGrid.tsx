@@ -3,6 +3,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
 import { freezeColumn, frozenLeft, isFrozen, unfreezeColumn } from "@/lib/tableUi";
+import { markdownExcerpt } from "@/lib/markdown";
+import { MarkdownDoc } from "./MarkdownEditor";
 
 export type Item = {
   id: string; rawVendorSku: string; cleanedSku: string; cleanedOverridden: boolean;
@@ -75,7 +77,7 @@ export function Flags({ r }: { r: Item }) {
   );
 }
 
-export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll, sortKey, sortDir, onSort, onFillDown }: {
+export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll, sortKey, sortDir, onSort, onFillDown, onOpenNotes }: {
   rows: Item[]; page: number; pageSize: number;
   onEdit: (item: Item, key: string, value: string) => void;
   onDelete: (item: Item) => void;
@@ -86,6 +88,8 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   sortDir: SortDir | null;
   onSort: (key: SortableItemKey, dir: SortDir | null) => void;
   onFillDown: (item: Item, key: string, value: string, afterIds: string[]) => void;
+  /** Open the Markdown Notes popup for a row (Notes cells only). */
+  onOpenNotes?: (item: Item) => void;
 }) {
   const slice = rows.slice((page - 1) * pageSize, page * pageSize);
   const sliceSelected = slice.filter((r) => selected.has(r.id)).length;
@@ -423,6 +427,31 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
               {COLS.map((c) => {
                 const v = ((r as unknown as Record<string, string | null>)[c.key] ?? "") as string;
                 if (c.editable) {
+                  // Notes open the Markdown editor popup instead of an inline
+                  // input; everything else keeps its existing inline editor.
+                  if (c.key === "notes") {
+                    return (
+                      <td
+                        key={c.label}
+                        className="relative max-w-56 border bg-emerald-50/40 px-1 py-0.5"
+                        style={stickyStyle(c.key, false, "#ecfdf5")}
+                      >
+                        <button
+                          type="button"
+                          className="block w-full px-1 py-1 text-left outline-none hover:bg-white focus:bg-white"
+                          title={v ? "Open note (Markdown)" : "Add note (Markdown)"}
+                          aria-label={`Notes for ${r.cleanedSku || r.rawVendorSku}${v ? `: ${markdownExcerpt(v, 80)}` : " (empty)"}`}
+                          onClick={() => onOpenNotes?.(r)}
+                        >
+                          {v ? (
+                            <MarkdownDoc source={v} compact />
+                          ) : (
+                            <span className="text-slate-300">＋ note</span>
+                          )}
+                        </button>
+                      </td>
+                    );
+                  }
                   const rowIdx = slice.findIndex((x) => x.id === r.id);
                   const inFill = fill && fill.key === c.key && (() => {
                     const from = slice.findIndex((x) => x.id === fill.rowId);
