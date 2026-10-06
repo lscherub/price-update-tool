@@ -53,3 +53,7 @@ body {
 /* Compact (table-cell) rendering: clamp long notes, hide big tables. */
 .md-doc-compact { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .md-doc-compact table { display: none; }
+/* Wrapped (table-cell) rendering: full Markdown flows with column/row size. */
+.md-doc:not(.md-doc-compact) { white-space: normal; overflow-wrap: anywhere; }
+.md-doc:not(.md-doc-compact) table { display: table; max-width: 100%; }
+.md-doc:not(.md-doc-compact) pre { max-width: 100%; white-space: pre-wrap; }

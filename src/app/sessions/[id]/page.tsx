@@ -742,6 +742,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible}
         sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
         onOpenNotes={(item) => setNoteRow(item)}
+        layoutKey={id}
       />
       {showAdd && (
         <AddItemDialog busy={addBusy} onClose={() => { if (!addBusy) setShowAdd(false); }} onSubmit={addItem} />
