@@ -49,6 +49,7 @@ function isCustomRow(r: Item): boolean {
 /**
  * Rows eligible for "Set Lower Prices to Old Retail": matched rows with an
  * automatically calculated Nearest 9 that is lower than Old Retail Price.
+ * Callers pass only the user-selected rows, so only checked rows can change.
  */
 function lowerCandidates(rows: Item[]): Item[] {
   return rows.filter((r) => {
@@ -135,7 +136,10 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     // using actual table values via the shared comparator.
     return sortItems(rows, sortKey, sortDir);
   }, [items, q, filter, sortKey, sortDir]);
-  const lowerCount = useMemo(() => lowerCandidates(items).length, [items]);
+  const lowerCount = useMemo(
+    () => lowerCandidates(items.filter((r) => selected.has(r.id))).length,
+    [items, selected],
+  );
   const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
 
   const changeSort = useCallback((key: SortableItemKey, dir: SortDir | null) => {
@@ -306,14 +310,16 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   };
 
   /**
-   * Bulk action: set Old Retail Price as the custom Nearest 9 override for
-   * every eligible row (automatic Nearest 9 lower than Old Retail). Uses the
-   * exact same `nearest9` PATCH path as a manual cell edit, so the server
-   * stores a real custom override and the Custom badge/flag/filter behave
-   * identically to a manually typed value.
+   * Bulk action: set Old Retail Price as the custom Nearest 9 override, but
+   * ONLY for checked rows that qualify (automatic Nearest 9 lower than Old
+   * Retail). Selected rows that do not meet the condition are left untouched:
+   * no custom override, no flag change. Uses the exact same `nearest9` PATCH
+   * path as a manual cell edit, so the server stores a real custom override
+   * and the Custom badge/flag/filter behave identically to a manually typed
+   * value. Checkbox selection is preserved.
    */
   const applyLowerToOld = async () => {
-    const targets = lowerCandidates(items);
+    const targets = lowerCandidates(items.filter((r) => selected.has(r.id)));
     if (lowerBusy || !targets.length) return;
     setLowerBusy(true);
     try {
@@ -347,8 +353,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       );
       setConfirmLower(false);
       await load();
-      setMsg(`Set Old Retail Price as custom Nearest 9 for ${count} row${count === 1 ? "" : "s"}.`);
-      toast.success(`Updated ${count} row${count === 1 ? "" : "s"}.`, "Old Retail Price saved as custom Nearest 9 where Nearest 9 was lower.");
+      setMsg(`Set Old Retail Price as custom Nearest 9 for ${count} selected product${count === 1 ? "" : "s"}.`);
+      toast.success(`Updated ${count} product${count === 1 ? "" : "s"}.`, "Old Retail Price saved as custom Nearest 9 for the qualifying selected rows.");
     } catch {
       toast.error("Could not apply the bulk change.", "Could not reach the server while applying the bulk change.");
     } finally {
@@ -603,16 +609,22 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         <LoadingButton
           busy={lowerBusy}
           busyLabel="Applying..."
-          disabled={lowerCount === 0}
+          disabled={selected.size === 0}
           onClick={() => setConfirmLower(true)}
           title={
-            lowerCount === 0
-              ? "No rows have an automatic Nearest 9 lower than Old Retail Price"
-              : `Set Old Retail Price as custom Nearest 9 for ${lowerCount} row${lowerCount === 1 ? "" : "s"}`
+            selected.size === 0
+              ? "Select rows with the checkboxes first"
+              : lowerCount === 0
+                ? "None of the selected products have a lower Nearest 9 price."
+                : `Set Old Retail Price as the Custom Nearest 9 for ${lowerCount} selected product${lowerCount === 1 ? "" : "s"}`
           }
           className="rounded border border-violet-300 bg-violet-50 px-3 py-1.5 font-semibold text-violet-800 disabled:opacity-50"
         >
-          {lowerCount > 0 ? `Set Lower Prices to Old Retail (${lowerCount})` : "Set Lower Prices to Old Retail"}
+          {selected.size > 0 && lowerCount > 0
+            ? `Set Lower Prices to Old Retail (${lowerCount} of ${selected.size} selected)`
+            : selected.size > 0
+              ? `Set Lower Prices to Old Retail (${selected.size} selected)`
+              : "Set Lower Prices to Old Retail"}
         </LoadingButton>
         <LoadingButton
           busy={bulkBusy}
@@ -656,23 +668,38 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           </div>
         </div>
       )}
-      {confirmLower && (
+      {confirmLower && selected.size > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm set lower prices to old retail">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
             <h2 className="text-lg font-bold">Set Lower Prices to Old Retail?</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Set the Old Retail Price as the custom Nearest 9 for {lowerCount} item{lowerCount === 1 ? "" : "s"} where the current Nearest 9 is lower?
-            </p>
-            <p className="mt-2 text-sm text-slate-600">
-              Each row keeps a real custom Nearest 9 override (shown with the existing Custom label), and this can be undone with Undo.
-            </p>
+            {lowerCount > 0 ? (
+              <>
+                <p className="mt-2 text-sm text-slate-600">
+                  Set Old Retail Price as the Custom Nearest 9 for {lowerCount} selected product{lowerCount === 1 ? "" : "s"}?
+                </p>
+                {selected.size !== lowerCount && (
+                  <p className="mt-2 text-sm text-slate-600">
+                    Only the selected rows where the automatic Nearest 9 is lower than Old Retail Price will change. The other {selected.size - lowerCount} selected row{selected.size - lowerCount === 1 ? "" : "s"} will stay unchanged.
+                  </p>
+                )}
+                <p className="mt-2 text-sm text-slate-600">
+                  Each changed row keeps a real custom Nearest 9 override (shown with the existing Custom label), and this can be undone with Undo.
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">
+                None of the selected products have a lower Nearest 9 price.
+              </p>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={lowerBusy} onClick={() => setConfirmLower(false)}>
                 Cancel
               </button>
-              <LoadingButton busy={lowerBusy} busyLabel="Applying..." onClick={applyLowerToOld} className="rounded bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
-                Apply
-              </LoadingButton>
+              {lowerCount > 0 && (
+                <LoadingButton busy={lowerBusy} busyLabel="Applying..." onClick={applyLowerToOld} className="rounded bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
+                  Apply
+                </LoadingButton>
+              )}
             </div>
           </div>
         </div>
