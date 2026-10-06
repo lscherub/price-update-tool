@@ -32,6 +32,35 @@ function restorePayload(row: Item): Record<string, unknown> {
   };
 }
 
+/** Numeric value of a price string, or null when missing/non-numeric. */
+function toNum(v: string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().replace(/[$,%\s]/g, "");
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** True when the row already has a custom (manual) Nearest 9 override. */
+function isCustomRow(r: Item): boolean {
+  return !!r.nearest9Custom && String(r.nearest9Custom).trim() !== "";
+}
+
+/**
+ * Rows eligible for "Set Lower Prices to Old Retail": matched rows with an
+ * automatically calculated Nearest 9 that is lower than Old Retail Price.
+ */
+function lowerCandidates(rows: Item[]): Item[] {
+  return rows.filter((r) => {
+    if (!r.matched) return false;
+    if (isCustomRow(r)) return false;
+    const n9 = toNum(r.nearest9);
+    const old = toNum(r.oldRetailPrice);
+    if (n9 === null || old === null) return false;
+    return n9 < old;
+  });
+}
+
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const toast = useToast();
@@ -47,6 +76,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmLower, setConfirmLower] = useState(false);
+  const [lowerBusy, setLowerBusy] = useState(false);
   const [sortKey, setSortKey] = useState<SortableItemKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir | null>(null);
   const [fillBusy, setFillBusy] = useState(false);
@@ -99,10 +130,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     if (filter === "changed") rows = rows.filter((r) => r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice);
     if (filter === "inactive") rows = rows.filter((r) => r.isInactive);
     if (filter === "missing") rows = rows.filter((r) => !r.vendorListPriceNew);
+    if (filter === "custom") rows = rows.filter((r) => !!r.nearest9Custom && String(r.nearest9Custom).trim() !== "");
     // Excel-style sort over the FULL filtered set (not just the visible page),
     // using actual table values via the shared comparator.
     return sortItems(rows, sortKey, sortDir);
   }, [items, q, filter, sortKey, sortDir]);
+  const lowerCount = useMemo(() => lowerCandidates(items).length, [items]);
   const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
 
   const changeSort = useCallback((key: SortableItemKey, dir: SortDir | null) => {
@@ -269,6 +302,57 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       toast.error("Could not save that cell.", "Could not reach the server while saving that cell.");
     } finally {
       setSavingCell(null);
+    }
+  };
+
+  /**
+   * Bulk action: set Old Retail Price as the custom Nearest 9 override for
+   * every eligible row (automatic Nearest 9 lower than Old Retail). Uses the
+   * exact same `nearest9` PATCH path as a manual cell edit, so the server
+   * stores a real custom override and the Custom badge/flag/filter behave
+   * identically to a manually typed value.
+   */
+  const applyLowerToOld = async () => {
+    const targets = lowerCandidates(items);
+    if (lowerBusy || !targets.length) return;
+    setLowerBusy(true);
+    try {
+      // Remember prior custom values (all blank here) so Undo restores them.
+      const prev = new Map(targets.map((t) => [t.id, t.nearest9Custom ?? null]));
+      const applyPayload = targets.map((t) => ({ id: t.id, nearest9: t.oldRetailPrice ?? "" }));
+      const undoPayload = targets.map((t) => ({ id: t.id, nearest9: prev.get(t.id) ?? "" }));
+      // Chunked: the bulk PATCH endpoint accepts at most 1000 rows per request.
+      const applyChunked = async (payload: { id: string; nearest9: string }[]) => {
+        for (let i = 0; i < payload.length; i += 500) {
+          await patchCells(payload.slice(i, i + 500));
+        }
+      };
+      try {
+        await applyChunked(applyPayload);
+      } catch {
+        const t = "Could not apply the bulk change.";
+        setMsg(t); toast.error("Could not apply the bulk change.", t); return;
+      }
+      const count = targets.length;
+      recordHistory(
+        `Set Lower Prices to Old Retail (${count})`,
+        async () => {
+          await applyChunked(undoPayload);
+          await load();
+        },
+        async () => {
+          await applyChunked(applyPayload);
+          await load();
+        },
+      );
+      setConfirmLower(false);
+      await load();
+      setMsg(`Set Old Retail Price as custom Nearest 9 for ${count} row${count === 1 ? "" : "s"}.`);
+      toast.success(`Updated ${count} row${count === 1 ? "" : "s"}.`, "Old Retail Price saved as custom Nearest 9 where Nearest 9 was lower.");
+    } catch {
+      toast.error("Could not apply the bulk change.", "Could not reach the server while applying the bulk change.");
+    } finally {
+      setLowerBusy(false);
     }
   };
 
@@ -514,7 +598,22 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           <option value="changed">Price Changed</option>
           <option value="inactive">Inactive</option>
           <option value="missing">Vendor price missing</option>
+          <option value="custom">Custom</option>
         </select>
+        <LoadingButton
+          busy={lowerBusy}
+          busyLabel="Applying..."
+          disabled={lowerCount === 0}
+          onClick={() => setConfirmLower(true)}
+          title={
+            lowerCount === 0
+              ? "No rows have an automatic Nearest 9 lower than Old Retail Price"
+              : `Set Old Retail Price as custom Nearest 9 for ${lowerCount} row${lowerCount === 1 ? "" : "s"}`
+          }
+          className="rounded border border-violet-300 bg-violet-50 px-3 py-1.5 font-semibold text-violet-800 disabled:opacity-50"
+        >
+          {lowerCount > 0 ? `Set Lower Prices to Old Retail (${lowerCount})` : "Set Lower Prices to Old Retail"}
+        </LoadingButton>
         <LoadingButton
           busy={bulkBusy}
           busyLabel="Deleting..."
@@ -552,6 +651,27 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               </button>
               <LoadingButton busy={bulkBusy} busyLabel="Deleting..." onClick={deleteSelection} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
                 Delete permanently
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmLower && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm set lower prices to old retail">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-bold">Set Lower Prices to Old Retail?</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Set the Old Retail Price as the custom Nearest 9 for {lowerCount} item{lowerCount === 1 ? "" : "s"} where the current Nearest 9 is lower?
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Each row keeps a real custom Nearest 9 override (shown with the existing Custom label), and this can be undone with Undo.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={lowerBusy} onClick={() => setConfirmLower(false)}>
+                Cancel
+              </button>
+              <LoadingButton busy={lowerBusy} busyLabel="Applying..." onClick={applyLowerToOld} className="rounded bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
+                Apply
               </LoadingButton>
             </div>
           </div>

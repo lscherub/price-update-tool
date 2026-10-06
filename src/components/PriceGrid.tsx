@@ -66,6 +66,9 @@ export function Flags({ r }: { r: Item }) {
       {!r.matched && <span className="mr-1 rounded bg-red-600 px-1.5 py-0.5 text-white">Not Found</span>}
       {r.isInactive && <span className="mr-1 rounded bg-amber-200 px-1.5 py-0.5">Inactive</span>}
       {r.cleanedOverridden && <span className="mr-1 rounded bg-blue-100 px-1.5 py-0.5">Manual SKU</span>}
+      {!!r.nearest9Custom && String(r.nearest9Custom).trim() !== "" && (
+        <span className="mr-1 rounded bg-violet-100 px-1.5 py-0.5">Custom</span>
+      )}
       {r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice && <span className="rounded bg-emerald-100 px-1.5 py-0.5">Changed</span>}
       {r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 === r.oldRetailPrice && <span className="text-slate-400">No change</span>}
     </span>

@@ -33,6 +33,8 @@ export function flagsText(r: ItemLike): string {
   if (!r.matched) parts.push("Not Found");
   if (r.isInactive) parts.push("Inactive");
   if (r.cleanedOverridden) parts.push("Manual SKU");
+  const custom = r.nearest9Custom === null || r.nearest9Custom === undefined ? "" : String(r.nearest9Custom).trim();
+  if (custom) parts.push("Custom");
   const n9 = r.nearest9 === null || r.nearest9 === undefined ? "" : String(r.nearest9);
   const old = r.oldRetailPrice === null || r.oldRetailPrice === undefined ? "" : String(r.oldRetailPrice);
   if (r.matched && n9 && old) parts.push(n9 !== old ? "Changed" : "No change");
