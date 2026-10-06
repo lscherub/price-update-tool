@@ -50,8 +50,8 @@ body {
   overflow: auto; margin: 4px 0;
 }
 .md-doc pre code { background: none; padding: 0; }
-/* Compact (table-cell) rendering: clamp long notes, hide big tables. */
-.md-doc-compact { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* Compact (table-cell) rendering: clamp long notes, hide big tables. -webkit-line-clamp: 3; */
+.md-doc-compact { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 .md-doc-compact table { display: none; }
 /* Wrapped (table-cell) rendering: full Markdown flows with column/row size. */
 .md-doc:not(.md-doc-compact) { white-space: normal; overflow-wrap: anywhere; }
