@@ -69,6 +69,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
+  const [sheetStatus, setSheetStatus] = useState("");
+  const [statusBusy, setStatusBusy] = useState(false);
   const [sheetNotes, setSheetNotes] = useState("");
   const [sheetNotesBusy, setSheetNotesBusy] = useState(false);
   const [sheetNotesEditing, setSheetNotesEditing] = useState(false);
@@ -128,7 +130,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         if (pin && pin.length) next = applyPinnedOrder(next, pin);
         return pin;
       });
-      setItems(next); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? ""));
+      setItems(next); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
     }
@@ -142,7 +144,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         const d = await r.json().catch(() => ({}));
         if (!active) return;
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load this price update.")); setItems([]); return; }
-        setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? ""));
+        setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });
     return () => { active = false; };
@@ -622,6 +624,35 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Manually update the review status using the existing status field. */
+  const changeStatus = async (nextStatus: string) => {
+    if (!nextStatus || nextStatus === sheetStatus || statusBusy) return;
+    const prev = sheetStatus;
+    setSheetStatus(nextStatus);
+    setStatusBusy(true);
+    try {
+      const r = await fetch(`/api/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setSheetStatus(prev);
+        toast.error("Could not update status.", apiErrorText(d, "Could not update status."));
+        return;
+      }
+      const saved = String(d.session?.status ?? nextStatus);
+      setSheetStatus(saved);
+      toast.success(`Status updated to ${saved}.`);
+    } catch {
+      setSheetStatus(prev);
+      toast.error("Could not update status.", "Could not reach the server. Check your connection and try again.");
+    } finally {
+      setStatusBusy(false);
+    }
+  };
+
   /** Fetch an export, save it to disk, and report success/failure. */
   const download = async (kind: "pos" | "storecount") => {
     if (exportBusy) return;
@@ -639,6 +670,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       a.download = kind === "pos" ? `pos-export-${id}.csv` : `storecount-${id}.csv`;
       a.click();
       URL.revokeObjectURL(a.href);
+      if (kind === "pos") setSheetStatus("Exported");
       toast.success(kind === "pos" ? "POS CSV downloaded." : "Store Count CSV downloaded.");
     } catch {
       toast.error("Export failed.", "Could not reach the server while exporting.");
@@ -677,7 +709,24 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">{name || "Price Update"}</h1>
-        <div className="flex flex-wrap gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 rounded border bg-white px-3 py-1.5 text-slate-900">
+            <span className="font-semibold">Status:</span>
+            <select
+              aria-label="Review status"
+              value={sheetStatus}
+              disabled={statusBusy}
+              onChange={(e) => void changeStatus(e.target.value)}
+              className="bg-white disabled:opacity-60"
+            >
+              {sheetStatus && !["Ready", "Being Reviewed", "Reviewed"].includes(sheetStatus) && (
+                <option value={sheetStatus}>{sheetStatus}</option>
+              )}
+              <option value="Ready">Ready</option>
+              <option value="Being Reviewed">Being Reviewed</option>
+              <option value="Reviewed">Reviewed</option>
+            </select>
+          </label>
           <LoadingButton busy={exportBusy === "pos"} busyLabel="Preparing CSV..." onClick={() => download("pos")} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
             Export for POS
           </LoadingButton>

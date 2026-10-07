@@ -5,7 +5,7 @@ import { loadFileStore, saveFileStore } from "@/lib/store";
 
 export const runtime = "nodejs";
 
-const ALLOWED_STATUSES = new Set(["Draft", "Ready", "Exported"]);
+const ALLOWED_STATUSES = new Set(["Draft", "Ready", "Being Reviewed", "Reviewed", "Exported"]);
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -57,7 +57,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const prodErr = productionDbGuard(prisma);
   if (prodErr) return prodErr;
   if (body.status !== undefined && !ALLOWED_STATUSES.has(String(body.status))) {
-    return NextResponse.json({ error: "Invalid status. Use Draft, Ready, or Exported." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid status. Use Draft, Ready, Being Reviewed, Reviewed, or Exported." }, { status: 400 });
   }
   if (body.name !== undefined && String(body.name).trim().length > 200) {
     return NextResponse.json({ error: "Update name is too long (max 200 characters)" }, { status: 400 });
