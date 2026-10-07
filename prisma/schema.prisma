@@ -108,3 +108,9 @@ model ExportLog {
   createdAt DateTime @default(now())
   detail    String   @default("")
 }
+
+model AppSetting {
+  key       String   @id
+  value     String   @default("")
+  updatedAt DateTime @updatedAt
+}

@@ -11,6 +11,141 @@ const BATCH_SIZE = 1000;
 /** Retry a batch a few times before giving up on it (transient DB/network). */
 const MAX_ATTEMPTS = 3;
 
+/** Small "active filter" chip with an × to clear just that filter. */
+function FilterChip({ label, onClear, onApply }: { label: string; onClear: () => void; onApply: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 font-medium text-sky-900">
+      {label}
+      <button
+        aria-label={`Clear filter ${label}`}
+        className="rounded px-0.5 hover:bg-sky-200"
+        onClick={() => { onClear(); onApply(); }}
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
+/** Column dropdown (PriceGrid visual language): sort actions + custom body. */
+function InvHeader({ label, colKey, sortKey, sortDir, filtered, openMenu, onToggle, onSort, onClearSort, sortAscLabel, sortDescLabel, menuRef, children }: {
+  label: string; colKey: string;
+  sortKey: string | null; sortDir: "asc" | "desc" | null; filtered: boolean;
+  openMenu: string | null; onToggle: (key: string) => void;
+  onSort: (dir: "asc" | "desc") => void; onClearSort: () => void;
+  sortAscLabel: string; sortDescLabel: string;
+  menuRef: React.RefObject<HTMLDivElement | null>; children?: React.ReactNode;
+}) {
+  const active = sortKey === colKey && !!sortDir;
+  return (
+    <th className="relative px-2 py-2 text-left font-semibold">
+      <span className="inline-flex items-center gap-0.5">
+        {label}
+        {filtered && <span aria-label="Filtered" title="This column is filtered" className="text-sky-600">●</span>}
+        {active && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
+        <button
+          type="button"
+          aria-label={`Sort ${label}`}
+          aria-haspopup="menu"
+          aria-expanded={openMenu === colKey}
+          className="rounded px-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
+          onClick={() => onToggle(colKey)}
+        >
+          ▾
+        </button>
+      </span>
+      {openMenu === colKey && (
+        <div ref={menuRef} role="menu" aria-label={`Sort ${label}`} className="absolute left-0 top-full z-30 min-w-52 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
+          <button type="button" role="menuitemradio" aria-checked={active && sortDir === "asc"}
+            className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 ${active && sortDir === "asc" ? "font-bold" : ""}`}
+            onClick={() => onSort("asc")}>
+            {sortAscLabel}
+          </button>
+          <button type="button" role="menuitemradio" aria-checked={active && sortDir === "desc"}
+            className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 ${active && sortDir === "desc" ? "font-bold" : ""}`}
+            onClick={() => onSort("desc")}>
+            {sortDescLabel}
+          </button>
+          <button type="button" role="menuitemradio" aria-checked={!active || !sortDir}
+            className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100"
+            onClick={onClearSort}>
+            Clear sort
+          </button>
+          {children}
+        </div>
+      )}
+    </th>
+  );
+}
+
+/** "Search THIS column only" box used inside each column menu. */
+function ColumnSearchBox({ label, placeholder, value, onChange, onApply, onClear }: {
+  label: string; placeholder: string; value: string;
+  onChange: (v: string) => void; onApply: () => void; onClear: () => void;
+}) {
+  return (
+    <div className="border-t px-3 py-2">
+      <div className="mb-1 font-semibold text-slate-600">{label}</div>
+      <div className="flex gap-1">
+        <input
+          className="w-full min-w-36 rounded border px-2 py-1"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onApply(); } e.stopPropagation(); }}
+        />
+        {value && (
+          <button
+            aria-label={`Clear ${label}`}
+            className="rounded border px-2 hover:bg-slate-100"
+            onClick={onClear}
+          >
+            ×
+          </button>
+        )}
+      </div>
+      <button className="mt-1 rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={onApply}>
+        Apply
+      </button>
+    </div>
+  );
+}
+
+/** Scrollable distinct-value picker for Vendor/Brand. */
+function FacetList({ title, loading, rows, search, selected, onSearch, onPick }: {
+  title: string; loading: boolean; rows: { value: string; count: number }[];
+  search: string; selected: string;
+  onSearch: (v: string) => void; onPick: (v: string) => void;
+}) {
+  return (
+    <div className="border-t px-3 py-2">
+      <div className="mb-1 font-semibold text-slate-600">{title}</div>
+      <input
+        className="mb-1 w-full min-w-36 rounded border px-2 py-1"
+        placeholder="Type to narrow..."
+        value={search}
+        onChange={(e) => onSearch(e.target.value)}
+      />
+      {loading && <div className="py-1 text-slate-500">Loading...</div>}
+      {!loading && (
+        <div className="max-h-44 overflow-auto">
+          {rows.map((r) => (
+            <button
+              key={r.value}
+              className={`flex w-full items-center justify-between gap-2 rounded px-1 py-1 text-left hover:bg-slate-100 ${selected === r.value ? "font-bold" : ""}`}
+              onClick={() => onPick(r.value)}
+            >
+              <span className="truncate">{r.value}</span>
+              <span className="text-slate-400">{r.count.toLocaleString()}</span>
+            </button>
+          ))}
+          {!rows.length && <div className="py-1 text-slate-500">No matches.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Failure = { row: number; sku: string; reason: string };
 
 type ProductRow = {
@@ -56,6 +191,25 @@ export default function InventoryPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [msg, setMsg] = useState("");
+  /** ISO timestamp of the last successful Full/All Inventory import (null = never). */
+  const [lastImportedAt, setLastImportedAt] = useState<string | null>(null);
+  // --- Excel-style column sort/filter (PriceGrid visual language) ---
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [fSku, setFSku] = useState("");
+  const [fNum, setFNum] = useState("");
+  const [fDesc, setFDesc] = useState("");
+  const [fVendorContains, setFVendorContains] = useState("");
+  const [fBrandContains, setFBrandContains] = useState("");
+  const [fVendorExact, setFVendorExact] = useState("");
+  const [fBrandExact, setFBrandExact] = useState("");
+  /** "" = All, "false" = Active only, "true" = Inactive only. */
+  const [fInactive, setFInactive] = useState("");
+  const [facetQ, setFacetQ] = useState("");
+  const [facetRows, setFacetRows] = useState<{ value: string; count: number }[]>([]);
+  const [facetLoading, setFacetLoading] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [markMissingInactive, setMarkMissingInactive] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -68,13 +222,42 @@ export default function InventoryPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const inactiveRef = useRef<HTMLInputElement>(null);
 
-  const fetchPage = useCallback(async (query: string, p: number) => {
+  type Filters = {
+    q: string; sku: string; num: string; desc: string;
+    vendorContains: string; brandContains: string;
+    vendorExact: string; brandExact: string; inactive: string;
+    sortKey: string | null; sortDir: "asc" | "desc" | null;
+  };
+  const buildQuery = (f: Filters, p: number) => {
+    const sp = new URLSearchParams();
+    sp.set("q", f.q); sp.set("page", String(p)); sp.set("pageSize", "100");
+    if (f.sku) sp.set("sku", f.sku);
+    if (f.num) sp.set("productNumber", f.num);
+    if (f.desc) sp.set("description", f.desc);
+    if (f.vendorContains) sp.set("vendorFilter", f.vendorContains);
+    if (f.brandContains) sp.set("brandFilter", f.brandContains);
+    if (f.vendorExact) sp.set("vendorExact", f.vendorExact);
+    if (f.brandExact) sp.set("brandExact", f.brandExact);
+    if (f.inactive) sp.set("inactive", f.inactive);
+    if (f.sortKey && f.sortDir) { sp.set("sort", f.sortKey); sp.set("sortDir", f.sortDir); }
+    return sp.toString();
+  };
+  const snapshotFilters = (): Filters => ({
+    q, sku: fSku, num: fNum, desc: fDesc,
+    vendorContains: fVendorContains, brandContains: fBrandContains,
+    vendorExact: fVendorExact, brandExact: fBrandExact, inactive: fInactive,
+    sortKey, sortDir,
+  });
+  const fetchPage = useCallback(async (query: string) => {
     try {
-      const r = await fetch(`/api/inventory?q=${encodeURIComponent(query)}&page=${p}&pageSize=100`);
+      // query is a fully-built query string (global search + column filters +
+      // sort); callers own building it via buildQuery()/snapshotFilters().
+      const r = await fetch(`/api/inventory?${query}`);
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setMsg(apiErrorText(d, "Could not load inventory.")); setRows([]); setTotal(0); return; }
       setMsg("");
       setRows(d.rows ?? []); setTotal(d.total ?? 0);
+      if (typeof d.lastImportedAt === "string" || d.lastImportedAt === null) setLastImportedAt(d.lastImportedAt ?? null);
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
     }
@@ -84,19 +267,71 @@ export default function InventoryPage() {
   // happens in the fetch callbacks, not synchronously in the effect body.
   useEffect(() => {
     let active = true;
-    fetch(`/api/inventory?q=${encodeURIComponent(q)}&page=${page}&pageSize=100`)
+    const qs = buildQuery(snapshotFilters(), page);
+    fetch(`/api/inventory?${qs}`)
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
         if (!active) return;
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load inventory.")); setRows([]); setTotal(0); return; }
         setMsg(""); setRows(d.rows ?? []); setTotal(d.total ?? 0);
+        if (typeof d.lastImportedAt === "string" || d.lastImportedAt === null) setLastImportedAt(d.lastImportedAt ?? null);
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  const search = () => { setPage(1); void fetchPage(q, 1); };
+  const search = () => { setPage(1); void fetchPage(buildQuery(snapshotFilters(), 1)); };
+  /** Re-fetch page 1 with the CURRENT global search + column filters + sort. */
+  const refreshWithFilters = () => {
+    setPage(1);
+    return fetchPage(buildQuery(snapshotFilters(), 1));
+  };
+
+  /** Fetch the "Last imported" timestamp on first load (without touching it). */
+  useEffect(() => {
+    let active = true;
+    fetch("/api/inventory/last-import")
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!active || !r.ok) return;
+        if (typeof d.lastImportedAt === "string" || d.lastImportedAt === null) {
+          setLastImportedAt(d.lastImportedAt ?? null);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  /** Close the open column menu on outside click (PriceGrid pattern). */
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [openMenu]);
+
+  /** Load distinct Vendor/Brand values when that column menu opens. */
+  const loadFacets = async (column: "vendor" | "brand", needle: string) => {
+    setFacetLoading(true);
+    try {
+      const r = await fetch(`/api/inventory/facets?column=${column}&q=${encodeURIComponent(needle)}&limit=30`);
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) setFacetRows(Array.isArray(d.rows) ? d.rows : []);
+    } catch {
+      setFacetRows([]);
+    } finally {
+      setFacetLoading(false);
+    }
+  };
+  const openColumnMenu = (key: string) => {
+    if (openMenu === key) { setOpenMenu(null); return; }
+    setOpenMenu(key);
+    setFacetQ("");
+    if (key === "vendor" || key === "brand") void loadFacets(key, "");
+  };
 
   /** Send one batch, retrying transient failures (pooler cold start, blips). */
   const sendBatch = async (rows: unknown[], startRow: number) => {
@@ -200,6 +435,24 @@ for (let i = 0; i < batches.length; i++) {
       setReport({ ...acc, status: "complete", startedAt, finishedAt });
       setProgress(null);
 
+      // Record the "Last imported" timestamp ONLY when the whole Full/All
+      // Inventory import succeeded (zero failed rows). A failed import keeps
+      // the previous successful timestamp unchanged.
+      if (!acc.failed.length) {
+        try {
+          const r = await fetch("/api/inventory/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ completeFullImport: true }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && typeof d.lastImportedAt === "string") setLastImportedAt(d.lastImportedAt);
+        } catch {
+          // Import itself succeeded; the timestamp just stays stale until the
+          // next successful import. Never fail the import UI over this.
+        }
+      }
+
       const summary = `${acc.processed.toLocaleString()} of ${products.length.toLocaleString()} rows processed in ${seconds}s — ${acc.inserted.toLocaleString()} inserted, ${acc.updated.toLocaleString()} updated${acc.failed.length ? `, ${acc.failed.length} failed` : ""}.`;
       if (acc.failed.length) toast.warning("Inventory import finished with errors.", summary);
       else toast.success("Inventory import completed successfully.", summary);
@@ -211,8 +464,7 @@ for (let i = 0; i < batches.length; i++) {
     } finally {
       setImporting(false);
       // Refresh counts automatically — no manual browser refresh needed.
-      setPage(1);
-      await fetchPage(q, 1);
+      await refreshWithFilters();
       if (fileRef.current) fileRef.current.value = "";
     }
   };
@@ -235,8 +487,7 @@ for (let i = 0; i < batches.length; i++) {
       toast.error("Inactive import failed.", "Could not reach the server.");
     } finally {
       setImporting(false);
-      setPage(1);
-      await fetchPage(q, 1);
+      await refreshWithFilters();
       if (inactiveRef.current) inactiveRef.current.value = "";
     }
   };
@@ -275,8 +526,7 @@ for (let i = 0; i < batches.length; i++) {
         setMsg(`Inventory cleared: ${removed.toLocaleString()} products removed. Price update history was kept.`);
         toast.success("Inventory cleared.", `${removed.toLocaleString()} products removed. Price update history was kept.`);
         // Refresh the count and table automatically.
-        setPage(1);
-        await fetchPage(q, 1);
+        await refreshWithFilters();
       }
     } catch {
       toast.error("Clear Inventory failed.", "Could not reach the server.");
@@ -332,6 +582,46 @@ for (let i = 0; i < batches.length; i++) {
   };
 
   const pct = progress && progress.total ? Math.floor((progress.processed / progress.total) * 100) : 0;
+
+  /** "Oct 7, 2026, 10:42 AM" or "Never" when no successful full import yet. */
+  const formatLastImported = (iso: string | null): string => {
+    if (!iso) return "Never";
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return "Never";
+    return t.toLocaleString("en-US", {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+  };
+  const hasActiveFilters = !!(
+    fSku || fNum || fDesc || fVendorContains || fBrandContains ||
+    fVendorExact || fBrandExact || fInactive
+  );
+  const headerLabel = (key: string): string => {
+    const m: Record<string, string> = {
+      sku: "Sku", productNumber: "Product Number", description: "Description",
+      vendor: "Vendor", brand: "Brand", listCost: "List Cost", price: "Price",
+      sizeDesc: "Size Desc", status: "Status",
+    };
+    return m[key] ?? key;
+  };
+  /** Re-run the search immediately with optional one-off filter overrides. */
+  const applyNow = (overrides?: Partial<Filters>) => {
+    setPage(1);
+    const f = snapshotFilters();
+    if (overrides) Object.assign(f, overrides);
+    void fetchPage(buildQuery(f, 1));
+  };
+  const changeSort = (key: string, dir: "asc" | "desc" | null) => {
+    const nextKey = dir ? key : null;
+    setSortKey(nextKey); setSortDir(dir);
+    setOpenMenu(null);
+    setPage(1);
+    const f = snapshotFilters();
+    f.sortKey = nextKey; f.sortDir = dir;
+    void fetchPage(buildQuery(f, 1));
+  };
+  const clearSort = () => changeSort(sortKey ?? "", null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -456,14 +746,123 @@ for (let i = 0; i < batches.length; i++) {
         <input className="w-full max-w-md rounded border px-3 py-2" placeholder="Search SKU, product #, description, brand..." value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} />
         <button className="rounded bg-slate-900 px-4 py-2 text-sm text-white" onClick={search}>Search</button>
       </div>
-      <div className="text-sm text-slate-500">{total.toLocaleString()} products</div>
+      <div className="flex flex-wrap items-center gap-x-2 text-sm text-slate-500">
+        <span>{total.toLocaleString()} products</span>
+        <span aria-hidden="true">·</span>
+        <span title={lastImportedAt ? `Last successful Full/All Inventory import: ${new Date(lastImportedAt).toISOString()}` : "No successful full inventory import recorded yet"}>
+          Last imported: {formatLastImported(lastImportedAt)}
+        </span>
+      </div>
+      {(hasActiveFilters || sortKey) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-slate-600">Filters:</span>
+          {fSku && <FilterChip label={`SKU contains "${fSku}"`} onClear={() => setFSku("")} onApply={() => applyNow({ sku: "" })} />}
+          {fNum && <FilterChip label={`Product # contains "${fNum}"`} onClear={() => setFNum("")} onApply={() => applyNow({ num: "" })} />}
+          {fDesc && <FilterChip label={`Description contains "${fDesc}"`} onClear={() => setFDesc("")} onApply={() => applyNow({ desc: "" })} />}
+          {fVendorContains && <FilterChip label={`Vendor contains "${fVendorContains}"`} onClear={() => setFVendorContains("")} onApply={() => applyNow({ vendorContains: "" })} />}
+          {fBrandContains && <FilterChip label={`Brand contains "${fBrandContains}"`} onClear={() => setFBrandContains("")} onApply={() => applyNow({ brandContains: "" })} />}
+          {fVendorExact && <FilterChip label={`Vendor = ${fVendorExact}`} onClear={() => setFVendorExact("")} onApply={() => applyNow({ vendorExact: "" })} />}
+          {fBrandExact && <FilterChip label={`Brand = ${fBrandExact}`} onClear={() => setFBrandExact("")} onApply={() => applyNow({ brandExact: "" })} />}
+          {fInactive && <FilterChip label={`Status = ${fInactive === "true" ? "Inactive" : "Active"}`} onClear={() => setFInactive("")} onApply={() => applyNow({ inactive: "" })} />}
+          {sortKey && sortDir && <FilterChip label={`Sorted: ${headerLabel(sortKey)} ${sortDir === "asc" ? "↑" : "↓"}`} onClear={() => { setSortKey(null); setSortDir(null); }} onApply={applyNow} />}
+          <button
+            className="rounded border px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
+            onClick={() => {
+              setFSku(""); setFNum(""); setFDesc("");
+              setFVendorContains(""); setFBrandContains("");
+              setFVendorExact(""); setFBrandExact(""); setFInactive("");
+              setSortKey(null); setSortDir(null);
+              setPage(1);
+              const sp = new URLSearchParams();
+              sp.set("q", q); sp.set("page", "1"); sp.set("pageSize", "100");
+              void fetchPage(sp.toString());
+            }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
       <div className="overflow-auto rounded-xl border bg-white">
         <table className="w-full min-w-[900px] text-xs">
           <thead className="bg-slate-50">
             <tr className="text-left">
-              {["Sku", "Product Number", "Description", "Vendor", "Brand", "List Cost", "Price", "Size Desc", "Status"].map((h) => (
-                <th key={h} className="px-2 py-2 font-semibold">{h}</th>
-              ))}
+              <InvHeader label="Sku" colKey="sku" sortKey={sortKey} sortDir={sortDir} filtered={!!fSku}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort Smallest → Largest" sortDescLabel="Sort Largest → Smallest"
+                onSort={(d) => changeSort("sku", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <ColumnSearchBox label="Filter SKU" placeholder="Search SKU..." value={fSku}
+                  onChange={setFSku} onApply={applyNow} onClear={() => { setFSku(""); applyNow({ sku: "" }); }} />
+              </InvHeader>
+              <InvHeader label="Product Number" colKey="productNumber" sortKey={sortKey} sortDir={sortDir} filtered={!!fNum}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort Smallest → Largest" sortDescLabel="Sort Largest → Smallest"
+                onSort={(d) => changeSort("productNumber", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <ColumnSearchBox label="Filter Product Number" placeholder="Search product #..." value={fNum}
+                  onChange={setFNum} onApply={applyNow} onClear={() => { setFNum(""); applyNow({ num: "" }); }} />
+              </InvHeader>
+              <InvHeader label="Description" colKey="description" sortKey={sortKey} sortDir={sortDir} filtered={!!fDesc}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort A → Z" sortDescLabel="Sort Z → A"
+                onSort={(d) => changeSort("description", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <ColumnSearchBox label="Filter Product Name" placeholder="Search product..." value={fDesc}
+                  onChange={setFDesc} onApply={applyNow} onClear={() => { setFDesc(""); applyNow({ desc: "" }); }} />
+              </InvHeader>
+              <InvHeader label="Vendor" colKey="vendor" sortKey={sortKey} sortDir={sortDir} filtered={!!(fVendorContains || fVendorExact)}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort A → Z" sortDescLabel="Sort Z → A"
+                onSort={(d) => changeSort("vendor", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <ColumnSearchBox label="Filter Vendor" placeholder="Search vendor..." value={fVendorContains}
+                  onChange={setFVendorContains} onApply={applyNow} onClear={() => { setFVendorContains(""); applyNow({ vendorContains: "" }); }} />
+                <FacetList
+                  title="Filter by specific vendor"
+                  loading={facetLoading} rows={facetRows} search={facetQ} selected={fVendorExact}
+                  onSearch={(v) => { setFacetQ(v); void loadFacets("vendor", v); }}
+                  onPick={(v) => { setFVendorExact(v); setOpenMenu(null); applyNow({ vendorExact: v }); }}
+                />
+                {fVendorExact && (
+                  <button className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setFVendorExact(""); setOpenMenu(null); applyNow({ vendorExact: "" }); }}>
+                    Clear vendor selection
+                  </button>
+                )}
+              </InvHeader>
+              <InvHeader label="Brand" colKey="brand" sortKey={sortKey} sortDir={sortDir} filtered={!!(fBrandContains || fBrandExact)}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort A → Z" sortDescLabel="Sort Z → A"
+                onSort={(d) => changeSort("brand", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <ColumnSearchBox label="Filter Brand" placeholder="Search brand..." value={fBrandContains}
+                  onChange={setFBrandContains} onApply={applyNow} onClear={() => { setFBrandContains(""); applyNow({ brandContains: "" }); }} />
+                <FacetList
+                  title="Filter by specific brand"
+                  loading={facetLoading} rows={facetRows} search={facetQ} selected={fBrandExact}
+                  onSearch={(v) => { setFacetQ(v); void loadFacets("brand", v); }}
+                  onPick={(v) => { setFBrandExact(v); setOpenMenu(null); applyNow({ brandExact: v }); }}
+                />
+                {fBrandExact && (
+                  <button className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setFBrandExact(""); setOpenMenu(null); applyNow({ brandExact: "" }); }}>
+                    Clear brand selection
+                  </button>
+                )}
+              </InvHeader>
+              <InvHeader label="List Cost" colKey="listCost" sortKey={sortKey} sortDir={sortDir} filtered={false}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort Smallest → Largest" sortDescLabel="Sort Largest → Smallest"
+                onSort={(d) => changeSort("listCost", d)} onClearSort={clearSort} menuRef={menuRef} />
+              <InvHeader label="Price" colKey="price" sortKey={sortKey} sortDir={sortDir} filtered={false}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort Smallest → Largest" sortDescLabel="Sort Largest → Smallest"
+                onSort={(d) => changeSort("price", d)} onClearSort={clearSort} menuRef={menuRef} />
+              <InvHeader label="Size Desc" colKey="sizeDesc" sortKey={sortKey} sortDir={sortDir} filtered={false}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort A → Z" sortDescLabel="Sort Z → A"
+                onSort={(d) => changeSort("sizeDesc", d)} onClearSort={clearSort} menuRef={menuRef} />
+              <InvHeader label="Status" colKey="status" sortKey={sortKey} sortDir={sortDir} filtered={!!fInactive}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort A → Z" sortDescLabel="Sort Z → A"
+                onSort={(d) => changeSort("status", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <div className="border-t px-3 py-2">
+                  <div className="mb-1 font-semibold text-slate-600">Filter Status</div>
+                  {(["", "false", "true"] as const).map((v) => (
+                    <label key={v || "all"} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-slate-100">
+                      <input
+                        type="radio" name="inv-status-filter" checked={fInactive === v}
+                        onChange={() => { setFInactive(v); setOpenMenu(null); applyNow({ inactive: v }); }}
+                      />
+                      <span>{v === "" ? "All" : v === "false" ? "Active" : "Inactive"}</span>
+                    </label>
+                  ))}
+                </div>
+              </InvHeader>
             </tr>
           </thead>
           <tbody>

@@ -4,6 +4,7 @@ import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuar
 import { cuid, loadFileStore, saveFileStore } from "@/lib/store";
 import { parseInactiveFile, parseInventoryFile } from "@/lib/importers";
 import { applyInactiveSkuList, importInventoryBatch, markMissingProductsInactive } from "@/lib/inventoryDb";
+import { getLastFullImportAt, setLastFullImportNow } from "@/lib/inventoryMeta";
 import { exactSkuList, MAX_BATCH_ROWS, chunk as chunkRows } from "@/lib/inventoryImport";
 
 export const runtime = "nodejs";
@@ -57,6 +58,31 @@ export async function POST(req: Request) {
       } catch (e) {
         if (isDbConnectionError(e)) return dbUnreachableResponse();
         return NextResponse.json({ error: "Could not flag products missing from the export." }, { status: 500 });
+      }
+    }
+    // Explicit completion signal from the browser AFTER every batch of a
+    // Full/All Inventory import succeeded. This is the ONLY writer of the
+    // "Last imported" timestamp: page loads, manual edits, inactive imports,
+    // clear, and failed imports never touch it.
+    if (body.completeFullImport === true) {
+      if (!prisma) {
+        try {
+          const store = loadFileStore();
+          store.inventoryLastFullImportAt = new Date().toISOString();
+          saveFileStore(store);
+          return NextResponse.json({ ok: true, lastImportedAt: store.inventoryLastFullImportAt });
+        } catch (e) {
+          if (isDbConnectionError(e)) return dbUnreachableResponse();
+          return NextResponse.json({ error: "Could not record the import time." }, { status: 500 });
+        }
+      }
+      try {
+        const lastImportedAt = await setLastFullImportNow(prisma);
+        const total = await prisma.product.count();
+        return NextResponse.json({ ok: true, lastImportedAt, total });
+      } catch (e) {
+        if (isDbConnectionError(e)) return dbUnreachableResponse();
+        return NextResponse.json({ error: "Import finished but the import time could not be recorded." }, { status: 500 });
       }
     }
     return NextResponse.json({ error: "Expected { rows: [...] } or { finalize: true, skus: [...] }." }, { status: 400 });
@@ -138,8 +164,13 @@ export async function POST(req: Request) {
         store.products.push(row); bySku.set(p.sku, row); created++;
       }
     }
+    // Legacy whole-file full import also succeeded: record the timestamp.
+    store.inventoryLastFullImportAt = new Date().toISOString();
     saveFileStore(store);
-    return NextResponse.json({ ok: true, detected: products.length, created, updated, total: store.products.length });
+    return NextResponse.json({
+      ok: true, detected: products.length, created, updated,
+      total: store.products.length, lastImportedAt: store.inventoryLastFullImportAt,
+    });
   }
 
   // Bulk upsert: one INSERT ... ON CONFLICT ("sku") DO UPDATE per 1,000-row
@@ -158,9 +189,14 @@ export async function POST(req: Request) {
       failed.push(...outcome.failed);
     }
     const total = await prisma.product.count();
+    // Record the timestamp ONLY when the whole legacy full import succeeded.
+    // A failed import keeps the previous successful timestamp unchanged.
+    let lastImportedAt: string | null = null;
+    if (!failed.length) lastImportedAt = await setLastFullImportNow(prisma);
+    else lastImportedAt = await getLastFullImportAt(prisma);
     return NextResponse.json({
       ok: true, detected: products.length, created: inserted, inserted, updated,
-      processed, skipped, failed, total,
+      processed, skipped, failed, total, lastImportedAt,
     });
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();

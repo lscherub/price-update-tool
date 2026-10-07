@@ -23,6 +23,8 @@ export type StoreShape = {
   items: ItemRow[];
   users: { id: string; email: string; passwordHash: string; role: string }[];
   exports: { id: string; sessionId: string; kind: string; createdBy: string; createdAt: string; detail: string }[];
+  /** ISO timestamp of the last successful Full/All Inventory import (null = never). Never set by inactive imports, edits, or clear. */
+  inventoryLastFullImportAt?: string | null;
 };
 
 export type SessionRow = {
