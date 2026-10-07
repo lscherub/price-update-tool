@@ -90,6 +90,10 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [pdfBusy, setPdfBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
   const [savingCell, setSavingCell] = useState<string | null>(null);
+  // Synchronous mirror of `savingCell` so async flows (fill-down) can poll the
+  // current guard without stale state from their own render closure.
+  const savingCellRef = useRef<string | null>(null);
+  useEffect(() => { savingCellRef.current = savingCell; }, [savingCell]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -460,7 +464,17 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
    * values recalculate through the unchanged pricing pipeline.
    */
   const fillDown = async (item: Item, key: string, value: string, afterIds: string[]) => {
-    if (fillBusy || savingCell) return;
+    if (fillBusy) return;
+    // A cell edit (e.g. the just-typed source value) may still be saving:
+    // wait for it instead of silently dropping the fill. The guard is only
+    // re-checked briefly so a stuck save can't hang the UI.
+    for (let i = 0; i < 40 && savingCellRef.current; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (savingCellRef.current) {
+      const t = "Another cell is still saving. Wait a moment and try the fill again.";
+      setMsg(t); toast.error("Could not fill the selected cells.", t); return;
+    }
     const targets = [item.id, ...afterIds.filter((x) => x !== item.id)];
     if (!targets.length) return;
     const beforeCells = targets
@@ -481,7 +495,11 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const d = await r.json().catch(() => ({}));
       if (!r.ok) {
         const t = apiErrorText(d, "Could not fill the selected cells.");
-        setMsg(t); toast.error("Could not fill the selected cells.", t); return;
+        setMsg(t); toast.error("Could not fill the selected cells.", t);
+        // The bulk PATCH may have failed after applying some writes — refetch
+        // so the table always mirrors what is actually stored.
+        await load();
+        return;
       }
       setMsg("");
       const label = COLS.find((c) => c.key === key)?.label ?? key;
@@ -494,6 +512,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       toast.success(`Copied to ${targets.length} row${targets.length === 1 ? "" : "s"}.`);
     } catch {
       toast.error("Could not fill the selected cells.", "Could not reach the server while saving.");
+      // Network/parse failure: resync so any server-side writes show up.
+      await load();
     } finally {
       setFillBusy(false);
     }

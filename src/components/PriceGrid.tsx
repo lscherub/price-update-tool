@@ -783,7 +783,12 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                         onPointerDown={(e) => {
                           (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
                           dragRef.current = { rowId: r.id, key: c.key, startY: e.clientY, currentY: e.clientY };
-                          setFill({ rowId: r.id, key: c.key, value: v ?? "", endId: r.id });
+                          // Read the LIVE editor value (uncontrolled input):
+                          // the rendered `v` is stale when the user just typed
+                          // without blurring first. Same for wrapped textareas.
+                          const cell = (e.target as HTMLElement).closest("td");
+                          const live = cell?.querySelector("input, textarea") as HTMLInputElement | HTMLTextAreaElement | null;
+                          setFill({ rowId: r.id, key: c.key, value: live?.value ?? v ?? "", endId: r.id });
                           e.preventDefault();
                         }}
                         onPointerMove={(e) => {
@@ -809,7 +814,15 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                             const lo = Math.min(from, to);
                             const hi = Math.max(from, to);
                             const targets = slice.slice(lo, hi + 1).filter((x) => x.id !== f.rowId).map((x) => x.id);
-                            if (targets.length) onFillDown(r, f.key, f.value, targets);
+                            // Re-read the source editor at drop time: the drag
+                            // starts with pointerdown (no blur), so the typed
+                            // value may still live only in the DOM input. Scope
+                            // to this column's cell — a row-level query would
+                            // hit the selection checkbox first.
+                            const srcCell = listRef.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(f.rowId)}"] td[data-col="${CSS.escape(f.key)}"]`);
+                            const srcInput = srcCell?.querySelector("input, textarea") as HTMLInputElement | HTMLTextAreaElement | null;
+                            const liveValue = srcInput?.value ?? f.value;
+                            if (targets.length) onFillDown(r, f.key, liveValue, targets);
                             return null;
                           });
                         }}
@@ -818,8 +831,13 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                             e.preventDefault();
                             const idx = slice.findIndex((x) => x.id === r.id);
                             const targets = slice.slice(idx + 1, idx + 6).map((x) => x.id);
-                            if (targets.length) onFillDown(r, c.key, v ?? "", targets);
-                            else onFillDown(r, c.key, v ?? "", []);
+                            // Keyboard fill: same live-value re-read (focus is
+                            // on the handle, so the input never blurred).
+                            const cell = (e.target as HTMLElement).closest("td");
+                            const live = cell?.querySelector("input, textarea") as HTMLInputElement | HTMLTextAreaElement | null;
+                            const liveValue = live?.value ?? v ?? "";
+                            if (targets.length) onFillDown(r, c.key, liveValue, targets);
+                            else onFillDown(r, c.key, liveValue, []);
                           }
                         }}
                       />
