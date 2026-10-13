@@ -114,25 +114,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ error: "Could not load rows for export." }, { status: 500 });
   }
   if (kind === "storecount") {
-    // Exclude inactive; blank New Price when ourNewList == currentList
-    const filtered = rows.filter((r) => !r.isInactive);
-    const mapped = filtered.map((r) => ({
-      SKU: r.cleanedSku, Description: r.productName,
-      "Size Desc.": r.sizeDesc,
-      "New Price": r.ourNewListPrice && r.currentListPrice && r.ourNewListPrice === r.currentListPrice ? "" : (r.nearest9 ?? ""),
-      QOH: "", Expiry: "", Notes: "",
-    }));
-    try {
-      if (prisma) await recordExport(prisma, id, "storecount", session.email, rows.length);
-      else recordFileStoreExport(id, "storecount", session.email, rows.length);
-    } catch (e) {
-      if (isDbConnectionError(e)) return dbUnreachableResponse();
-      // Export logging must never block the download.
-    }
-    const header = "SKU,Description,Size Desc.,New Price,QOH,Expiry,Notes";
-    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    const csv = [header, ...mapped.map((m) => [m.SKU, m.Description, m["Size Desc."], m["New Price"], "", "", ""].map(esc).join(","))].join("\n") + "\n";
-    return new NextResponse(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename=\"storecount-${id}.csv\"` } });
+    return NextResponse.json(
+      { error: "Store Count CSV has been replaced by Store Count Excel. Use POST /api/sessions/[id]/storecount/excel." },
+      { status: 410 },
+    );
   }
   const csv = toPosCsv(rows.map((r) => ({ cleanedSku: r.cleanedSku, ourNewListPrice: r.ourNewListPrice, nearest9: r.nearest9 })));
   try {

@@ -673,8 +673,35 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
-  /** Fetch an export, save it to disk, and report success/failure. */
-  const download = async (kind: "pos" | "storecount") => {
+  /** Fetch the Store Count Excel workbook, save it to disk, and report success/failure. */
+  const downloadExcel = async () => {
+    if (exportBusy) return;
+    setExportBusy("storecount");
+    try {
+      // Preserve the table's current order, same as the PDF.
+      const body = sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+      const r = await fetch(`/api/sessions/${id}/storecount/excel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        const t = apiErrorText(d, "export failed.");
+        setMsg(t); toast.error("Export failed.", t); return;
+      }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `storecount-${id}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success("Store Count Excel downloaded.");
+    } catch {
+      toast.error("Export failed.", "Could not reach the server while exporting.");
+    } finally {
+      setExportBusy(null);
+    }
+  };
+
+  /** Fetch the POS CSV export, save it to disk, and report success/failure. */
+  const download = async (kind: "pos") => {
     if (exportBusy) return;
     setExportBusy(kind);
     try {
@@ -687,11 +714,11 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = kind === "pos" ? `pos-export-${id}.csv` : `storecount-${id}.csv`;
+      a.download = `pos-export-${id}.csv`;
       a.click();
       URL.revokeObjectURL(a.href);
-      if (kind === "pos") setSheetStatus("Exported");
-      toast.success(kind === "pos" ? "POS CSV downloaded." : "Store Count CSV downloaded.");
+      setSheetStatus("Exported");
+      toast.success("POS CSV downloaded.");
     } catch {
       toast.error("Export failed.", "Could not reach the server while exporting.");
     } finally {
@@ -750,8 +777,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           <LoadingButton busy={exportBusy === "pos"} busyLabel="Preparing CSV..." onClick={() => download("pos")} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
             Export for POS
           </LoadingButton>
-          <LoadingButton busy={exportBusy === "storecount"} busyLabel="Preparing CSV..." onClick={() => download("storecount")} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
-            Store Count CSV
+          <LoadingButton busy={exportBusy === "storecount"} busyLabel="Preparing Excel..." onClick={() => downloadExcel()} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
+            Store Count Excel
           </LoadingButton>
           <LoadingButton busy={pdfBusy} busyLabel="Generating PDF..." onClick={pdf} className="rounded bg-slate-900 px-3 py-1.5 text-white disabled:opacity-60">
             Generate Store Count PDF

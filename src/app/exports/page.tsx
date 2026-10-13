@@ -26,11 +26,14 @@ export default function ExportsPage() {
     return () => { active = false; };
   }, []);
 
-  const download = async (id: string, kind: "pos" | "storecount", label: string) => {
+  const download = async (id: string, kind: "pos" | "storecount-excel", label: string) => {
     if (busy) return;
     setBusy(`${id}:${kind}`);
     try {
-      const r = await fetch(`/api/sessions/${id}/export?kind=${kind}`);
+      const isExcel = kind === "storecount-excel";
+      const r = isExcel
+        ? await fetch(`/api/sessions/${id}/storecount/excel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        : await fetch(`/api/sessions/${id}/export?kind=${kind}`);
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         toast.error(`${label} failed.`, apiErrorText(d, "export failed."));
@@ -39,7 +42,7 @@ export default function ExportsPage() {
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = kind === "pos" ? `pos-export-${id}.csv` : `storecount-${id}.csv`;
+      a.download = isExcel ? `storecount-${id}.xlsx` : `pos-export-${id}.csv`;
       a.click();
       URL.revokeObjectURL(a.href);
       toast.success(`${label} downloaded.`, label);
@@ -68,8 +71,8 @@ export default function ExportsPage() {
                   </LoadingButton>
                 </td>
                 <td className="px-4 py-2">
-                  <LoadingButton busy={busy === `${s.id}:storecount`} busyLabel="Preparing..." onClick={() => download(s.id, "storecount", "Store Count CSV")} className="px-0 text-blue-600 underline disabled:opacity-60">
-                    Download Store Count CSV
+                  <LoadingButton busy={busy === `${s.id}:storecount-excel`} busyLabel="Preparing..." onClick={() => download(s.id, "storecount-excel", "Store Count Excel")} className="px-0 text-blue-600 underline disabled:opacity-60">
+                    Download Store Count Excel
                   </LoadingButton>
                 </td>
               </tr>
