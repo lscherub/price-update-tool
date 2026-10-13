@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { getPrisma } from "./db";
 import { calculateRow } from "./nearest9";
-import { normalizeVendor, skuCandidates } from "./pricing";
+import { skuCandidates, normalizeVendor, normalizeBrand } from "./pricing";
 import { loadFileStore, type ProductRow } from "./store";
 
 function toProductRow(p: {
@@ -82,14 +82,66 @@ export async function findProductsByRawSkus(rawSkus: string[]): Promise<Map<stri
   return out;
 }
 
+// Discount lookup tables: vendor defaults keyed by normalized vendor, plus
+// brand-specific overrides keyed by "normalizedVendor|normalizedBrand".
+export type DiscountMaps = { vendors: Map<string, string>; brands: Map<string, string> };
+
+export function discountKey(vendor: string | null | undefined, brand: string | null | undefined): string {
+  return `${normalizeVendor(vendor)}|${normalizeBrand(brand)}`;
+}
+
+/**
+ * Brand-first discount lookup shared by import + recalc:
+ *  1. exact Vendor+Brand override,
+ *  2. otherwise the vendor default,
+ *  3. otherwise 0%.
+ */
+export function resolveDefaultDiscount(maps: DiscountMaps, vendor: string | null | undefined, brand: string | null | undefined): string {
+  const nv = normalizeVendor(vendor);
+  if (nv && normalizeBrand(brand)) {
+    const hit = maps.brands.get(discountKey(vendor, brand));
+    if (hit !== undefined) return hit;
+  }
+  return maps.vendors.get(nv) ?? "0.00";
+}
+
 export async function getDiscountMap(): Promise<Map<string, string>> {
+  return (await getDiscountMaps()).vendors;
+}
+
+export async function getDiscountMaps(): Promise<DiscountMaps> {
   const prisma = getPrisma();
   if (!prisma) {
     const store = loadFileStore();
-    return new Map(store.vendorDiscounts.map((d) => [d.normalizedVendor, d.defaultDiscount]));
+    const vendors = new Map(store.vendorDiscounts.map((d) => [d.normalizedVendor, d.defaultDiscount]));
+    const brands = new Map(
+      (store.brandDiscounts ?? []).map((d) => [discountKey(d.vendor || d.normalizedVendor, d.brand), d.defaultDiscount]),
+    );
+    return { vendors, brands };
   }
-  const all = await prisma.vendorDiscount.findMany({ take: 10000 });
-  return new Map(all.map((d) => [d.normalizedVendor, new Decimal(d.defaultDiscount.toString()).toFixed(2)]));
+  const [vendorRows, brandRows] = await Promise.all([
+    prisma.vendorDiscount.findMany({ take: 10000 }),
+    // BrandDiscount is new (migration 0005): tolerate databases that have not
+    // migrated yet so vendor defaults keep working on older schemas.
+    (async () => {
+      try {
+        return await (prisma as unknown as {
+          brandDiscount: { findMany: (a: unknown) => Promise<{ normalizedVendor: string; normalizedBrand: string; defaultDiscount: string }[]> };
+        }).brandDiscount.findMany({ take: 10000 });
+      } catch {
+        return [] as { normalizedVendor: string; normalizedBrand: string; defaultDiscount: string }[];
+      }
+    })(),
+  ]);
+  return {
+    vendors: new Map(vendorRows.map((d) => [d.normalizedVendor, new Decimal(d.defaultDiscount.toString()).toFixed(2)])),
+    brands: new Map(
+      brandRows.map((d) => [
+        `${String(d.normalizedVendor ?? "")}|${String(d.normalizedBrand ?? "")}`,
+        new Decimal(d.defaultDiscount.toString()).toFixed(2),
+      ]),
+    ),
+  };
 }
 
 export async function computeRowsForImport(
@@ -97,11 +149,11 @@ export async function computeRowsForImport(
   overrides?: Map<string, { discount?: string; margin?: string }>
 ): Promise<{ raw: string; price: string | null; calc: ReturnType<typeof calculateRow>; productId: string | null }[]> {
   const prodMap = await findProductsByRawSkus(raws.map((r) => r.raw));
-  const discMap = await getDiscountMap();
+  const discMaps = await getDiscountMaps();
   return raws.map(({ raw, price }) => {
     const prod = prodMap.get(raw) ?? null;
     const ov = overrides?.get(raw);
-    const defaultDiscount = prod ? discMap.get(normalizeVendor(prod.vendor)) ?? "0.00" : "0.00";
+    const defaultDiscount = prod ? resolveDefaultDiscount(discMaps, prod.vendor, prod.brand) : "0.00";
     const calc = calculateRow({
       rawVendorSku: raw,
       discount: ov?.discount && ov.discount !== "" ? ov.discount : undefined,

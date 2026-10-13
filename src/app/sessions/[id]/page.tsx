@@ -344,13 +344,33 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
-  /**
-   * Save a product note from the Markdown popup. Reuses the exact same
-   * `editCell("notes")` PATCH + history path as the old inline editor, so
-   * storage, recalc, flags, filters, CSV export and the Store Count PDF are
-   * unchanged. The order pin keeps the working set in place (never resets
-   * sort/filter/page/selection), and the modal closes on success.
-   */
+  /** Restore the configured Vendor/Brand default discount (clears a manual override). */
+  const restoreDiscount = async (item: Item) => {
+    if (savingCell) return;
+    const before = item.discount ?? "";
+    setSavingCell(`${item.id}:discount`);
+    try {
+      const r = await fetch(`/api/sessions/${id}/items`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.id, discount: "" }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not restore the default discount.");
+        setMsg(t); toast.error("Could not restore the default discount.", t); return;
+      }
+      setMsg("");
+      recordHistory(
+        "Restore default discount",
+        async () => { await patchCells([{ id: item.id, discount: before }]); await load(); },
+        async () => { await patchCells([{ id: item.id, discount: "" }]); await load(); },
+      );
+      await load();
+      toast.success("Default discount restored.");
+    } catch {
+      toast.error("Could not restore the default discount.", "Could not reach the server while saving.");
+    } finally {
+      setSavingCell(null);
+    }
+  };
+
   const saveNoteRow = async (value: string) => {
     if (!noteRow || noteBusy) return;
     const before = noteRow.notes ?? "";
@@ -811,6 +831,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible}
         sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
         onOpenNotes={(item) => setNoteRow(item)}
+        onRestoreDiscount={restoreDiscount}
         layoutKey={id}
       />
       {showAdd && (

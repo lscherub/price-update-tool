@@ -39,6 +39,21 @@ model VendorDiscount {
   updatedAt        DateTime @updatedAt
 }
 
+model BrandDiscount {
+  id                String   @id @default(cuid())
+  brand             String
+  normalizedBrand   String
+  vendor            String   @default("")
+  normalizedVendor  String   @default("")
+  defaultDiscount   Decimal  @db.Decimal(6, 2) @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([normalizedVendor, normalizedBrand])
+  @@index([normalizedVendor])
+  @@index([normalizedBrand])
+}
+
 model PriceUpdateSession {
   id        String   @id @default(cuid())
   vendor    String   @default("")

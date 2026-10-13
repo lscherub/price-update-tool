@@ -80,7 +80,7 @@ export function Flags({ r }: { r: Item }) {
   );
 }
 
-export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll, sortKey, sortDir, onSort, onFillDown, onOpenNotes, layoutKey }: {
+export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll, sortKey, sortDir, onSort, onFillDown, onOpenNotes, layoutKey, onRestoreDiscount }: {
   rows: Item[]; page: number; pageSize: number;
   onEdit: (item: Item, key: string, value: string) => void;
   onDelete: (item: Item) => void;
@@ -93,6 +93,8 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   onFillDown: (item: Item, key: string, value: string, afterIds: string[]) => void;
   /** Open the Markdown Notes popup for a row (Notes cells only). */
   onOpenNotes?: (item: Item) => void;
+  /** Restore the configured Vendor/Brand default discount (discount cells only). */
+  onRestoreDiscount?: (item: Item) => void;
   /**
    * Session-only layout memory key (e.g. the price-update id). When provided,
    * column widths, row heights, Wrap Text, and frozen columns are remembered
@@ -726,12 +728,17 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                   })();
                   const customN9 = c.key === "nearest9" && !!r.nearest9Custom;
                   const wrap = wrappedNow(c.key);
+                  // Discount cells offer "restore default" (clearing the cell
+                  // also restores it — same pattern as clearing Custom Nearest 9).
+                  const canRestore = c.key === "discount" && !!onRestoreDiscount;
                   return (
                     <td
                       key={c.label}
                       data-col={c.key}
                       className={`relative border px-1 py-0.5${wrapClassOf(c.key)} ${inFill ? "bg-blue-100" : customN9 ? "bg-amber-50" : "bg-emerald-50/40"}`}
                       style={{ ...stickyStyle(c.key, false, inFill ? "#dbeafe" : customN9 ? "#fffbeb" : "#ecfdf5"), ...colWidthStyle(c.key) }}
+                      onContextMenu={canRestore ? (e) => { e.preventDefault(); onRestoreDiscount?.(r); } : undefined}
+                      title={canRestore ? "Edit the discount, clear it to restore the configured Vendor/Brand default, or right-click to restore the default" : undefined}
                     >
                       {wrap ? (
                         // Wrapped: multi-line editor that grows with the row.

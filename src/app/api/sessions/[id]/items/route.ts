@@ -55,6 +55,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const r = await recalcRow({
         rawVendorSku: cur.rawVendorSku, cleanedSku: cur.cleanedSku,
         cleanedOverridden: cur.cleanedOverridden, discount: cur.discount,
+        vendor: cur.vendor, brand: cur.brand,
         vendorListPriceNew: cur.vendorListPriceNew, marginDivisor: cur.marginDivisor, notes: cur.notes,
         nearest9Custom: cur.nearest9Custom ?? null,
       }, u);
@@ -76,6 +77,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const r = await recalcRow({
         rawVendorSku: cur.rawVendorSku, cleanedSku: cur.cleanedSku,
         cleanedOverridden: cur.cleanedOverridden, discount: String(cur.discount ?? "0"),
+        vendor: cur.vendor, brand: cur.brand,
         vendorListPriceNew: cur.vendorListPriceNew ? String(cur.vendorListPriceNew) : null,
         marginDivisor: String(cur.marginDivisor ?? "0.605"), notes: cur.notes,
         nearest9Custom: cur.nearest9Custom ? String(cur.nearest9Custom) : null,

@@ -1,12 +1,15 @@
+import Decimal from "decimal.js";
 import { calculateRow, resolveNearest9 } from "./nearest9";
-import { normalizeSku, normalizeVendor } from "./pricing";
-import { getDiscountMap } from "./lookup";
+import { normalizeSku, normalizeVendor, normalizeBrand } from "./pricing";
+import { getDiscountMaps, resolveDefaultDiscount } from "./lookup";
 import { getPrisma } from "./db";
 import { loadFileStore } from "./store";
 
 export type CurRow = {
   rawVendorSku: string; cleanedSku: string; cleanedOverridden: boolean;
   discount: string; vendorListPriceNew: string | null; marginDivisor: string; notes: string;
+  /** Stored vendor/brand of the row (used to detect product changes for discount defaults). */
+  vendor?: string; brand?: string;
   /** User's manually entered Nearest 9 (null = use the automatic calculation). */
   nearest9Custom?: string | null;
 };
@@ -25,22 +28,54 @@ export async function lookupProduct(cleanedSku: string) {
 }
 
 export async function recalcRow(cur: CurRow, patch: Record<string, unknown>) {
-  const discMap = await getDiscountMap();
+  const discMaps = await getDiscountMaps();
   const overridden = patch.cleanedSku !== undefined ? true : cur.cleanedOverridden;
   const rawNext = patch.rawVendorSku !== undefined ? String(patch.rawVendorSku) : cur.rawVendorSku;
   const lookupKey = patch.cleanedSku !== undefined
     ? String(patch.cleanedSku).trim()
     : (overridden ? cur.cleanedSku : normalizeSku(rawNext));
   const prod = await lookupProduct(lookupKey);
-  const defaultDiscount = prod ? discMap.get(normalizeVendor(prod.vendor)) ?? "0.00" : "0.00";
+
+  // ---- Discount: automatic default vs manual override ----
+  // Clearing the cell ("") restores the automatic default (existing nearest-9
+  // pattern). The product identity changed if the SKU lookup moved to a
+  // different vendor/brand (or matched/unmatched flipped): then the automatic
+  // default is re-applied so the row tracks the new product. Otherwise the
+  // stored discount is a manual override and survives edits to other fields
+  // (pricing Math unchanged — calculateRow still receives one discount value).
+  const patchHasDiscount = patch.discount !== undefined;
+  const clearedDiscount = patchHasDiscount && String(patch.discount ?? "").trim() === "";
+  const newDefault = prod ? resolveDefaultDiscount(discMaps, prod.vendor, prod.brand) : "0.00";
+  const oldDefault = resolveDefaultDiscount(
+    discMaps,
+    (cur as CurRow).vendor ?? "",
+    (cur as CurRow).brand ?? "",
+  );
+  const curDiscount = String(cur.discount ?? "");
+  const productIdentityChanged =
+    normalizeVendor(prod?.vendor ?? "") !== normalizeVendor((cur as CurRow).vendor ?? "") ||
+    normalizeBrand(prod?.brand ?? "") !== normalizeBrand((cur as CurRow).brand ?? "");
+  const curLooksAutomatic =
+    curDiscount.trim() === "" ||
+    (() => { try {
+      return new Decimal(curDiscount || "0").eq(new Decimal(oldDefault || "0"));
+    } catch { return curDiscount === oldDefault; } })();
+  // discountInput: explicit edit wins; cleared cell or fresh/product-changed
+  // automatic value falls through to the default (undefined => use default);
+  // a stored manual override is passed through untouched.
+  // NOTE: callers must pass cur.vendor/cur.brand (the row's stored values) so
+  // manual overrides are not mistaken for automatic values.
+  const useDefault = clearedDiscount || productIdentityChanged || curLooksAutomatic;
+  const discountInput = patchHasDiscount && !clearedDiscount ? String(patch.discount ?? "") : (useDefault ? undefined : curDiscount);
+  const defaultDiscount = useDefault ? newDefault : curDiscount;
   const calc = calculateRow({
     rawVendorSku: rawNext,
     cleanedSku: patch.cleanedSku !== undefined ? String(patch.cleanedSku).trim() : cur.cleanedSku,
     cleanedOverridden: overridden,
-    discount: patch.discount !== undefined ? String(patch.discount ?? "") : cur.discount,
+    discount: discountInput,
     vendorListPriceNew: patch.vendorListPriceNew !== undefined ? (patch.vendorListPriceNew ? String(patch.vendorListPriceNew) : null) : cur.vendorListPriceNew,
     marginDivisor: patch.marginDivisor !== undefined ? String(patch.marginDivisor ?? "") : cur.marginDivisor,
-    product: prod, defaultDiscount,
+    product: prod, defaultDiscount: defaultDiscount ?? curDiscount,
   });
   const newPrice = patch.vendorListPriceNew !== undefined
     ? (patch.vendorListPriceNew ? String(patch.vendorListPriceNew) : null)

@@ -55,6 +55,11 @@ export function normalizeVendor(v: string | null | undefined): string {
   return String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Normalize a brand name the same way vendor names are normalized (case/space-insensitive lookup key). */
+export function normalizeBrand(v: string | null | undefined): string {
+  return String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function toDec(v: string | number | null | undefined): Decimal | null {
   if (v === null || v === undefined || v === "") return null;
   try {

@@ -19,6 +19,8 @@ export type ProductRow = {
 export type StoreShape = {
   products: ProductRow[];
   vendorDiscounts: { id: string; vendor: string; normalizedVendor: string; defaultDiscount: string }[];
+  /** Brand-specific overrides: one row per (vendor, brand) pair. */
+  brandDiscounts?: { id: string; brand: string; normalizedBrand: string; vendor: string; normalizedVendor: string; defaultDiscount: string }[];
   sessions: SessionRow[];
   items: ItemRow[];
   users: { id: string; email: string; passwordHash: string; role: string }[];
@@ -52,7 +54,7 @@ export function cuid(): string {
 }
 
 export function emptyStore(): StoreShape {
-  return { products: [], vendorDiscounts: [], sessions: [], items: [], users: [], exports: [] };
+  return { products: [], vendorDiscounts: [], brandDiscounts: [], sessions: [], items: [], users: [], exports: [] };
 }
 
 export function loadFileStore(): StoreShape {

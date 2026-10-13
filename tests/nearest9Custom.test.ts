@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolveNearest9 } from "@/lib/nearest9";
 import { recalcRow, type CurRow } from "@/lib/recalc";
+import { resolveDefaultDiscount, type DiscountMaps } from "@/lib/lookup";
 import { storeCountNewPrice } from "@/app/api/sessions/[id]/storecount/route";
 
 // Force the local (empty) file store so these stay fast, hermetic calculation
@@ -116,4 +117,61 @@ describe("flags + store count PDF use the FINAL Nearest 9", () => {
     expect(flag).toBe("Changed");
     expect(storeCountNewPrice(final9, oldRetail)).toBe("62.29");
   });
+
+describe("brand-first discount lookup (Vendor + Brand priority)", () => {
+  const maps: DiscountMaps = {
+    vendors: new Map([["ecotrend", "10.00"], ["a.o.r. inc.", "10.00"]]),
+    brands: new Map([
+      ["ecotrend|provita", "5.00"],
+      ["ecotrend|sierrasil health", "8.00"],
+      // Same brand under a different vendor is a separate row.
+      ["other vendor|provita", "3.00"],
+    ]),
+  };
+  it("uses the exact Vendor+Brand override first", () => {
+    expect(resolveDefaultDiscount(maps, "Ecotrend", "Provita")).toBe("5.00");
+    expect(resolveDefaultDiscount(maps, "ECOTREND", "Sierrasil Health")).toBe("8.00");
+  });
+  it("falls back to the vendor default for unconfigured brands", () => {
+    expect(resolveDefaultDiscount(maps, "Ecotrend", "Ecotrend")).toBe("10.00");
+    expect(resolveDefaultDiscount(maps, "Ecotrend", "An unconfigured brand")).toBe("10.00");
+  });
+  it("never applies another vendor's brand discount (exact Vendor+Brand pair)", () => {
+    expect(resolveDefaultDiscount(maps, "Other Vendor", "Provita")).toBe("3.00");
+    expect(resolveDefaultDiscount(maps, "Ecotrend", "Provita")).toBe("5.00");
+  });
+  it("returns 0% when neither brand nor vendor is configured", () => {
+    expect(resolveDefaultDiscount(maps, "Unknown Vendor", "Any Brand")).toBe("0.00");
+    expect(resolveDefaultDiscount(maps, "", "")).toBe("0.00");
+  });
+});
+
+describe("recalcRow discount override preservation", () => {
+  // Store-backed recalc: vendor/brand identity comes from the caller's stored
+  // row values (no DB needed — SEED is unmatched so defaults are "0.00").
+  const auto = (discount: string): CurRow => ({
+    rawVendorSku: "ZZNOTFOUNDSKU9X", cleanedSku: "", cleanedOverridden: false,
+    discount, vendorListPriceNew: null, marginDivisor: "", notes: "",
+    vendor: "", brand: "",
+  });
+  it("keeps a manual discount override when unrelated fields change", async () => {
+    const manual = await recalcRow(auto("0.00"), { discount: "25" });
+    expect(manual.discount).toBe("25.00");
+    const after = await recalcRow(
+      { ...auto(manual.discount), vendorListPriceNew: manual.vendorListPriceNew, marginDivisor: manual.marginDivisor, notes: manual.notes, nearest9Custom: manual.nearest9Custom },
+      { vendorListPriceNew: "20.00" },
+    );
+    expect(after.discount).toBe("25.00");
+    expect(after.ourNewListPrice).toBe("15.00");
+  });
+  it("restores the automatic default when the discount cell is cleared", async () => {
+    const manual = await recalcRow(auto("0.00"), { discount: "25" });
+    const cleared = await recalcRow(
+      { ...auto(manual.discount), vendorListPriceNew: manual.vendorListPriceNew, marginDivisor: manual.marginDivisor, notes: manual.notes, nearest9Custom: manual.nearest9Custom },
+      { discount: "" },
+    );
+    expect(cleared.discount).toBe("0.00");
+  });
+});
+
 });
