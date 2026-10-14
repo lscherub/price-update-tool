@@ -27,6 +27,8 @@ export type StoreShape = {
   exports: { id: string; sessionId: string; kind: string; createdBy: string; createdAt: string; detail: string }[];
   /** ISO timestamp of the last successful Full/All Inventory import (null = never). Never set by inactive imports, edits, or clear. */
   inventoryLastFullImportAt?: string | null;
+  /** ISO timestamp of the last successful Export-for-POS price sync (null = never). Never set by imports. */
+  inventoryLastPriceSyncAt?: string | null;
 };
 
 export type SessionRow = {

@@ -1,6 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 import { cuid } from "./store";
 import {
+  buildPriceUpdateSql,
+  type PriceUpdate,
+} from "./posPriceSync";
+import {
   buildExactSkuFlagSql,
   buildUpsertSql,
   exactSkuList,
@@ -163,6 +167,45 @@ export async function applyInactiveSkuList(
     marked += typeof res === "number" ? res : 0;
   }
   return { skus: keys.length, markedInactive: marked };
+}
+
+/**
+ * Apply Export-for-POS price updates by product id.
+ *
+ * Each chunk is ONE `UPDATE ... CASE` statement (single round-trip) that writes
+ * ONLY `price` (Nearest 9) and `listCost` (Our New List Price, kept when null).
+ * A failing chunk is bisected so one bad row cannot discard good updates.
+ * Never inserts; failed product ids are returned for reporting.
+ */
+export async function applyPosPriceUpdates(
+  db: DbLike,
+  updates: PriceUpdate[],
+  chunkSize = 1000,
+): Promise<{ updated: number; failedIds: string[] }> {
+  if (!updates.length) return { updated: 0, failedIds: [] };
+  let updated = 0;
+  const failedIds: string[] = [];
+  const applyChunk = async (chunk: PriceUpdate[]): Promise<void> => {
+    if (!chunk.length) return;
+    const [{ sql, params } = { sql: "", params: [] as unknown[] }] =
+      buildPriceUpdateSql(chunk, chunk.length);
+    try {
+      const res = await db.$executeRawUnsafe(sql, ...params);
+      updated += typeof res === "number" ? res : chunk.length;
+    } catch {
+      if (chunk.length > 1) {
+        const mid = Math.ceil(chunk.length / 2);
+        await applyChunk(chunk.slice(0, mid));
+        await applyChunk(chunk.slice(mid));
+      } else {
+        failedIds.push(chunk[0]?.productId ?? "");
+      }
+    }
+  };
+  for (let i = 0; i < updates.length; i += chunkSize) {
+    await applyChunk(updates.slice(i, i + chunkSize));
+  }
+  return { updated, failedIds: failedIds.filter(Boolean) };
 }
 
 /**

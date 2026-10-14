@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore } from "@/lib/store";
-import { getLastFullImportAt } from "@/lib/inventoryMeta";
+import { getLastFullImportAt, getLastPriceSyncAt } from "@/lib/inventoryMeta";
 import {
   buildInventoryOrderBy,
   buildInventoryWhere,
@@ -30,6 +30,7 @@ export async function GET(req: Request) {
       total: rows.length, page, pageSize,
       rows: rows.slice((page - 1) * pageSize, page * pageSize),
       lastImportedAt: store.inventoryLastFullImportAt ?? null,
+      lastUpdatedAt: store.inventoryLastPriceSyncAt ?? null,
     });
   }
   const where = buildInventoryWhere(iq);
@@ -39,7 +40,10 @@ export async function GET(req: Request) {
     const rows = await prisma.product.findMany({
       where: where as never, orderBy, skip: (page - 1) * pageSize, take: pageSize,
     });
-    const lastImportedAt = await getLastFullImportAt(prisma);
+    const [lastImportedAt, lastUpdatedAt] = await Promise.all([
+      getLastFullImportAt(prisma),
+      getLastPriceSyncAt(prisma),
+    ]);
     return NextResponse.json({
       total, page, pageSize,
       rows: rows.map((p) => ({
@@ -48,6 +52,7 @@ export async function GET(req: Request) {
         listCost: String(p.listCost), price: String(p.price), sizeDesc: p.sizeDesc, isInactive: p.isInactive,
       })),
       lastImportedAt,
+      lastUpdatedAt,
     });
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();

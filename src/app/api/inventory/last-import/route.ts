@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore } from "@/lib/store";
-import { getLastFullImportAt } from "@/lib/inventoryMeta";
+import { getLastFullImportAt, getLastPriceSyncAt } from "@/lib/inventoryMeta";
 
 export const runtime = "nodejs";
 
 /**
- * Read the "Last imported" timestamp for the Inventory page.
- * GET returns { lastImportedAt: string|null }. The timestamp is written ONLY
- * by a successful Full/All Inventory import (see ../import/route.ts complete
- * action) — never on page loads, edits, inactive imports, or failed imports.
+ * Read the "Last imported" + "Last updated" timestamps for the Inventory page.
+ * GET returns { lastImportedAt: string|null, lastUpdatedAt: string|null }.
+ * Last imported is written ONLY by a successful Full/All Inventory import;
+ * Last updated is written ONLY by a confirmed Export-for-POS price sync.
  */
 export async function GET() {
   const session = await getSession();
@@ -19,10 +19,18 @@ export async function GET() {
   const prodErr = productionDbGuard(prisma);
   if (prodErr) return prodErr;
   if (!prisma) {
-    return NextResponse.json({ lastImportedAt: loadFileStore().inventoryLastFullImportAt ?? null });
+    const store = loadFileStore();
+    return NextResponse.json({
+      lastImportedAt: store.inventoryLastFullImportAt ?? null,
+      lastUpdatedAt: store.inventoryLastPriceSyncAt ?? null,
+    });
   }
   try {
-    return NextResponse.json({ lastImportedAt: await getLastFullImportAt(prisma) });
+    const [lastImportedAt, lastUpdatedAt] = await Promise.all([
+      getLastFullImportAt(prisma),
+      getLastPriceSyncAt(prisma),
+    ]);
+    return NextResponse.json({ lastImportedAt, lastUpdatedAt });
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not load the last import time." }, { status: 500 });

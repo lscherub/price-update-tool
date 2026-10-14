@@ -193,6 +193,7 @@ export default function InventoryPage() {
   const [msg, setMsg] = useState("");
   /** ISO timestamp of the last successful Full/All Inventory import (null = never). */
   const [lastImportedAt, setLastImportedAt] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   // --- Excel-style column sort/filter (PriceGrid visual language) ---
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
@@ -258,6 +259,7 @@ export default function InventoryPage() {
       setMsg("");
       setRows(d.rows ?? []); setTotal(d.total ?? 0);
       if (typeof d.lastImportedAt === "string" || d.lastImportedAt === null) setLastImportedAt(d.lastImportedAt ?? null);
+      if (typeof d.lastUpdatedAt === "string" || d.lastUpdatedAt === null) setLastUpdatedAt(d.lastUpdatedAt ?? null);
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
     }
@@ -275,6 +277,7 @@ export default function InventoryPage() {
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load inventory.")); setRows([]); setTotal(0); return; }
         setMsg(""); setRows(d.rows ?? []); setTotal(d.total ?? 0);
         if (typeof d.lastImportedAt === "string" || d.lastImportedAt === null) setLastImportedAt(d.lastImportedAt ?? null);
+        if (typeof d.lastUpdatedAt === "string" || d.lastUpdatedAt === null) setLastUpdatedAt(d.lastUpdatedAt ?? null);
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });
     return () => { active = false; };
@@ -288,7 +291,7 @@ export default function InventoryPage() {
     return fetchPage(buildQuery(snapshotFilters(), 1));
   };
 
-  /** Fetch the "Last imported" timestamp on first load (without touching it). */
+  /** Fetch the "Last imported"/"Last updated" timestamps on load (read-only). */
   useEffect(() => {
     let active = true;
     fetch("/api/inventory/last-import")
@@ -297,6 +300,9 @@ export default function InventoryPage() {
         if (!active || !r.ok) return;
         if (typeof d.lastImportedAt === "string" || d.lastImportedAt === null) {
           setLastImportedAt(d.lastImportedAt ?? null);
+        }
+        if (typeof d.lastUpdatedAt === "string" || d.lastUpdatedAt === null) {
+          setLastUpdatedAt(d.lastUpdatedAt ?? null);
         }
       })
       .catch(() => {});
@@ -751,6 +757,10 @@ for (let i = 0; i < batches.length; i++) {
         <span aria-hidden="true">·</span>
         <span title={lastImportedAt ? `Last successful Full/All Inventory import: ${new Date(lastImportedAt).toISOString()}` : "No successful full inventory import recorded yet"}>
           Last imported: {formatLastImported(lastImportedAt)}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span title={lastUpdatedAt ? `Last successful Export-for-POS price sync: ${new Date(lastUpdatedAt).toISOString()}` : "No successful price synchronization recorded yet"}>
+          Last updated: {formatLastImported(lastUpdatedAt)}
         </span>
       </div>
       {(hasActiveFilters || sortKey) && (

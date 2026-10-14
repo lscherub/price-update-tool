@@ -91,6 +91,28 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [page, setPage] = useState(1);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
+  // ---- Export-for-POS follow-up: optional inventory price sync ----
+  type SyncResult = {
+    updated: number;
+    exportedRows: number;
+    skippedUnmatched: string[];
+    skippedUnmatchedCount: number;
+    skippedAmbiguous: string[];
+    skippedAmbiguousCount: number;
+    skippedBlankPrice: string[];
+    skippedBlankPriceCount: number;
+    skippedInvalidPrice: { sku: string; price: string }[];
+    skippedInvalidPriceCount: number;
+    skippedDuplicate: string[];
+    skippedDuplicateCount: number;
+    failed: string[];
+    failedCount: number;
+    lastUpdatedAt: string | null;
+  };
+  const [askSync, setAskSync] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [savingCell, setSavingCell] = useState<string | null>(null);
   // Synchronous mirror of `savingCell` so async flows (fill-down) can poll the
   // current guard without stale state from their own render closure.
@@ -719,10 +741,52 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       URL.revokeObjectURL(a.href);
       setSheetStatus("Exported");
       toast.success("POS CSV downloaded.");
+      // Preserve the existing export workflow, then offer the optional
+      // inventory price sync (explicit confirm; Not Now leaves inventory alone).
+      setSyncResult(null);
+      setSyncError("");
+      setAskSync(true);
     } catch {
       toast.error("Export failed.", "Could not reach the server while exporting.");
     } finally {
       setExportBusy(null);
+    }
+  };
+
+  /** Confirmed follow-up: update inventory prices from this sheet. */
+  const runInventorySync = async () => {
+    if (syncBusy) return;
+    setSyncBusy(true);
+    setSyncError("");
+    try {
+      const r = await fetch(`/api/sessions/${id}/sync-inventory-prices`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not update inventory prices.");
+        setSyncError(t);
+        return;
+      }
+      setSyncResult({
+        updated: Number(d.updated ?? 0),
+        exportedRows: Number(d.exportedRows ?? 0),
+        skippedUnmatched: Array.isArray(d.skippedUnmatched) ? d.skippedUnmatched.map(String) : [],
+        skippedUnmatchedCount: Number(d.skippedUnmatchedCount ?? 0),
+        skippedAmbiguous: Array.isArray(d.skippedAmbiguous) ? d.skippedAmbiguous.map(String) : [],
+        skippedAmbiguousCount: Number(d.skippedAmbiguousCount ?? 0),
+        skippedBlankPrice: Array.isArray(d.skippedBlankPrice) ? d.skippedBlankPrice.map(String) : [],
+        skippedBlankPriceCount: Number(d.skippedBlankPriceCount ?? 0),
+        skippedInvalidPrice: Array.isArray(d.skippedInvalidPrice) ? d.skippedInvalidPrice : [],
+        skippedInvalidPriceCount: Number(d.skippedInvalidPriceCount ?? 0),
+        skippedDuplicate: Array.isArray(d.skippedDuplicate) ? d.skippedDuplicate.map(String) : [],
+        skippedDuplicateCount: Number(d.skippedDuplicateCount ?? 0),
+        failed: Array.isArray(d.failed) ? d.failed.map(String) : [],
+        failedCount: Number(d.failedCount ?? 0),
+        lastUpdatedAt: typeof d.lastUpdatedAt === "string" ? d.lastUpdatedAt : null,
+      });
+    } catch {
+      setSyncError("Could not reach the server while updating inventory prices.");
+    } finally {
+      setSyncBusy(false);
     }
   };
 
@@ -989,6 +1053,75 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           <p className="mt-3 text-sm text-slate-400">No price sheet notes yet. Use “Add notes” to record vendor comparisons or general remarks.</p>
         )}
       </section>
+      {askSync && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Update App Inventory Prices?">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            {!syncResult ? (
+              <>
+                <h2 className="text-lg font-bold">Update App Inventory Prices?</h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  The POS CSV has been generated. Would you also like to update the
+                  corresponding product prices in the app&apos;s inventory using this price update sheet?
+                </p>
+                {syncError && (
+                  <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{syncError}</p>
+                )}
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1.5 text-sm disabled:opacity-60"
+                    disabled={syncBusy}
+                    onClick={() => { if (!syncBusy) { setAskSync(false); setSyncError(""); } }}
+                  >
+                    Not Now
+                  </button>
+                  <LoadingButton
+                    busy={syncBusy}
+                    busyLabel="Updating..."
+                    onClick={runInventorySync}
+                    className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    Update Inventory Prices
+                  </LoadingButton>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold">Inventory Price Update</h2>
+                <div className="mt-2 text-sm text-slate-700">
+                  <p>Products successfully updated: <span className="font-semibold">{syncResult.updated}</span></p>
+                  <p>Exported rows considered: <span className="font-semibold">{syncResult.exportedRows}</span></p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>Skipped (SKU not matched): {syncResult.skippedUnmatchedCount}{syncResult.skippedUnmatched.length ? ` — e.g. ${syncResult.skippedUnmatched.slice(0, 5).join(", ")}` : ""}</li>
+                    <li>Skipped (ambiguous / duplicate SKU): {syncResult.skippedAmbiguousCount}{syncResult.skippedAmbiguous.length ? ` — e.g. ${syncResult.skippedAmbiguous.slice(0, 5).join(", ")}` : ""}</li>
+                    <li>Skipped (blank price): {syncResult.skippedBlankPriceCount}{syncResult.skippedBlankPrice.length ? ` — e.g. ${syncResult.skippedBlankPrice.slice(0, 5).join(", ")}` : ""}</li>
+                    <li>Skipped (invalid price): {syncResult.skippedInvalidPriceCount}{syncResult.skippedInvalidPrice.length ? ` — e.g. ${syncResult.skippedInvalidPrice.slice(0, 5).map((r) => `${r.sku} (${r.price})`).join(", ")}` : ""}</li>
+                    <li>Skipped (duplicate row in sheet): {syncResult.skippedDuplicateCount}{syncResult.skippedDuplicate.length ? ` — e.g. ${syncResult.skippedDuplicate.slice(0, 5).join(", ")}` : ""}</li>
+                    <li>Failed updates: {syncResult.failedCount}{syncResult.failed.length ? ` — e.g. ${syncResult.failed.slice(0, 5).join(", ")}` : ""}</li>
+                  </ul>
+                  {syncResult.updated > 0 ? (
+                    <p className="mt-2 text-slate-600">
+                      Inventory prices now match the POS CSV (Nearest 9 &#8594; Price, Our New List Price &#8594; list cost).
+                      {syncResult.lastUpdatedAt ? ` Last updated: ${new Date(syncResult.lastUpdatedAt).toLocaleString()}.` : ""}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-amber-700">No prices were updated, so Last updated was left unchanged.</p>
+                  )}
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1.5 text-sm"
+                    onClick={() => { setAskSync(false); setSyncResult(null); setSyncError(""); }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
