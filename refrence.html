@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vendor Pricing Calculator (Bulk & Single)</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#17202a;--muted:#667085;--border:#d9dee7;--accent:#1f6feb;--good:#087443;--warn:#9a6700}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{background:#111827;color:#fff;padding:24px 20px} header h1{margin:0 0 5px;font-size:25px} header p{margin:0;color:#cbd5e1}
+main{max-width:1120px;margin:24px auto;padding:0 16px;display:grid;grid-template-columns:1fr;gap:18px}
+.tabs{display:flex;gap:10px;margin-bottom:15px}
+.tab-btn{background:var(--border);color:var(--text);border:none;padding:8px 16px;border-radius:8px;font-weight:700;cursor:pointer}
+.tab-btn.active{background:var(--accent);color:#fff}
+.tab-content{display:none} .tab-content.active{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+.tab-content.single-col{display:grid;grid-template-columns:1fr}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;box-shadow:0 2px 8px #00000008}
+h2{font-size:18px;margin:0 0 16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+label{display:block;font-weight:650;font-size:13px;margin-bottom:6px} input,select,button,textarea{font:inherit}
+input,select,textarea{width:100%;padding:10px 11px;border:1px solid var(--border);border-radius:9px;background:#fff}
+input:focus,select:focus,textarea:focus{outline:2px solid #bfdbfe;border-color:var(--accent)}
+.full{grid-column:1/-1}.hint{font-size:12px;color:var(--muted);margin-top:5px}
+.result{display:grid;gap:10px}.row{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid #eef1f5}.row:last-child{border-bottom:0}
+.editable-val{border:1px dashed var(--border);padding:2px 6px;border-radius:4px;text-align:right;font:inherit;font-weight:inherit;color:inherit;width:90px;background:#f8fafc}
+.editable-val:focus{background:#fff;border-style:solid}
+.value{font-weight:750}.big{font-size:28px;color:var(--good)}
+.notice{padding:11px 12px;border-radius:9px;background:#fff8e6;color:#7a5200;font-size:13px;margin-top:12px}
+button{border:0;border-radius:9px;padding:10px 14px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer} button.secondary{background:#eef2f6;color:#263238}
+.actions{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:8px;border-bottom:1px solid #edf0f4;vertical-align:top} th{color:var(--muted)}
+.small{font-size:12px;color:var(--muted)} textarea{font-family:monospace;font-size:12px;resize:vertical}
+.method-hint{font-size:12px;color:var(--accent);margin-top:5px;font-weight:600}
+@media(max-width:800px){.tab-content.active{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Vendor Pricing Calculator & Bulk Importer</h1>
+  <p>Calculate individual items or paste vertical vendor lists for fast updates.</p>
+</header>
+
+<main>
+<div class="tabs">
+  <button class="tab-btn active" data-tab="single">Single & Batch Calculator</button>
+  <button class="tab-btn" data-tab="bulk">Bulk CSV Importer</button>
+</div>
+
+<!-- SINGLE CALCULATOR TAB -->
+<div id="single" class="tab-content active">
+  <div style="display:flex;flex-direction:column;gap:18px">
+    <section class="card">
+      <h2>1. Product & vendor</h2>
+      <div class="grid">
+        <div class="full">
+          <label>Supplier</label>
+          <select id="supplier"></select>
+          <div id="supplierHint" class="hint"></div>
+        </div>
+        <div>
+          <label>Brand / product qualifier <span class="small">(optional)</span></label>
+          <input id="qualifier" placeholder="e.g. Alpha, PGX, BP, Cooler">
+        </div>
+        <div>
+          <label>Order type</label>
+          <select id="orderType">
+            <option value="unit">Open stock / units</option>
+            <option value="case">Case</option>
+            <option value="package">Package / bundle</option>
+          </select>
+        </div>
+        <div>
+          <label>Quantity ordered</label>
+          <input id="qty" type="number" min="1" value="1">
+        </div>
+        <div>
+          <label>Vendor list cost per unit ($)</label>
+          <input id="cost" type="number" min="0" step="0.01" value="27">
+        </div>
+        <div>
+          <label>Discount (%)</label>
+          <input id="discount" type="number" min="0" max="100" step="0.01" value="7">
+          <div id="discountSource" class="hint">Auto-filled from supplier rules — you can type over it manually if the vendor gave you a different number for this order.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vertical Quick-Paste Batch Box -->
+    <section class="card">
+      <h2>Quick Multi-Cost Vertical Batch Update</h2>
+      <p class="small">Selected supplier rules apply automatically. Paste a column of raw vendor list costs below and get a complete output table instantly.</p>
+      <div class="grid" style="margin-top:12px">
+        <div>
+          <label>Pricing divisor (Cost multiplier divisor)</label>
+          <input id="batchDivisor" type="number" value="0.605" step="0.001" min="0.001" max="1">
+        </div>
+        <div>
+          <label>Rounding Rule</label>
+          <select id="batchRounding">
+            <option value="x9" selected>Nearest $_.X9 (e.g. 9.39)</option>
+            <option value="99">Nearest $0.99</option>
+            <option value="95">Nearest $0.95</option>
+            <option value="none">Exact cents</option>
+          </select>
+        </div>
+        <div class="full">
+          <label>Paste Vendor List Costs (one per line)</label>
+          <textarea id="batchCostInput" rows="5" placeholder="11.49&#10;19.99&#10;32.99">11.49
+19.99
+32.99
+32.99</textarea>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="processBatchBtn">Process Costs</button>
+      </div>
+      <div id="batchDiscountNotice" class="hint" style="margin-top:8px"></div>
+      <div style="margin-top:15px;max-height:200px;overflow:auto">
+        <table>
+          <thead><tr><th>#</th><th>Raw Cost</th><th>Net Cost</th><th>Retail Price</th></tr></thead>
+          <tbody id="batchOutputBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>2. Retail pricing & Result</h2>
+    <div class="grid">
+      <div>
+        <label>Pricing divisor (default 0.605)</label>
+        <input id="pricingDivisor" type="number" min="0.001" max="1" step="0.001" value="0.605">
+      </div>
+      <div>
+        <label>Round retail price to</label>
+        <select id="rounding">
+          <option value="x9" selected>Nearest $_.X9 (e.g. 9.39)</option>
+          <option value="99">Nearest $0.99</option>
+          <option value="95">Nearest $0.95</option>
+          <option value="none">Exact cents</option>
+        </select>
+      </div>
+      <div class="full method-hint" id="methodHint">Retail = Net cost ÷ Divisor (e.g. $10.00 ÷ 0.605 = $16.53).</div>
+    </div>
+    <div class="result" style="margin-top:15px">
+      <div class="row"><span>Net cost / final list cost</span><span class="value" id="netCost">$25.11</span></div>
+      <div class="row"><span>Suggested retail price</span><span class="value big" id="retailPrice">$41.43</span></div>
+      <div class="row"><span class="small">Achieved margin</span><span class="value small"><input id="editAchievedMargin" class="editable-val" type="number" step="0.1" value="35.0">%</span></div>
+      <div class="row"><span class="small">Achieved markup</span><span class="value small"><input id="editAchievedMarkup" class="editable-val" type="number" step="0.1" value="-53.9">%</span></div>
+    </div>
+    <div class="actions">
+      <button id="copyBtn">Copy calculation</button>
+      <button id="resetBtn" class="secondary">Reset</button>
+    </div>
+  </section>
+</div>
+
+<!-- BULK IMPORTER TAB -->
+<div id="bulk" class="tab-content single-col">
+  <section class="card">
+    <h2>Bulk Pricing Import</h2>
+    <p class="small">Paste your full CSV data below (including header row). Matching supplier rules are automatically applied. Optional column <code>Divisor</code> can be added per-row to override the global setting below.</p>
+    
+    <div class="grid" style="margin-top:15px">
+      <div>
+        <label>Pricing divisor</label>
+        <input id="bulkDivisor" type="number" value="0.605" step="0.001" min="0.001" max="1">
+      </div>
+      <div>
+        <label>Rounding Rule</label>
+        <select id="bulkRounding">
+          <option value="x9" selected>Nearest $_.X9 (e.g. 9.39)</option>
+          <option value="99">Nearest $0.99</option>
+          <option value="95">Nearest $0.95</option>
+          <option value="none">Exact cents</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>CSV Data Input</label>
+        <textarea id="csvInput" rows="6">SKU,Supplier,Qualifier,OrderType,Qty,New Cost
+123,CAN PREV,,unit,1,27.00
+124,PURICA,,case,12,32.00
+125,PURICA,Pet,unit,1,18.00
+126,GENUINE HEALTH,,unit,36,22.00</textarea>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="processBulkBtn">Process & Generate POS File</button>
+      <button id="downloadBulkBtn" class="secondary">Download CSV</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>POS-Ready Output Preview</h2>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>SKU</th><th>List Cost (Net)</th><th>Price</th><th class="small">Divisor</th></tr></thead>
+        <tbody id="bulkOutputBody"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+</main>
+
+<script>
+const VENDORS = [
+  "ADVANTAGE HEALTH (AHM)", "AFRICAN FAIR TRADE CO. (AFT)", "AOR", "ASSURED / PREFERRED NUTRITION",
+  "BELL", "BIOFORCE", "BIOQUEST", "BOOSTER SCOOPS", "BRIGHTSIDE ORGANICS", "BZZZ BOMBS",
+  "CANDLE EAR", "CAN PREV", "COFFEE APES", "CONQUER NUTRITION", "ECOTREND", "EMPIRE / NPP",
+  "ENEREX", "FLORA", "GAB INNOVATIONS", "GARDEN OF LIFE / SISU / ATRIUM", "ATRIUM PRO",
+  "GENUINE HEALTH", "HERBALAND NATURALS", "HORIZON / PURITY GROCERY", "IRON IVY HEALTH",
+  "JACKSON'S NATURALS", "JAMIESON", "JARDINE", "LIFE CHOICE", "LIFE TREE FOREVER / BEE HAPPY",
+  "MARTIN & PLEASANCE", "MORPH SUPER FOODS", "M.N.R.", "MUSE MARKETING", "NAKA",
+  "NATURAL FACTORS", "NATURPHARM", "NATURES AID", "NATURES WAY / ENZYMATIC THERAPY",
+  "NEW CHAPTER CANADA", "NEWCO", "NEWROOTS HERBAL", "NUTRA RESEARCH", "NUTRITION ZONE",
+  "OMEGA", "PASCOE CANADA", "PLATINUM NATURALS", "PRAIRIE NATURALS", "PROLINE / ALORA",
+  "PURESOURCE", "PURICA", "PURITY / SWISS", "SITKA NATURALS", "SOURCE OF LIFE",
+  "ST FRANCIS", "STRAUSS HEART DROPS", "SYNERGY / TRUE HOPE", "TALL GRASS", "TRUENO",
+  "VEGA", "WELLBAR", "WILD CREEK NATURALS", "F2 NUTRITION", "PROSANTE INC", "VITALITY",
+  "LIVING ALCHEMY", "DERMAMED", "KENDY"
+];
+
+// Populate supplier dropdown alphabetically
+const supplier = document.getElementById("supplier");
+VENDORS.sort().forEach(v=>{
+  const o=document.createElement("option");
+  o.value=v; o.textContent=v;
+  supplier.appendChild(o);
+});
+supplier.value="CAN PREV";
+
+// Tab Switching logic
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(c=>c.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+
+// Master Discount Engine
+function getComputedDiscount(supName, qtyVal, qualVal="", orderTypeVal="unit", costTotal=0){
+  const s = (supName||"").toUpperCase().trim();
+  const q = (qualVal||"").toLowerCase();
+  const n = Number(qtyVal)||1;
+  const isCase = orderTypeVal.toLowerCase().includes("case") || orderTypeVal.toLowerCase().includes("package") || orderTypeVal.toLowerCase().includes("pkg");
+
+  if(s.includes("PURICA")) {
+    if(isCase) return q.includes("pet") ? 5 : 15;
+    return q.includes("pet") ? 0 : 10;
+  }
+  if(s.includes("GENUINE HEALTH")) return n >= 36 ? 20 : n >= 18 ? 15 : 10;
+  if(s.includes("OMEGA")) return n >= 12 ? 20 : 0;
+  if(s.includes("STRAUSS HEART DROPS")) return n >= 48 ? 10 : n >= 24 ? 5 : 0;
+  if(s.includes("F2 NUTRITION")) return n >= 24 ? 25 : 0;
+  if(s.includes("WILD CREEK NATURALS")) return costTotal >= 500 ? 15 : costTotal >= 300 ? 8 : 0;
+  if((s.includes("DERMAMED") || s.includes("E3 LIVE")) && isCase) return 10;
+  if(s.includes("ASSURED") || s.includes("PREFERRED NUTRITION")) {
+    if(q.includes("preferred")) return 25;
+    if(q.includes("alpha")) return 0;
+    return 15;
+  }
+  if(s.includes("BIOFORCE")) {
+    if(q.includes("valerval") || q.includes("valerian") || q.includes("milk thistle") || q.includes("allergy") || q.includes("absolut")) return 10;
+    return 0;
+  }
+  if(s.includes("ECOTREND")) {
+    if(q.includes("sierra")) return 8;
+    if(q.includes("santev")) return 0;
+    if(q.includes("nordic") || q.includes("nutribi") || q.includes("hyologic") || q.includes("provita")) return 5;
+    return 0;
+  }
+  if(s.includes("FLORA")) {
+    if(q.includes("gandalf")) return 0;
+    if(q.includes("cooler") || isCase) return 15;
+    return 10;
+  }
+  if(s.includes("GARDEN OF LIFE") || s.includes("SISU") || s.includes("ATRIUM")) {
+    if(costTotal >= 300 && q.includes("pro")) return 0;
+    return 15;
+  }
+  if(s.includes("HORIZON") || s.includes("PURITY GROCERY")) {
+    return q.includes("exclusive") ? 5 : 10;
+  }
+  if(s.includes("JAMIESON")) {
+    if(q.includes("bp")) return 25;
+    if(q.includes("lorna") || q.includes("smart solutions")) return 15;
+    if(q.includes("precision") || q.includes("iron v")) return 20;
+    return 0;
+  }
+  if(s.includes("NATURAL FACTORS")) {
+    if(q.includes("pgx") || q.includes("wes") || q.includes("revitalx") || q.includes("detoxit")) return 15;
+    if(q.includes("no discount")) return 0;
+    return 25;
+  }
+  if(s.includes("NATURES WAY") || s.includes("ENZYMATIC")) {
+    if(q.includes("enzymatic") || q.includes("integrative")) return 0;
+    return 5;
+  }
+  if(s.includes("ST FRANCIS")) return q.includes("food") ? 5 : 10;
+  if(s.includes("TRUENO")) return q.includes("nulife") ? 15 : 0;
+  if(s.includes("VEGA")) return 10;
+
+  const fixedDiscounts = {
+    "CAN PREV": 7, "ENEREX": 20, "HERBALAND NATURALS": 20, "NEWCO": 10,
+    "NEWROOTS HERBAL": 15, "PURESOURCE": 15, "PLATINUM NATURALS": 25,
+    "KENDY": 10, "PROSANTE INC": 15, "NEW CHAPTER CANADA": 15, "AOR": 10,
+    "ADVANTAGE HEALTH": 10, "AFRICAN FAIR TRADE": 0, "LIFE CHOICE": 0,
+    "NATURES AID": 0, "VITALITY": 0, "SITKA NATURALS": 0, "SOURCE OF LIFE": 0,
+    "TALL GRASS": 0, "CELLFOOD": 0, "HAIRGROW TECH": 0, "HORNBY ORGANIC": 0
+  };
+
+  for(let key in fixedDiscounts) {
+    if(s.includes(key)) return fixedDiscounts[key];
+  }
+  return 0;
+}
+
+// Rounding rules
+function roundVal(v, rType){
+  if(rType==="99") return Math.floor(v)+0.99;
+  if(rType==="95") return Math.floor(v)+0.95;
+  if(rType==="x9") return Math.round((v+0.01)*10)/10 - 0.01;
+  return Math.round(v*100)/100;
+}
+
+// ---- Single calculator ----
+let isUpdatingFromInput = false;
+// Tracks whether the user has manually typed a custom discount that should
+// override the supplier's auto-calculated rule (used by the batch box below).
+let discountManuallyEdited = false;
+
+function computeDiscountForCurrentSelection(){
+  const qty = Number(document.getElementById("qty").value)||1;
+  const qual = document.getElementById("qualifier").value;
+  const orderType = document.getElementById("orderType").value;
+  const lc = Math.max(0, Number(document.getElementById("cost").value)||0);
+  const d = getComputedDiscount(supplier.value, qty, qual, orderType, lc*qty);
+  document.getElementById("discount").value = d;
+  // Any field that re-triggers the auto rule resets the manual override.
+  discountManuallyEdited = false;
+}
+
+function renderSingle(skipInputs = false){
+  const lc = Math.max(0,Number(document.getElementById("cost").value)||0);
+  const d = Number(document.getElementById("discount").value)||0;
+  const net = lc - (lc * d / 100);
+
+  const divisor = Math.max(0.0001, Number(document.getElementById("pricingDivisor").value)||0.605);
+  const retail = net / divisor;
+  const rp = roundVal(retail, document.getElementById("rounding").value);
+
+  document.getElementById("netCost").textContent = "$" + net.toFixed(2);
+  document.getElementById("retailPrice").textContent = "$" + rp.toFixed(2);
+
+  if(rp > 0 && !skipInputs){
+    const margin = ((rp - net) / rp) * 100;
+    const markup = net > 0 ? ((rp - net) / net) * 100 : 0;
+    document.getElementById("editAchievedMargin").value = margin.toFixed(1);
+    document.getElementById("editAchievedMarkup").value = markup.toFixed(1);
+  }
+}
+
+// Event listeners for single calculator
+["cost","qty","qualifier","orderType"].forEach(id=>{
+  document.getElementById(id).addEventListener("input", ()=>{
+    computeDiscountForCurrentSelection();
+    renderSingle();
+  });
+});
+supplier.addEventListener("change", ()=>{
+  computeDiscountForCurrentSelection();
+  renderSingle();
+});
+
+document.getElementById("discount").addEventListener("input", ()=>{
+  // A direct edit by the user marks the discount as a manual override so the
+  // batch box below uses this value instead of recalculating per-supplier.
+  discountManuallyEdited = true;
+  renderSingle();
+});
+document.getElementById("discount").addEventListener("change", ()=>renderSingle());
+
+document.getElementById("rounding").addEventListener("input", ()=>renderSingle());
+document.getElementById("rounding").addEventListener("change", ()=>renderSingle());
+
+document.getElementById("pricingDivisor").addEventListener("input", (e)=>{
+  renderSingle();
+});
+
+// Allow reverse calculation if user edits Achieved Margin or Achieved Markup fields directly
+document.getElementById("editAchievedMargin").addEventListener("input", (e)=>{
+  const val = Number(e.target.value);
+  if(val > 0 && val < 100) {
+    const newDivisor = 1 - (val / 100);
+    isUpdatingFromInput = true;
+    document.getElementById("pricingDivisor").value = newDivisor.toFixed(4);
+    renderSingle(true);
+    // update counterpart markup
+    const lc = Math.max(0,Number(document.getElementById("cost").value)||0);
+    const d = Number(document.getElementById("discount").value)||0;
+    const net = lc - (lc * d / 100);
+    const retail = roundVal(net / newDivisor, document.getElementById("rounding").value);
+    if(net > 0) {
+      document.getElementById("editAchievedMarkup").value = (((retail - net) / net) * 100).toFixed(1);
+    }
+    isUpdatingFromInput = false;
+  }
+});
+
+document.getElementById("editAchievedMarkup").addEventListener("input", (e)=>{
+  const val = Number(e.target.value);
+  if(val > -100) {
+    const newDivisor = 1 / (1 + (val / 100));
+    if(newDivisor > 0 && newDivisor <= 1) {
+      isUpdatingFromInput = true;
+      document.getElementById("pricingDivisor").value = newDivisor.toFixed(4);
+      renderSingle(true);
+      // update counterpart margin
+      const lc = Math.max(0,Number(document.getElementById("cost").value)||0);
+      const d = Number(document.getElementById("discount").value)||0;
+      const net = lc - (lc * d / 100);
+      const retail = roundVal(net / newDivisor, document.getElementById("rounding").value);
+      if(retail > 0) {
+        document.getElementById("editAchievedMargin").value = (((retail - net) / retail) * 100).toFixed(1);
+      }
+      isUpdatingFromInput = false;
+    }
+  }
+});
+
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  document.getElementById("cost").value = 27;
+  document.getElementById("qty").value = 1;
+  document.getElementById("qualifier").value = "";
+  document.getElementById("orderType").value = "unit";
+  document.getElementById("pricingDivisor").value = 0.605;
+  document.getElementById("rounding").value = "x9";
+  supplier.value = "CAN PREV";
+  computeDiscountForCurrentSelection();
+  renderSingle();
+});
+
+document.getElementById("copyBtn").addEventListener("click", ()=>{
+  const text = `Net cost: ${document.getElementById("netCost").textContent} | Retail: ${document.getElementById("retailPrice").textContent}`;
+  navigator.clipboard.writeText(text).catch(()=>{});
+});
+
+// ---- Vertical batch paste ----
+function processBatch(){
+  const text = document.getElementById("batchCostInput").value.trim();
+  if(!text) return;
+  const lines = text.split("\n");
+  const sup = supplier.value;
+  const qual = document.getElementById("qualifier").value;
+  const orderType = document.getElementById("orderType").value;
+  const qty = Number(document.getElementById("qty").value)||1;
+  const divisor = Math.max(0.0001, Number(document.getElementById("batchDivisor").value)||0.605);
+  const roundType = document.getElementById("batchRounding").value;
+
+  // If the user manually typed a custom Discount (%) in section 1, honor it
+  // for every row instead of recalculating the supplier's auto rule per line.
+  const manualDiscount = Number(document.getElementById("discount").value)||0;
+  const notice = document.getElementById("batchDiscountNotice");
+  if(discountManuallyEdited){
+    notice.textContent = `Using your manual discount override (${manualDiscount}%) for all rows below.`;
+  } else {
+    notice.textContent = "";
+  }
+
+  const tbody = document.getElementById("batchOutputBody");
+  tbody.innerHTML="";
+
+  lines.forEach((line, idx)=>{
+    const rawCost = Number(line.trim().replace(/[^0-9.]/g,""))||0;
+    if(rawCost <= 0) return;
+
+    const disc = discountManuallyEdited
+      ? manualDiscount
+      : getComputedDiscount(sup, qty, qual, orderType, rawCost * qty);
+    const netCost = rawCost - (rawCost * (disc/100));
+    const retail = roundVal(netCost / divisor, roundType);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML=`<td>${idx+1}</td><td>$${rawCost.toFixed(2)}</td><td style="font-weight:750">$${netCost.toFixed(2)}</td><td style="color:var(--good);font-weight:750">$${retail.toFixed(2)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById("processBatchBtn").addEventListener("click", processBatch);
+
+// ---- Bulk CSV importer ----
+function processBulk(){
+  const text = document.getElementById("csvInput").value.trim();
+  if(!text) return;
+  const lines = text.split("\n");
+  if(lines.length < 2) return;
+  const headers = lines[0].split(",").map(h=>h.trim().toLowerCase());
+
+  const skuIdx = headers.indexOf("sku");
+  const supIdx = headers.indexOf("supplier");
+  const qualIdx = headers.indexOf("qualifier");
+  const typeIdx = headers.indexOf("ordertype");
+  const qtyIdx = headers.indexOf("qty");
+  const costIdx = headers.indexOf("new cost");
+  const divisorIdx = headers.indexOf("divisor");
+
+  const globalDivisor = Math.max(0.0001, Number(document.getElementById("bulkDivisor").value)||0.605);
+  const roundType = document.getElementById("bulkRounding").value;
+  const tbody = document.getElementById("bulkOutputBody");
+  tbody.innerHTML="";
+
+  let outputRows = [["Sku", "List Cost (Net)", "Price"]];
+
+  for(let i=1; i<lines.length; i++){
+    const cols = lines[i].split(",").map(c=>c.trim());
+    if(cols.length < 2) continue;
+
+    const sku = skuIdx !== -1 ? cols[skuIdx] : `SKU-${i}`;
+    const sup = supIdx !== -1 ? cols[supIdx] : "";
+    const qual = qualIdx !== -1 ? cols[qualIdx] : "";
+    const orderType = typeIdx !== -1 ? cols[typeIdx] : "unit";
+    const qty = qtyIdx !== -1 ? Number(cols[qtyIdx])||1 : 1;
+    const rawCost = costIdx !== -1 ? Number(cols[costIdx])||0 : Number(cols[cols.length-1])||0;
+
+    const divisor = (divisorIdx !== -1 && cols[divisorIdx]) ? Number(cols[divisorIdx])||globalDivisor : globalDivisor;
+
+    const disc = getComputedDiscount(sup, qty, qual, orderType, rawCost * qty);
+    const netCost = rawCost - (rawCost * (disc/100));
+    const retail = roundVal(netCost / divisor, roundType);
+
+    outputRows.push([sku, netCost.toFixed(2), retail.toFixed(2)]);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML=`<td>${sku}</td><td>$${netCost.toFixed(2)}</td><td>$${retail.toFixed(2)}</td><td class="small">${divisor}</td>`;
+    tbody.appendChild(tr);
+  }
+  window.lastBulkOutput = outputRows.map(e=>e.join(",")).join("\n");
+}
+
+document.getElementById("processBulkBtn").addEventListener("click", processBulk);
+document.getElementById("downloadBulkBtn").addEventListener("click",()=>{
+  if(!window.lastBulkOutput) processBulk();
+  const blob = new Blob([window.lastBulkOutput], {type: 'text/csv'});
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pos_pricing_import.csv';
+  a.click();
+});
+
+// Init
+computeDiscountForCurrentSelection();
+renderSingle();
+processBatch();
+processBulk();
+</script>
+</body>
+</html>

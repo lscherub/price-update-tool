@@ -862,7 +862,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         layoutKey={id}
       />
       {showAdd && (
-        <AddItemDialog busy={addBusy} onClose={() => { if (!addBusy) setShowAdd(false); }} onSubmit={addItem} />
+        <AddItemDialog
+          busy={addBusy}
+          onClose={() => { if (!addBusy) setShowAdd(false); }}
+          onSubmit={addItem}
+          existingSkus={items.flatMap((r) => [r.rawVendorSku, r.cleanedSku])}
+        />
       )}
       {confirmBulk && selected.size > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
