@@ -1,12 +1,107 @@
-import { DEFAULT_DIVISOR, normalizeSku, skuCandidates } from "./pricing";
+import { DEFAULT_DIVISOR, normalizeSku } from "./pricing";
 import { calculateRow } from "./nearest9";
 import { findProductsByRawSkus, getDiscountMaps, resolveDefaultDiscount } from "./lookup";
-import type { ProductRow } from "./store";
+import { getPrisma } from "./db";
+import { loadFileStore, type ProductRow } from "./store";
+import { lookupProduct } from "./recalc";
 import {
   validateBulkRow,
   type BulkAddInputRow,
   type BulkAddParsedItem,
 } from "./bulkAdd";
+
+/**
+ * Look up products for an array of Cleaned SKUs using the exact same inventory
+ * SKU-matching logic as the single-row Add Row feature (lookupProduct in recalc.ts).
+ *
+ * Matches:
+ *  1. exact `sku` or exact `normalizedSku`
+ *  2. stripped leading-zero `sku` or stripped leading-zero `normalizedSku`
+ *
+ * NEVER slices off the last character of a Cleaned SKU or uses partial prefix matching.
+ */
+export async function lookupProductsForCleanedSkus(
+  cleanedSkus: string[],
+): Promise<Map<string, ProductRow>> {
+  const out = new Map<string, ProductRow>();
+  if (!cleanedSkus.length) return out;
+
+  const prisma = getPrisma();
+  if (!prisma) {
+    const store = loadFileStore();
+    for (const raw of cleanedSkus) {
+      const s = raw.trim();
+      if (!s) continue;
+      const stripped = s.replace(/^0+/, "") || "0";
+      const hit =
+        store.products.find((p) => p.sku === s || p.normalizedSku === s) ??
+        store.products.find(
+          (p) =>
+            (p.sku.replace(/^0+/, "") || "0") === stripped ||
+            (p.normalizedSku.replace(/^0+/, "") || "0") === stripped,
+        );
+      if (hit) out.set(s, hit);
+    }
+    return out;
+  }
+
+  // Collect candidate search keys: exact and stripped of leading zeroes ONLY.
+  const candSet = new Set<string>();
+  for (const raw of cleanedSkus) {
+    const s = raw.trim();
+    if (!s) continue;
+    candSet.add(s);
+    const stripped = s.replace(/^0+/, "") || "0";
+    candSet.add(stripped);
+  }
+
+  const keys = [...candSet];
+  const found: ProductRow[] = [];
+  for (let i = 0; i < keys.length; i += 2000) {
+    const chunk = keys.slice(i, i + 2000);
+    const rows = await prisma.product.findMany({
+      where: { OR: [{ sku: { in: chunk } }, { normalizedSku: { in: chunk } }] },
+      take: 50000,
+    });
+    for (const r of rows) {
+      found.push({
+        id: r.id,
+        sku: r.sku,
+        normalizedSku: r.normalizedSku,
+        productNumber: r.productNumber ?? "",
+        description: r.description ?? "",
+        vendor: r.vendor ?? "",
+        brand: r.brand ?? "",
+        listCost: String(r.listCost ?? "0.00"),
+        price: String(r.price ?? "0.00"),
+        sizeDesc: r.sizeDesc ?? "",
+        isInactive: !!r.isInactive,
+      });
+    }
+  }
+
+  // Each Cleaned SKU resolves to its own product independently
+  for (const raw of cleanedSkus) {
+    const s = raw.trim();
+    if (!s) continue;
+    const stripped = s.replace(/^0+/, "") || "0";
+
+    // 1. Exact match on sku
+    let hit = found.find((p) => p.sku === s);
+    // 2. Exact match on normalizedSku
+    if (!hit) hit = found.find((p) => p.normalizedSku === s);
+    // 3. Leading-zero-stripped match on sku
+    if (!hit) hit = found.find((p) => (p.sku.replace(/^0+/, "") || "0") === stripped);
+    // 4. Leading-zero-stripped match on normalizedSku
+    if (!hit) hit = found.find((p) => (p.normalizedSku.replace(/^0+/, "") || "0") === stripped);
+
+    if (hit) {
+      out.set(s, hit);
+    }
+  }
+
+  return out;
+}
 
 /**
  * Server-side computation of the full preview for a list of input rows.
@@ -16,35 +111,46 @@ export async function computeBulkAddPreview(
   inputRows: BulkAddInputRow[],
   existingSkus?: string[],
 ): Promise<BulkAddParsedItem[]> {
-  // 1. Gather all candidate SKUs to perform a single batch lookup
-  const allLookupKeys: string[] = [];
+  // Separate Cleaned SKUs from Raw-only SKUs
+  const cleanedSkus: string[] = [];
+  const rawOnlySkus: string[] = [];
+
   for (const r of inputRows) {
     const clean = String(r.cleanedSku ?? "").trim();
     const raw = String(r.rawVendorSku ?? "").trim();
-    if (clean) allLookupKeys.push(clean);
-    if (raw) allLookupKeys.push(raw);
+    if (clean) {
+      cleanedSkus.push(clean);
+    } else if (raw) {
+      rawOnlySkus.push(raw);
+    }
   }
 
-  // Single batch product lookup (single/few queries, indexed)
-  const productMap = await findProductsByRawSkus(allLookupKeys);
+  // 1. Cleaned SKU lookup using exact SKU-matching (lookupProductsForCleanedSkus)
+  const cleanProductMap = await lookupProductsForCleanedSkus(cleanedSkus);
+
+  // 2. Raw-only SKU lookup using standard raw vendor import pipeline
+  const rawProductMap =
+    rawOnlySkus.length > 0
+      ? await findProductsByRawSkus(rawOnlySkus)
+      : new Map<string, ProductRow>();
+
+  // 3. Fetch discount lookup tables
   const discMaps = await getDiscountMaps();
 
-  // Existing worksheet SKUs and identifiers for duplicate detection
-  const existingNorm = new Set(
-    (existingSkus ?? []).map((s) => {
-      const trimmed = String(s ?? "").trim().replace(/[\s-]+/g, "");
-      return trimmed.replace(/^0+/, "") || trimmed;
-    }).filter(Boolean)
-  );
-  // Also keep raw normalized variants
+  // 4. Duplicate tracking
+  // Existing worksheet SKUs
+  const existingCleanKeys = new Set<string>();
+  const existingRawKeys = new Set<string>();
   for (const s of existingSkus ?? []) {
-    const n = normalizeSku(s);
-    if (n) existingNorm.add(n.replace(/^0+/, "") || n);
+    if (!s) continue;
+    const str = String(s).trim();
+    const stripped = str.replace(/[\s-]+/g, "").replace(/^0+/, "") || str;
+    existingCleanKeys.add(stripped);
+    const rawNorm = normalizeSku(str);
+    if (rawNorm) existingRawKeys.add(rawNorm.replace(/^0+/, "") || rawNorm);
   }
 
-  const seenClean = new Set<string>();
-  const seenRawNorm = new Set<string>();
-  const seenProductIds = new Set<string>();
+  const seenInBatch = new Set<string>();
 
   const results: BulkAddParsedItem[] = [];
 
@@ -55,20 +161,28 @@ export async function computeBulkAddPreview(
     const rawIn = String(row.rawVendorSku ?? "").trim();
     const cleanIn = String(row.cleanedSku ?? "").trim();
 
-    // Cleaned SKU key (stripped of spaces/hyphens and leading zeroes)
-    const cleanKey = cleanIn ? (cleanIn.replace(/[\s-]+/g, "").replace(/^0+/, "") || cleanIn) : "";
-    const rawNormKey = rawIn ? (normalizeSku(rawIn).replace(/^0+/, "") || normalizeSku(rawIn)) : "";
-
-    let isDuplicateInWorksheet = false;
-    if (cleanKey && existingNorm.has(cleanKey)) isDuplicateInWorksheet = true;
-    if (rawNormKey && existingNorm.has(rawNormKey)) isDuplicateInWorksheet = true;
+    // Batch duplicate detection: Only flag when its SKU genuinely duplicates another row in the current batch
+    const batchKey = cleanIn
+      ? `clean:${cleanIn.replace(/[\s-]+/g, "").replace(/^0+/, "") || cleanIn}`
+      : `raw:${rawIn.replace(/[\s-]+/g, "").replace(/^0+/, "") || rawIn}`;
 
     let isDuplicateInBatch = false;
-    if (cleanKey && seenClean.has(cleanKey)) isDuplicateInBatch = true;
-    if (rawNormKey && seenRawNorm.has(rawNormKey)) isDuplicateInBatch = true;
+    if (cleanIn || rawIn) {
+      if (seenInBatch.has(batchKey)) {
+        isDuplicateInBatch = true;
+      }
+      seenInBatch.add(batchKey);
+    }
 
-    if (cleanKey) seenClean.add(cleanKey);
-    if (rawNormKey) seenRawNorm.add(rawNormKey);
+    // Worksheet duplicate detection: Check if SKU exists in worksheet
+    let isDuplicateInWorksheet = false;
+    if (cleanIn) {
+      const strippedClean = cleanIn.replace(/[\s-]+/g, "").replace(/^0+/, "") || cleanIn;
+      if (existingCleanKeys.has(strippedClean)) isDuplicateInWorksheet = true;
+    } else if (rawIn) {
+      const rawNorm = normalizeSku(rawIn).replace(/^0+/, "") || rawIn;
+      if (existingRawKeys.has(rawNorm) || existingCleanKeys.has(rawNorm)) isDuplicateInWorksheet = true;
+    }
 
     if (!validation.isValid) {
       results.push({
@@ -100,58 +214,61 @@ export async function computeBulkAddPreview(
       continue;
     }
 
-    // Lookup product: Cleaned SKU takes precedence; fallback to Raw SKU
+    // Lookup product for this row:
     let prod: ProductRow | null = null;
     if (cleanIn) {
-      prod = productMap.get(cleanIn) ?? null;
+      // 1. Look up independently by Cleaned SKU
+      prod = cleanProductMap.get(cleanIn) ?? null;
+      // Fallback to single-row lookupProduct if batch map missed
       if (!prod) {
-        // Also check stripped leading zeroes variant
-        const strippedClean = cleanIn.replace(/^0+/, "") || "0";
-        prod = productMap.get(strippedClean) ?? null;
+        prod = (await lookupProduct(cleanIn)) as ProductRow | null;
       }
-    }
-    if (!prod && rawIn) {
-      prod = productMap.get(rawIn) ?? null;
+      // If still not found and rawVendorSku is provided, fallback to raw SKU
+      if (!prod && rawIn) {
+        const rawFallback = await findProductsByRawSkus([rawIn]);
+        prod = rawFallback.get(rawIn) ?? null;
+      }
+    } else if (rawIn) {
+      // Look up by Raw Vendor SKU
+      prod = rawProductMap.get(rawIn) ?? null;
       if (!prod) {
-        for (const cand of skuCandidates(rawIn)) {
-          const hit = productMap.get(cand);
-          if (hit) { prod = hit; break; }
-        }
+        const rawFallback = await findProductsByRawSkus([rawIn]);
+        prod = rawFallback.get(rawIn) ?? null;
       }
-    }
-
-    if (prod?.id) {
-      if (seenProductIds.has(prod.id)) isDuplicateInBatch = true;
-      seenProductIds.add(prod.id);
     }
 
     const cleanedOverridden = !!cleanIn;
     const defaultDiscount = prod ? resolveDefaultDiscount(discMaps, prod.vendor, prod.brand) : "0.00";
 
-    const discInput = row.discount && String(row.discount).trim() !== "" ? String(row.discount).trim() : undefined;
-    const priceInput = row.vendorListPriceNew && String(row.vendorListPriceNew).trim() !== ""
-      ? String(row.vendorListPriceNew).trim().replace(/[$,]/g, "")
-      : null;
-    const divisorInput = row.marginDivisor && String(row.marginDivisor).trim() !== ""
-      ? String(row.marginDivisor).trim()
-      : undefined;
+    const discInput =
+      row.discount && String(row.discount).trim() !== "" ? String(row.discount).trim() : undefined;
+    const priceInput =
+      row.vendorListPriceNew && String(row.vendorListPriceNew).trim() !== ""
+        ? String(row.vendorListPriceNew).trim().replace(/[$,]/g, "")
+        : null;
+    const divisorInput =
+      row.marginDivisor && String(row.marginDivisor).trim() !== ""
+        ? String(row.marginDivisor).trim()
+        : undefined;
 
     const calc = calculateRow({
       rawVendorSku: rawIn,
-      cleanedSku: cleanIn,
+      cleanedSku: cleanIn || (rawIn ? normalizeSku(rawIn) : ""),
       cleanedOverridden,
       discount: discInput,
       vendorListPriceNew: priceInput,
       marginDivisor: divisorInput,
-      product: prod ? {
-        productNumber: prod.productNumber,
-        description: prod.description,
-        brand: prod.brand,
-        vendor: prod.vendor,
-        listCost: prod.listCost,
-        price: prod.price,
-        isInactive: prod.isInactive,
-      } : null,
+      product: prod
+        ? {
+            productNumber: prod.productNumber,
+            description: prod.description,
+            brand: prod.brand,
+            vendor: prod.vendor,
+            listCost: prod.listCost,
+            price: prod.price,
+            isInactive: prod.isInactive,
+          }
+        : null,
       defaultDiscount,
     });
 
@@ -184,4 +301,3 @@ export async function computeBulkAddPreview(
 
   return results;
 }
-

@@ -22,14 +22,53 @@ const ACCEPTANCE_STORE: StoreShape = {
     {
       id: "prod-1",
       sku: "06895801011",
-      normalizedSku: "06895801011",
-      productNumber: "ECO-1011",
-      description: "BRAGG APPLE CIDER VINEGAR 473ML",
-      vendor: "ECOTREND GREENS",
-      brand: "BRAGG",
+      normalizedSku: "0689580101", // Notice: shared prefix!
+      productNumber: "NF-1011",
+      description: "NA MEGA HALIBUT LIVER",
+      vendor: "NATURAL FACTORS",
+      brand: "NATURAL FACTORS",
       listCost: "6.20",
       price: "10.49",
-      sizeDesc: "473ML",
+      sizeDesc: "90SG",
+      isInactive: false,
+    },
+    {
+      id: "prod-14",
+      sku: "06895801014",
+      normalizedSku: "0689580101", // Notice: shared prefix!
+      productNumber: "NF-1014",
+      description: "NA BETACAREALL 25,000IU",
+      vendor: "NATURAL FACTORS",
+      brand: "NATURAL FACTORS",
+      listCost: "11.20",
+      price: "18.99",
+      sizeDesc: "90SG",
+      isInactive: false,
+    },
+    {
+      id: "prod-15",
+      sku: "06895801015",
+      normalizedSku: "0689580101", // Notice: shared prefix!
+      productNumber: "NF-1015",
+      description: "NA COENZYME Q10 100MG",
+      vendor: "NATURAL FACTORS",
+      brand: "NATURAL FACTORS",
+      listCost: "20.50",
+      price: "34.99",
+      sizeDesc: "60SG",
+      isInactive: false,
+    },
+    {
+      id: "prod-16",
+      sku: "06895801016",
+      normalizedSku: "0689580101", // Notice: shared prefix!
+      productNumber: "NF-1016",
+      description: "NA ZINC CITRATE 50MG",
+      vendor: "NATURAL FACTORS",
+      brand: "NATURAL FACTORS",
+      listCost: "14.10",
+      price: "23.99",
+      sizeDesc: "90TAB",
       isInactive: false,
     },
     {
@@ -60,6 +99,7 @@ const ACCEPTANCE_STORE: StoreShape = {
     },
   ],
   vendorDiscounts: [
+    { id: "vd-0", vendor: "NATURAL FACTORS", normalizedVendor: "natural factors", defaultDiscount: "10.00" },
     { id: "vd-1", vendor: "ECOTREND GREENS", normalizedVendor: "ecotrend greens", defaultDiscount: "10.00" },
     { id: "vd-2", vendor: "CANPREV", normalizedVendor: "canprev", defaultDiscount: "8.00" },
     { id: "vd-3", vendor: "A.O.R. INC.", normalizedVendor: "a.o.r. inc.", defaultDiscount: "10.00" },
@@ -111,9 +151,9 @@ describe("Acceptance Test — Bulk Add Rows", () => {
     expect(row.isValid).toBe(true);
     expect(row.matched).toBe(true);
     expect(row.cleanedSku).toBe("06895801011");
-    expect(row.productName).toBe("BRAGG APPLE CIDER VINEGAR 473ML");
-    expect(row.vendor).toBe("ECOTREND GREENS");
-    expect(row.brand).toBe("BRAGG");
+    expect(row.productName).toBe("NA MEGA HALIBUT LIVER");
+    expect(row.vendor).toBe("NATURAL FACTORS");
+    expect(row.brand).toBe("NATURAL FACTORS");
     expect(row.discount).toBe("10.00"); // Vendor default applied
     expect(row.marginDivisor).toBe(DEFAULT_DIVISOR); // Default divisor "0.605" applied
     expect(row.vendorListPriceNew).toBe("9.49");
@@ -129,10 +169,10 @@ describe("Acceptance Test — Bulk Add Rows", () => {
       vendorListPriceNew: "9.49",
       marginDivisor: DEFAULT_DIVISOR,
       product: {
-        productNumber: "ECO-1011",
-        description: "BRAGG APPLE CIDER VINEGAR 473ML",
-        brand: "BRAGG",
-        vendor: "ECOTREND GREENS",
+        productNumber: "NF-1011",
+        description: "NA MEGA HALIBUT LIVER",
+        brand: "NATURAL FACTORS",
+        vendor: "NATURAL FACTORS",
         listCost: "6.20",
         price: "10.49",
       },
@@ -272,6 +312,59 @@ describe("Acceptance Test — Bulk Add Rows", () => {
       marginDivisor: "0.58",
       notes: "check margin",
     });
+  });
+
+  it("Scenario 5: User example with 4 similar SKUs sharing prefix (06895801011, 06895801014, 06895801015, 06895801016)", async () => {
+    const pastedText = `Cleaned SKU\tVendor List Price (New)
+06895801011\t9.49
+06895801014\t17.36
+06895801015\t32.33
+06895801016\t21.86`;
+
+    const parsed = parsePastedText(pastedText);
+    const mapping = guessColumnMapping(parsed.headers);
+    const inputRows = applyColumnMapping(parsed.headers, parsed.rows, mapping);
+
+    expect(inputRows.length).toBe(4);
+
+    const preview = await computeBulkAddPreview(inputRows);
+    expect(preview.length).toBe(4);
+
+    // Row 0: 06895801011 -> NA MEGA HALIBUT LIVER
+    expect(preview[0].cleanedSku).toBe("06895801011");
+    expect(preview[0].productName).toBe("NA MEGA HALIBUT LIVER");
+    expect(preview[0].vendorListPriceNew).toBe("9.49");
+    expect(preview[0].isValid).toBe(true);
+    expect(preview[0].matched).toBe(true);
+    expect(preview[0].isDuplicateInBatch).toBe(false);
+
+    // Row 1: 06895801014 -> MUST RESOLVE TO NA BETACAREALL 25,000IU (NOT NA MEGA HALIBUT LIVER!)
+    expect(preview[1].cleanedSku).toBe("06895801014");
+    expect(preview[1].productName).toBe("NA BETACAREALL 25,000IU");
+    expect(preview[1].vendorListPriceNew).toBe("17.36");
+    expect(preview[1].isValid).toBe(true);
+    expect(preview[1].matched).toBe(true);
+    expect(preview[1].isDuplicateInBatch).toBe(false); // Must NOT be flagged as duplicate
+
+    // Row 2: 06895801015 -> NA COENZYME Q10 100MG
+    expect(preview[2].cleanedSku).toBe("06895801015");
+    expect(preview[2].productName).toBe("NA COENZYME Q10 100MG");
+    expect(preview[2].vendorListPriceNew).toBe("32.33");
+    expect(preview[2].isValid).toBe(true);
+    expect(preview[2].matched).toBe(true);
+    expect(preview[2].isDuplicateInBatch).toBe(false);
+
+    // Row 3: 06895801016 -> NA ZINC CITRATE 50MG
+    expect(preview[3].cleanedSku).toBe("06895801016");
+    expect(preview[3].productName).toBe("NA ZINC CITRATE 50MG");
+    expect(preview[3].vendorListPriceNew).toBe("21.86");
+    expect(preview[3].isValid).toBe(true);
+    expect(preview[3].matched).toBe(true);
+    expect(preview[3].isDuplicateInBatch).toBe(false);
+
+    // Verify all four can be added (all valid and not duplicates)
+    const canBeAdded = preview.filter((r) => r.isValid && !r.isDuplicateInBatch);
+    expect(canBeAdded.length).toBe(4);
   });
 });
 
