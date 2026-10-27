@@ -2,6 +2,7 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLS, PriceGrid, type Item } from "@/components/PriceGrid";
 import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
+import { BulkAddDialog, type BulkInputRow } from "@/components/BulkAddDialog";
 import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
 import { applyPinnedOrder } from "@/lib/markdown";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
@@ -128,6 +129,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [fillBusy, setFillBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
   // Undo/Redo of table actions (cell edits, fills, add/delete rows). The ref is
   // the synchronous source of truth; state only drives the buttons/shortcuts.
   // History is tagged with the price update it belongs to, so switching price
@@ -603,6 +605,31 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Add rows from the Bulk Add dialog (paste or file). The dialog already
+   *  computed + persisted them through its own API call; this just refreshes
+   *  the table and records a single undo entry that deletes the added ids. */
+  const bulkAdd = (ids: string[], inputs: BulkInputRow[], added: number) => {
+    setShowBulk(false);
+    setPinnedOrder(null); // membership changed: re-sort normally
+    if (added > 0 && ids.length > 0) {
+      recordHistory(
+        `Bulk add ${added} row${added === 1 ? "" : "s"}`,
+        async () => { await deleteByIds(ids); await load(); },
+        async () => {
+          const r = await fetch(`/api/sessions/${id}/items/bulk`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "add", rows: inputs }),
+          });
+          await r.json().catch(() => ({}));
+          await load();
+        },
+      );
+    }
+    void load();
+    toast.success(`${added} row${added === 1 ? "" : "s"} added.`);
+  };
+
   const removeRow = async (row: Item) => {
     if (savingCell) return;
     setSavingCell(row.id);
@@ -859,6 +886,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </button>
         <button
           type="button"
+          onClick={() => setShowBulk(true)}
+          className="rounded border border-blue-300 bg-blue-50 px-3 py-1.5 font-semibold text-blue-800"
+        >
+          ⨁ Bulk Add
+        </button>
+        <button
+          type="button"
           onClick={() => void runHistory("undo")}
           disabled={!canUndo(history) || histBusy}
           title={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
@@ -931,6 +965,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           onClose={() => { if (!addBusy) setShowAdd(false); }}
           onSubmit={addItem}
           existingSkus={items.flatMap((r) => [r.rawVendorSku, r.cleanedSku])}
+        />
+      )}
+      {showBulk && (
+        <BulkAddDialog
+          id={id}
+          onClose={() => { if (!addBusy) setShowBulk(false); }}
+          onDone={bulkAdd}
         />
       )}
       {confirmBulk && selected.size > 0 && (

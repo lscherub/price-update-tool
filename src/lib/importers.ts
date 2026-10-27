@@ -144,6 +144,92 @@ function inventoryProductsFromWorkbook(wb: XLSX.WorkBook): {
   return { products, columns };
 }
 
+/** A single bulk-add row: the 6 columns the Bulk Add Rows feature accepts. */
+export type BulkRow = {
+  rawVendorSku: string;
+  cleanedSku: string;
+  discount: string;
+  vendorListPriceNew: string;
+  marginDivisor: string;
+  notes: string;
+};
+
+/**
+ * Parse tab/comma-separated paste from Excel into the 6 bulk-add columns.
+ * Excel copy is tab-delimited (one line per row); commas are tolerated only
+ * when no tabs are present (extra cells are folded back into Notes).
+ */
+export function parseBulkPaste(text: string): BulkRow[] {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const out: BulkRow[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const cells = (line.includes("\t") ? line.split("\t") : line.split(",")).map((c) => c.trim());
+    if (cells.every((c) => c === "")) continue;
+    while (cells.length < 6) cells.push("");
+    out.push({
+      rawVendorSku: cells[0] ?? "",
+      cleanedSku: cells[1] ?? "",
+      discount: cells[2] ?? "",
+      vendorListPriceNew: cells[3] ?? "",
+      marginDivisor: cells[4] ?? "",
+      notes: cells.slice(5).join(cells.length > 6 ? "," : "").trim(),
+    });
+  }
+  return out;
+}
+
+/**
+ * Mapping from a header hint to the BulkRow field it fills. The first matching
+ * column wins, so order matters (e.g. "raw" must beat a bare "sku" so the
+ * "Raw Vendor SKU/Code" header does not collide with "Cleaned SKU").
+ */
+type BulkHeaderMap = {
+  raw?: string; cleanedSku?: string; discount?: string;
+  vendorListPriceNew?: string; marginDivisor?: string; notes?: string;
+};
+function mapBulkHeaders(columns: string[]): BulkHeaderMap {
+  const lower = columns.map((c) => c.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const find = (hints: string[]): string | undefined => {
+    for (const h of hints) {
+      const i = lower.findIndex((c) => c.includes(h));
+      if (i >= 0) return columns[i];
+    }
+    return undefined;
+  };
+  return {
+    // "raw" first so "raw vendor sku/code" wins over a generic "sku"/"code".
+    // "clean" is distinct from "raw", so "cleaned sku" maps only to cleanedSku.
+    raw: find(["raw", "vendorsku", "vendorcode", "sku", "code", "item", "upc", "product"]),
+    cleanedSku: find(["cleanedsku", "cleansku", "clean"]),
+    discount: find(["discount", "disc"]),
+    vendorListPriceNew: find(["vendorlistprice", "vendorelistprice", "newprice", "newretail", "listprice", "listcost", "cost", "price"]),
+    marginDivisor: find(["divisor", "margin", "marginordivisor"]),
+    notes: find(["note", "comment", "remarks"]),
+  };
+}
+
+/** Parse an uploaded Excel/CSV buffer into the 6 bulk-add columns (header-mapped). */
+export function parseBulkFile(buf: Buffer, filename: string): BulkRow[] {
+  const wb = XLSX.read(buf, { type: "buffer", raw: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) return [];
+  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: true });
+  const columns = json.length ? Object.keys(json[0]) : [];
+  const map = mapBulkHeaders(columns);
+  const get = (col: string | undefined, r: Record<string, unknown>): string => (col ? cellText(r[col]) : "");
+  return json
+    .map((r) => ({
+      rawVendorSku: get(map.raw, r),
+      cleanedSku: get(map.cleanedSku, r),
+      discount: get(map.discount, r),
+      vendorListPriceNew: get(map.vendorListPriceNew, r),
+      marginDivisor: get(map.marginDivisor, r),
+      notes: get(map.notes, r),
+    }))
+    .filter((r) => r.rawVendorSku !== "" || r.cleanedSku !== "");
+}
+
 /** Parse inactive SKU list file (first column or SKU column). */
 export function parseInactiveFile(buf: Buffer): string[] {
   const wb = XLSX.read(buf, { type: "buffer", raw: true });
