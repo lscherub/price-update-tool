@@ -7,6 +7,8 @@ import { computeRowsForImport } from "@/lib/lookup";
 import { resolveNearest9 } from "@/lib/nearest9";
 import { DEFAULT_DIVISOR } from "@/lib/pricing";
 import { cuid, loadFileStore, saveFileStore, type ItemRow } from "@/lib/store";
+import { computeBulkAddPreview } from "@/lib/bulkAddServer";
+import type { BulkAddInputRow } from "@/lib/bulkAdd";
 
 export const runtime = "nodejs";
 
@@ -125,6 +127,123 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // ---- Bulk Add Preview or Bulk Add Rows ----
+  if (body.preview || Array.isArray(body.items)) {
+    const rawItems = (Array.isArray(body.items) ? body.items : []) as BulkAddInputRow[];
+    const prisma = getPrisma();
+    const prodErr = productionDbGuard(prisma);
+    if (prodErr) return prodErr;
+
+    // Fetch existing worksheet SKUs for duplicate detection
+    let existingSkus: string[] = [];
+    if (!prisma) {
+      const store = loadFileStore();
+      existingSkus = store.items.filter((i) => i.sessionId === id).flatMap((i) => [i.rawVendorSku, i.cleanedSku]);
+    } else {
+      try {
+        const rows = await prisma.priceUpdateItem.findMany({
+          where: { sessionId: id },
+          select: { rawVendorSku: true, cleanedSku: true },
+        });
+        existingSkus = rows.flatMap((r) => [r.rawVendorSku, r.cleanedSku]);
+      } catch (e) {
+        if (isDbConnectionError(e)) return dbUnreachableResponse();
+      }
+    }
+
+    const computed = await computeBulkAddPreview(rawItems, existingSkus);
+
+    // If this is just preview mode, return calculated rows without writing
+    if (body.preview) {
+      return NextResponse.json({ ok: true, preview: computed });
+    }
+
+    // Bulk Add: filter to only valid rows
+    const validItems = computed.filter((c) => c.isValid);
+    if (!validItems.length) {
+      return NextResponse.json({ error: "No valid rows to add." }, { status: 400 });
+    }
+
+    if (!prisma) {
+      const store = loadFileStore();
+      if (!store.sessions.some((s) => s.id === id)) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
+      const now = new Date().toISOString();
+      const createdRows: ItemRow[] = validItems.map((f) => ({
+        id: cuid(),
+        sessionId: id,
+        rawVendorSku: f.rawVendorSku,
+        cleanedSku: f.cleanedSku,
+        cleanedOverridden: f.cleanedOverridden,
+        productId: f.productId,
+        productNumber: f.productNumber,
+        productName: f.productName,
+        brand: f.brand,
+        vendor: f.vendor,
+        discount: f.discount,
+        currentListPrice: f.currentListPrice,
+        vendorListPriceNew: f.vendorListPriceNew,
+        ourNewListPrice: f.ourNewListPrice,
+        marginDivisor: f.marginDivisor,
+        ourNewRetailPrice: f.ourNewRetailPrice,
+        oldRetailPrice: f.oldRetailPrice,
+        nearest9: f.nearest9,
+        nearest9Custom: null,
+        notes: f.notes,
+        isInactive: f.isInactive,
+        matched: f.matched,
+        updatedAt: now,
+      }));
+      store.items.push(...createdRows);
+      saveFileStore(store);
+      return NextResponse.json({ ok: true, count: createdRows.length, items: createdRows });
+    }
+
+    try {
+      const data = validItems.map((f) => ({
+        sessionId: id,
+        rawVendorSku: f.rawVendorSku,
+        cleanedSku: f.cleanedSku,
+        cleanedOverridden: f.cleanedOverridden,
+        productId: f.productId,
+        productNumber: f.productNumber,
+        productName: f.productName,
+        brand: f.brand,
+        vendor: f.vendor,
+        discount: f.discount ? new Decimal(f.discount) : new Decimal(0),
+        currentListPrice: f.currentListPrice ? new Decimal(f.currentListPrice) : null,
+        vendorListPriceNew: f.vendorListPriceNew ? new Decimal(f.vendorListPriceNew) : null,
+        ourNewListPrice: f.ourNewListPrice ? new Decimal(f.ourNewListPrice) : null,
+        marginDivisor: f.marginDivisor ? new Decimal(f.marginDivisor) : new Decimal(DEFAULT_DIVISOR),
+        ourNewRetailPrice: f.ourNewRetailPrice ? new Decimal(f.ourNewRetailPrice) : null,
+        oldRetailPrice: f.oldRetailPrice ? new Decimal(f.oldRetailPrice) : null,
+        nearest9: f.nearest9 ? new Decimal(f.nearest9) : null,
+        nearest9Custom: null,
+        notes: f.notes,
+        isInactive: f.isInactive,
+        matched: f.matched,
+      }));
+
+      const created: { id: string }[] = [];
+      for (let i = 0; i < data.length; i += 1000) {
+        const chunk = data.slice(i, i + 1000);
+        try {
+          const res = await (prisma.priceUpdateItem as unknown as { createManyAndReturn: (opts: unknown) => Promise<{ id: string }[]> }).createManyAndReturn({ data: chunk, select: { id: true } });
+          created.push(...res);
+        } catch {
+          await prisma.priceUpdateItem.createMany({ data: chunk });
+        }
+      }
+      return NextResponse.json({ ok: true, count: data.length, items: created });
+    } catch (e) {
+      if (isDbConnectionError(e)) return dbUnreachableResponse();
+      if ((e as { code?: string })?.code === "P2003" || (e as { code?: string })?.code === "P2025") {
+        return NextResponse.json({ error: "Price update not found" }, { status: 404 });
+      }
+      return NextResponse.json({ error: "Could not add the rows." }, { status: 500 });
+    }
+  }
+
   const rawVendorSku = String(body.rawVendorSku ?? "").trim();
   const cleanedSkuIn = String(body.cleanedSku ?? "").trim();
   if (!rawVendorSku && !cleanedSkuIn) {

@@ -2,6 +2,8 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLS, PriceGrid, type Item } from "@/components/PriceGrid";
 import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
+import { BulkAddDialog } from "@/components/BulkAddDialog";
+import type { BulkAddInputRow } from "@/lib/bulkAdd";
 import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
 import { applyPinnedOrder } from "@/lib/markdown";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
@@ -128,6 +130,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [fillBusy, setFillBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkAddBusy, setBulkAddBusy] = useState(false);
   // Undo/Redo of table actions (cell edits, fills, add/delete rows). The ref is
   // the synchronous source of truth; state only drives the buttons/shortcuts.
   // History is tagged with the price update it belongs to, so switching price
@@ -603,6 +607,73 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /**
+   * Bulk Add Rows to this existing price update.
+   * Reuses existing SKU matching and product lookup logic.
+   * Reports added and skipped rows, and records Undo/Redo history.
+   */
+  const bulkAddItems = async (v: BulkAddInputRow[], summary: { added: number; skipped: number }) => {
+    if (bulkAddBusy) return;
+    setBulkAddBusy(true);
+    try {
+      const r = await fetch(`/api/sessions/${id}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: v }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const t = apiErrorText(d, "Could not add rows.");
+        setMsg(t);
+        toast.error("Could not add rows.", t);
+        return;
+      }
+      setMsg("");
+      setShowBulkAdd(false);
+      setPinnedOrder(null); // membership changed: re-sort normally
+
+      const newItems = (d as { items?: { id?: string }[] })?.items;
+      const newIds = Array.isArray(newItems)
+        ? newItems.map((it) => it.id).filter((nid): nid is string => typeof nid === "string" && Boolean(nid))
+        : [];
+
+      if (newIds.length > 0) {
+        const payloads = [...v];
+        const holder = { ids: [...newIds] };
+        recordHistory(
+          `Bulk add ${newIds.length} row${newIds.length === 1 ? "" : "s"}`,
+          async () => {
+            await deleteByIds(holder.ids);
+            holder.ids = [];
+            await load();
+          },
+          async () => {
+            const resp = await fetch(`/api/sessions/${id}/items`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ items: payloads }),
+            });
+            const respData = await resp.json().catch(() => ({}));
+            if (Array.isArray(respData.items)) {
+              holder.ids = respData.items
+                .map((it: { id?: string }) => it.id)
+                .filter((nid: unknown): nid is string => typeof nid === "string" && Boolean(nid));
+            }
+            await load();
+          },
+        );
+      }
+
+      await load();
+      const skipMsg = summary.skipped > 0 ? ` (${summary.skipped} skipped)` : "";
+      toast.success(`Added ${summary.added} row${summary.added === 1 ? "" : "s"} to worksheet${skipMsg}.`);
+    } catch {
+      toast.error("Could not add rows.", "Could not reach the server while adding rows.");
+    } finally {
+      setBulkAddBusy(false);
+    }
+  };
+
   const removeRow = async (row: Item) => {
     if (savingCell) return;
     setSavingCell(row.id);
@@ -859,6 +930,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </button>
         <button
           type="button"
+          onClick={() => setShowBulkAdd(true)}
+          className="rounded border border-emerald-400 bg-emerald-100 px-3 py-1.5 font-semibold text-emerald-900 hover:bg-emerald-200"
+        >
+          Bulk Add Rows
+        </button>
+        <button
+          type="button"
           onClick={() => void runHistory("undo")}
           disabled={!canUndo(history) || histBusy}
           title={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
@@ -930,6 +1008,15 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           busy={addBusy}
           onClose={() => { if (!addBusy) setShowAdd(false); }}
           onSubmit={addItem}
+          existingSkus={items.flatMap((r) => [r.rawVendorSku, r.cleanedSku])}
+        />
+      )}
+      {showBulkAdd && (
+        <BulkAddDialog
+          sessionId={id}
+          busy={bulkAddBusy}
+          onClose={() => { if (!bulkAddBusy) setShowBulkAdd(false); }}
+          onSubmit={bulkAddItems}
           existingSkus={items.flatMap((r) => [r.rawVendorSku, r.cleanedSku])}
         />
       )}
