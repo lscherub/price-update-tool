@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
@@ -12,6 +13,7 @@ type SessionRow = {
   status: string;
   createdAt: string;
   updatedAt: string;
+  isFullVendor?: boolean;
 };
 
 export default function SessionsPage() {
@@ -80,7 +82,10 @@ export default function SessionsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Price Update History</h1>
-        <Link href="/sessions/new" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ New Price Update</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/sessions/new" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ New Price Update</Link>
+          <Link href="/fullvendor/new" className="rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100">Full Vendor Price Update</Link>
+        </div>
       </div>
       <input
         className="w-full rounded-lg border bg-white px-3 py-2 text-sm"
@@ -98,7 +103,16 @@ export default function SessionsPage() {
             {rows.map((s) => (
               <tr key={s.id} className="border-t">
                 <td className="px-4 py-2">{s.vendor}</td>
-                <td className="px-4 py-2">{s.name}</td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <span>{s.name}</span>
+                    {s.isFullVendor && (
+                      <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-semibold text-indigo-800">
+                        Full Vendor
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-2">{s.status}</td>
                 <td className="px-4 py-2 text-xs text-slate-500">{new Date(s.updatedAt).toLocaleString()}</td>
                 <td className="px-4 py-2 text-right">

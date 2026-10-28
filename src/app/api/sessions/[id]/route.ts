@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore } from "@/lib/store";
+import { fullVendorSessionIds } from "@/lib/fullVendorServer";
 
 export const runtime = "nodejs";
 
@@ -18,14 +19,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const store = loadFileStore();
     const s = store.sessions.find((x) => x.id === id);
     if (!s) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
-    return NextResponse.json({ session: s, items: store.items.filter((i) => i.sessionId === id) });
+    const isFullVendor = (await fullVendorSessionIds(null, [id])).has(id);
+    return NextResponse.json({ session: { ...s, isFullVendor }, items: store.items.filter((i) => i.sessionId === id) });
   }
   try {
     const s = await prisma.priceUpdateSession.findUnique({ where: { id } });
     if (!s) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
+    const isFullVendor = (await fullVendorSessionIds(prisma, [id])).has(id);
     const items = await prisma.priceUpdateItem.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000 });
     return NextResponse.json({
-      session: { id: s.id, vendor: s.vendor, name: s.name, status: s.status, notes: s.notes, createdBy: s.createdBy },
+      session: { id: s.id, vendor: s.vendor, name: s.name, status: s.status, notes: s.notes, createdBy: s.createdBy, isFullVendor },
       items: items.map((i) => ({
         id: i.id, sessionId: i.sessionId, rawVendorSku: i.rawVendorSku, cleanedSku: i.cleanedSku,
         cleanedOverridden: i.cleanedOverridden, productId: i.productId, productNumber: i.productNumber,

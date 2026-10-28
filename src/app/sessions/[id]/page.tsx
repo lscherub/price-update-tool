@@ -93,6 +93,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [page, setPage] = useState(1);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
+  const [isFullVendor, setIsFullVendor] = useState(false);
   // ---- Export-for-POS follow-up: optional inventory price sync ----
   type SyncResult = {
     updated: number;
@@ -157,6 +158,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         return pin;
       });
       setItems(next); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
+      setIsFullVendor(!!d.session?.isFullVendor);
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
     }
@@ -171,6 +173,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         if (!active) return;
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load this price update.")); setItems([]); return; }
         setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
+        setIsFullVendor(!!d.session?.isFullVendor);
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });
     return () => { active = false; };
@@ -766,6 +769,36 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Fetch the Digital Store Count Excel for Full Vendor workflows. */
+  const downloadFullVendorExcel = async () => {
+    if (exportBusy) return;
+    setExportBusy("fv-storecount");
+    try {
+      const body = sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+      const r = await fetch(`/api/fullvendor/sessions/${id}/storecount/excel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        const t = apiErrorText(d, "export failed.");
+        setMsg(t); toast.error("Export failed.", t); return;
+      }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `digital-storecount-${id}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success("Digital Store Count Excel downloaded.");
+    } catch {
+      toast.error("Export failed.", "Could not reach the server while exporting.");
+    } finally {
+      setExportBusy(null);
+    }
+  };
+
   /** Fetch the Store Count Excel workbook, save it to disk, and report success/failure. */
   const downloadExcel = async () => {
     if (exportBusy) return;
@@ -890,7 +923,14 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">{name || "Price Update"}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold">{name || "Price Update"}</h1>
+          {isFullVendor && (
+            <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-800">
+              Full Vendor
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label className="flex items-center gap-2 rounded border bg-white px-3 py-1.5 text-slate-900">
             <span className="font-semibold">Status:</span>
@@ -912,9 +952,20 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           <LoadingButton busy={exportBusy === "pos"} busyLabel="Preparing CSV..." onClick={() => download("pos")} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
             Export for POS
           </LoadingButton>
-          <LoadingButton busy={exportBusy === "storecount"} busyLabel="Preparing Excel..." onClick={() => downloadExcel()} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
-            Store Count Excel
-          </LoadingButton>
+          {isFullVendor ? (
+            <LoadingButton
+              busy={exportBusy === "fv-storecount"}
+              busyLabel="Preparing Excel..."
+              onClick={() => downloadFullVendorExcel()}
+              className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-60"
+            >
+              Digital Store Count Excel
+            </LoadingButton>
+          ) : (
+            <LoadingButton busy={exportBusy === "storecount"} busyLabel="Preparing Excel..." onClick={() => downloadExcel()} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
+              Store Count Excel
+            </LoadingButton>
+          )}
           <LoadingButton busy={pdfBusy} busyLabel="Generating PDF..." onClick={pdf} className="rounded bg-slate-900 px-3 py-1.5 text-white disabled:opacity-60">
             Generate Store Count PDF
           </LoadingButton>

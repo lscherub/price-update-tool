@@ -5,6 +5,7 @@ import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuar
 import { buildHistorySearchParams, matchesHistoryRow } from "@/lib/sessionSearch";
 import { cuid, loadFileStore, saveFileStore } from "@/lib/store";
 import { formatUpdateName } from "@/lib/pricing";
+import { fullVendorSessionIds } from "@/lib/fullVendorServer";
 
 export const runtime = "nodejs";
 
@@ -86,16 +87,24 @@ export async function GET(req: Request) {
       .slice()
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 200);
-    return NextResponse.json({ rows });
+    const fvIds = await fullVendorSessionIds(null, rows.map((s) => s.id));
+    return NextResponse.json({
+      rows: rows.map((s) => ({
+        ...s,
+        isFullVendor: fvIds.has(s.id),
+      })),
+    });
   }
   try {
     const rows = await searchSessionsDb(prisma, q.trim());
+    const fvIds = await fullVendorSessionIds(prisma, rows.map((s) => s.id));
     return NextResponse.json({
       rows: rows.map((s) => ({
         id: s.id, vendor: s.vendor, name: s.name, status: s.status, notes: s.notes,
         createdBy: s.createdBy,
         createdAt: new Date(s.createdAt).toISOString(),
         updatedAt: new Date(s.updatedAt).toISOString(),
+        isFullVendor: fvIds.has(s.id),
       })),
     });
   } catch (e) {

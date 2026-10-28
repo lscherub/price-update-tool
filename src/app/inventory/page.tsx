@@ -5,6 +5,7 @@ import { chunk } from "@/lib/inventoryImport";
 import { parseInventoryArrayBuffer } from "@/lib/importers";
 import { LoadingButton, Spinner } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
+import { AddProductDialog, type AddProductInput } from "@/components/AddProductDialog";
 
 /** Rows per server request. Mirrors the server's MAX_BATCH_ROWS. */
 const BATCH_SIZE = 1000;
@@ -222,6 +223,8 @@ export default function InventoryPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const inactiveRef = useRef<HTMLInputElement>(null);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [addProductBusy, setAddProductBusy] = useState(false);
 
   type Filters = {
     q: string; sku: string; num: string; desc: string;
@@ -587,6 +590,44 @@ for (let i = 0; i < batches.length; i++) {
     }
   };
 
+
+  /**
+   * Add a single product manually, without a full POS import.
+   * Sends to /api/inventory/product which validates SKU uniqueness.
+   */
+  const addProduct = async (v: AddProductInput) => {
+    if (addProductBusy) return;
+    setAddProductBusy(true);
+    try {
+      const r = await fetch("/api/inventory/product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sku: v.sku,
+          productNumber: v.productNumber,
+          description: v.description,
+          vendor: v.vendor,
+          brand: v.brand,
+          listCost: v.listCost || "0",
+          price: v.price || "0",
+          sizeDesc: v.sizeDesc,
+          status: v.status,
+        }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error("Could not add product.", apiErrorText(d, "Could not add product."));
+        return;
+      }
+      setShowAddProduct(false);
+      toast.success(`Product "${v.sku}" added to inventory.`);
+      await refreshWithFilters();
+    } catch {
+      toast.error("Could not add product.", "Could not reach the server. Check your connection and try again.");
+    } finally {
+      setAddProductBusy(false);
+    }
+  };
   const pct = progress && progress.total ? Math.floor((progress.processed / progress.total) * 100) : 0;
 
   /** "Oct 7, 2026, 10:42 AM" or "Never" when no successful full import yet. */
@@ -748,9 +789,17 @@ for (let i = 0; i < batches.length; i++) {
           )}
         </div>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <input className="w-full max-w-md rounded border px-3 py-2" placeholder="Search SKU, product #, description, brand..." value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} />
         <button className="rounded bg-slate-900 px-4 py-2 text-sm text-white" onClick={search}>Search</button>
+        <button
+          type="button"
+          className="rounded border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+          onClick={() => setShowAddProduct(true)}
+          disabled={importing}
+        >
+          + Add Product
+        </button>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 text-sm text-slate-500">
         <span>{total.toLocaleString()} products</span>
@@ -916,6 +965,13 @@ for (let i = 0; i < batches.length; i++) {
         <span className="text-sm">Page {page}</span>
         <button className="rounded border px-3 py-1 text-sm" onClick={() => setPage(page + 1)}>Next</button>
       </div>
+      {showAddProduct && (
+        <AddProductDialog
+          busy={addProductBusy}
+          onClose={() => { if (!addProductBusy) setShowAddProduct(false); }}
+          onSubmit={addProduct}
+        />
+      )}
     </div>
   );
 }
