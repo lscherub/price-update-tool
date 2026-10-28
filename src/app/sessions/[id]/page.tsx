@@ -72,6 +72,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const toast = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
+  const [vendor, setVendor] = useState("");
   const [sheetStatus, setSheetStatus] = useState("");
   const [statusBusy, setStatusBusy] = useState(false);
   const [sheetNotes, setSheetNotes] = useState("");
@@ -159,7 +160,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         if (pin && pin.length) next = applyPinnedOrder(next, pin);
         return pin;
       });
-      setItems(next); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
+      setItems(next); setName(d.session?.name ?? ""); setVendor(d.session?.vendor ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
       setIsFullVendor(!!d.session?.isFullVendor);
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
@@ -174,7 +175,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         const d = await r.json().catch(() => ({}));
         if (!active) return;
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load this price update.")); setItems([]); return; }
-        setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
+        setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setVendor(d.session?.vendor ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
         setIsFullVendor(!!d.session?.isFullVendor);
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });

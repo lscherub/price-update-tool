@@ -5,7 +5,7 @@ import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuar
 import { recalcRow, type CurRow } from "@/lib/recalc";
 import { computeRowsForImport } from "@/lib/lookup";
 import { resolveNearest9 } from "@/lib/nearest9";
-import { DEFAULT_DIVISOR } from "@/lib/pricing";
+import { DEFAULT_DIVISOR, normalizeSku } from "@/lib/pricing";
 import { cuid, loadFileStore, saveFileStore, type ItemRow } from "@/lib/store";
 import { computeBulkAddPreview } from "@/lib/bulkAddServer";
 import type { BulkAddInputRow } from "@/lib/bulkAdd";
@@ -297,7 +297,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           // In case any matched row had a productId not yet in productsById, fetch it
           const missingPids = existingItems
             .map((e) => e.productId)
-            .filter((pid): pid is string => Boolean(pid) && !productsById?.has(pid));
+            .filter((pid): pid is string => typeof pid === "string" && !productsById?.has(pid));
           if (missingPids.length > 0) {
             const extraProds = await prisma.product.findMany({
               where: { id: { in: missingPids } },
