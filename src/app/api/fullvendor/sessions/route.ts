@@ -53,6 +53,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `No inventory products found for vendor "${vendor}".` }, { status: 404 });
   }
 
+  // Filter to selected products if selectedProductIds was provided
+  if (Array.isArray(body.selectedProductIds)) {
+    const selSet = new Set(body.selectedProductIds.map(String));
+    products = products.filter((p) => selSet.has(p.id));
+    if (!products.length) {
+      return NextResponse.json({ error: "No products selected. Select at least one product." }, { status: 400 });
+    }
+  }
+
   const plan = planFullVendorRows(products, pasted);
 
   // Pricing: the unchanged calculateRow pipeline with the Vendor/Brand default

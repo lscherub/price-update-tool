@@ -242,6 +242,50 @@ describe("POST /api/fullvendor/sessions (Feature 2)", () => {
     expect(item2.isInactive).toBe(true); // inactive status preserved
     expect(item2.notes).toContain("Review: not in vendor price list");
   });
+
+  it("includes only selected products when selectedProductIds is provided", async () => {
+    // Select ONLY p1; exclude p2
+    const req = new Request("http://localhost/api/fullvendor/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vendor: "A.O.R. INC.",
+        pastedData: "058854045227\t11.50\n058854045234\t15.00",
+        selectedProductIds: ["p1"],
+      }),
+    });
+    const res = await fullVendorSessionPost(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.total).toBe(1); // only 1 product in session
+
+    const sid = data.sessionId;
+    const sessionItems = fakeStore.items.filter((i) => i.sessionId === sid);
+    expect(sessionItems).toHaveLength(1);
+    expect(sessionItems[0].productId).toBe("p1");
+
+    // Crucial safeguard: verify p2 was NOT deleted or altered in inventory!
+    const p2InInventory = fakeStore.products.find((p) => p.id === "p2");
+    expect(p2InInventory).toBeDefined();
+    expect(p2InInventory?.sku).toBe("058854045234");
+  });
+
+  it("rejects request if selectedProductIds is empty", async () => {
+    const req = new Request("http://localhost/api/fullvendor/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vendor: "A.O.R. INC.",
+        pastedData: "058854045227\t11.50",
+        selectedProductIds: [],
+      }),
+    });
+    const res = await fullVendorSessionPost(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("No products selected");
+  });
 });
 
 describe("POST /api/fullvendor/sessions/[id]/storecount/excel (Feature 3)", () => {
