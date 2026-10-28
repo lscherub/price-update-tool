@@ -26,20 +26,30 @@ export async function lookupProductsForCleanedSkus(
   const out = new Map<string, ProductRow>();
   if (!cleanedSkus.length) return out;
 
+  const strippedFn = (v: string) => v.replace(/^0+/, "") || "0";
+
   const prisma = getPrisma();
   if (!prisma) {
     const store = loadFileStore();
+    const bySku = new Map<string, ProductRow>();
+    const byNormSku = new Map<string, ProductRow>();
+    const byStrippedSku = new Map<string, ProductRow>();
+    const byStrippedNorm = new Map<string, ProductRow>();
+
+    for (const p of store.products) {
+      if (p.sku && !bySku.has(p.sku)) bySku.set(p.sku, p);
+      if (p.normalizedSku && !byNormSku.has(p.normalizedSku)) byNormSku.set(p.normalizedSku, p);
+      const stSku = p.sku ? strippedFn(p.sku) : "";
+      if (stSku && !byStrippedSku.has(stSku)) byStrippedSku.set(stSku, p);
+      const stNorm = p.normalizedSku ? strippedFn(p.normalizedSku) : "";
+      if (stNorm && !byStrippedNorm.has(stNorm)) byStrippedNorm.set(stNorm, p);
+    }
+
     for (const raw of cleanedSkus) {
       const s = raw.trim();
       if (!s) continue;
-      const stripped = s.replace(/^0+/, "") || "0";
-      const hit =
-        store.products.find((p) => p.sku === s || p.normalizedSku === s) ??
-        store.products.find(
-          (p) =>
-            (p.sku.replace(/^0+/, "") || "0") === stripped ||
-            (p.normalizedSku.replace(/^0+/, "") || "0") === stripped,
-        );
+      const st = strippedFn(s);
+      const hit = bySku.get(s) ?? byNormSku.get(s) ?? byStrippedSku.get(st) ?? byStrippedNorm.get(st);
       if (hit) out.set(s, hit);
     }
     return out;
@@ -51,8 +61,8 @@ export async function lookupProductsForCleanedSkus(
     const s = raw.trim();
     if (!s) continue;
     candSet.add(s);
-    const stripped = s.replace(/^0+/, "") || "0";
-    candSet.add(stripped);
+    const st = strippedFn(s);
+    candSet.add(st);
   }
 
   const keys = [...candSet];
@@ -80,21 +90,29 @@ export async function lookupProductsForCleanedSkus(
     }
   }
 
-  // Each Cleaned SKU resolves to its own product independently
+  // Index found products into fast hash maps to avoid O(N*M) linear array scans
+  const bySku = new Map<string, ProductRow>();
+  const byNormSku = new Map<string, ProductRow>();
+  const byStrippedSku = new Map<string, ProductRow>();
+  const byStrippedNorm = new Map<string, ProductRow>();
+
+  for (const p of found) {
+    if (p.sku && !bySku.has(p.sku)) bySku.set(p.sku, p);
+    if (p.normalizedSku && !byNormSku.has(p.normalizedSku)) byNormSku.set(p.normalizedSku, p);
+    const stSku = p.sku ? strippedFn(p.sku) : "";
+    if (stSku && !byStrippedSku.has(stSku)) byStrippedSku.set(stSku, p);
+    const stNorm = p.normalizedSku ? strippedFn(p.normalizedSku) : "";
+    if (stNorm && !byStrippedNorm.has(stNorm)) byStrippedNorm.set(stNorm, p);
+  }
+
+  // Each Cleaned SKU resolves to its own product independently in O(1) time
   for (const raw of cleanedSkus) {
     const s = raw.trim();
     if (!s) continue;
-    const stripped = s.replace(/^0+/, "") || "0";
+    const st = strippedFn(s);
 
-    // 1. Exact match on sku
-    let hit = found.find((p) => p.sku === s);
-    // 2. Exact match on normalizedSku
-    if (!hit) hit = found.find((p) => p.normalizedSku === s);
-    // 3. Leading-zero-stripped match on sku
-    if (!hit) hit = found.find((p) => (p.sku.replace(/^0+/, "") || "0") === stripped);
-    // 4. Leading-zero-stripped match on normalizedSku
-    if (!hit) hit = found.find((p) => (p.normalizedSku.replace(/^0+/, "") || "0") === stripped);
-
+    // 1. Exact match on sku -> 2. Exact match on normalizedSku -> 3. Stripped sku -> 4. Stripped norm
+    const hit = bySku.get(s) ?? byNormSku.get(s) ?? byStrippedSku.get(st) ?? byStrippedNorm.get(st);
     if (hit) {
       out.set(s, hit);
     }

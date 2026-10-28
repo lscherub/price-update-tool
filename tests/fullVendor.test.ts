@@ -10,6 +10,7 @@ import {
 import {
   buildFullVendorCountWorkbook,
   formatCountDate,
+  fullVendorEffectivePrice,
   fullVendorNewPrice,
   FULL_VENDOR_COUNT_HEADER,
   FULL_VENDOR_COUNT_INSTRUCTIONS,
@@ -246,6 +247,27 @@ describe("fullVendorNewPrice rule", () => {
     expect(fullVendorNewPrice("19.99", null)).toBe("19.99");
     expect(fullVendorNewPrice("19.99", "")).toBe("19.99");
   });
+
+  describe("fullVendorEffectivePrice with priceMode options", () => {
+    it("changed mode: returns blank when price is unchanged", () => {
+      expect(fullVendorEffectivePrice("29.99", "29.99", "changed")).toBe("");
+      expect(fullVendorEffectivePrice("29.99", "29.99")).toBe("");
+    });
+
+    it("changed mode: returns new price when price is changed", () => {
+      expect(fullVendorEffectivePrice("34.99", "29.99", "changed")).toBe("34.99");
+    });
+
+    it("all mode: returns effective price for every product, even if unchanged", () => {
+      expect(fullVendorEffectivePrice("29.99", "29.99", "all")).toBe("29.99");
+      expect(fullVendorEffectivePrice("34.99", "29.99", "all")).toBe("34.99");
+    });
+
+    it("all mode: falls back to old retail price if nearest9 is missing", () => {
+      expect(fullVendorEffectivePrice(null, "19.99", "all")).toBe("19.99");
+      expect(fullVendorEffectivePrice("", "19.99", "all")).toBe("19.99");
+    });
+  });
 });
 
 describe("buildFullVendorCountWorkbook", () => {
@@ -309,6 +331,51 @@ describe("buildFullVendorCountWorkbook", () => {
   it("formats date like 'October 28, 2026'", () => {
     const formatted = formatCountDate(new Date(2026, 9, 28));
     expect(formatted).toBe("October 28, 2026");
+  });
+
+  it("updates Note in row 4 when priceMode is 'all'", () => {
+    const buf = buildFullVendorCountWorkbook(
+      [{ sku: "001", description: "Item 1", sizeDesc: "", newPrice: "10.00" }],
+      { vendor: "Test Vendor", priceMode: "all" },
+    );
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const ws = wb.Sheets["Store Count"];
+    const aoa: (string | number)[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+    expect(aoa[3][0]).toContain("New Price shows the final effective retail price for all items");
+  });
+
+  it("includes legend in row 5 when all products include inactive items", () => {
+    const buf = buildFullVendorCountWorkbook(
+      [
+        { sku: "001", description: "Active Item", sizeDesc: "", newPrice: "10.00", isInactive: false },
+        { sku: "002", description: "Inactive Item", sizeDesc: "", newPrice: "15.00", isInactive: true },
+      ],
+      { vendor: "Test Vendor", productFilter: "all" },
+    );
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const ws = wb.Sheets["Store Count"];
+    const aoa: (string | number)[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+    expect(aoa[4][0]).toContain("Legend: Light-grey rows indicate Inactive products");
+  });
+
+  it("displays productFilter label in row 5 for active and inactive filters", () => {
+    const bufActive = buildFullVendorCountWorkbook(
+      [{ sku: "001", description: "Active", sizeDesc: "", newPrice: "10.00", isInactive: false }],
+      { vendor: "Test Vendor", productFilter: "active" },
+    );
+    const wbActive = XLSX.read(bufActive, { type: "buffer" });
+    const wsActive = wbActive.Sheets["Store Count"];
+    const aoaActive: (string | number)[][] = XLSX.utils.sheet_to_json(wsActive, { header: 1, defval: "" });
+    expect(aoaActive[4][0]).toContain("(Active Only)");
+
+    const bufInactive = buildFullVendorCountWorkbook(
+      [{ sku: "002", description: "Inactive", sizeDesc: "", newPrice: "10.00", isInactive: true }],
+      { vendor: "Test Vendor", productFilter: "inactive" },
+    );
+    const wbInactive = XLSX.read(bufInactive, { type: "buffer" });
+    const wsInactive = wbInactive.Sheets["Store Count"];
+    const aoaInactive: (string | number)[][] = XLSX.utils.sheet_to_json(wsInactive, { header: 1, defval: "" });
+    expect(aoaInactive[4][0]).toContain("(Inactive Only)");
   });
 });
 

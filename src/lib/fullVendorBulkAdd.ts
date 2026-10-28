@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import { normalizeSku, skuCandidates, DEFAULT_DIVISOR } from "./pricing";
+import { calculateRow, resolveNearest9 } from "./nearest9";
 import { validateBulkRow, type BulkAddInputRow, type BulkAddParsedItem } from "./bulkAdd";
 import { findProductsByRawSkus, getDiscountMaps, resolveDefaultDiscount } from "./lookup";
 import { lookupProductsForCleanedSkus } from "./bulkAddServer";
@@ -51,43 +52,72 @@ export function buildWorksheetItemIndex(
     byProductSku: new Map(),
   };
 
-  const push = (map: Map<string, WorksheetItemLite[]>, key: string, item: WorksheetItemLite) => {
-    if (!key) return;
-    const list = map.get(key) ?? [];
-    if (!list.some((x) => x.id === item.id)) list.push(item);
-    map.set(key, list);
+  const addKeys = (map: Map<string, WorksheetItemLite[]>, keys: Iterable<string>, item: WorksheetItemLite) => {
+    for (const k of keys) {
+      if (!k || k === "0") continue;
+      let list = map.get(k);
+      if (!list) {
+        list = [];
+        map.set(k, list);
+      }
+      list.push(item);
+    }
   };
 
   for (const item of items) {
     if (item.cleanedSku) {
       const c = item.cleanedSku.trim();
-      push(index.byClean, c, item);
-      push(index.byClean, spaceless(c), item);
-      push(index.byClean, stripped(c), item);
+      if (c) {
+        const keys = new Set<string>();
+        keys.add(c);
+        const sl = spaceless(c);
+        if (sl) keys.add(sl);
+        const st = stripped(c);
+        if (st && st !== "0") keys.add(st);
+        addKeys(index.byClean, keys, item);
+      }
     }
     if (item.rawVendorSku) {
       const r = item.rawVendorSku.trim();
-      push(index.byRaw, r, item);
-      push(index.byRaw, spaceless(r), item);
-      push(index.byRaw, stripped(r), item);
-      const norm = normalizeSku(r);
-      if (norm) {
-        push(index.byRaw, norm, item);
-        push(index.byRaw, stripped(norm), item);
+      if (r) {
+        const keys = new Set<string>();
+        keys.add(r);
+        const sl = spaceless(r);
+        if (sl) keys.add(sl);
+        const st = stripped(r);
+        if (st && st !== "0") keys.add(st);
+        const norm = normalizeSku(r);
+        if (norm) {
+          keys.add(norm);
+          const stNorm = stripped(norm);
+          if (stNorm && stNorm !== "0") keys.add(stNorm);
+        }
+        addKeys(index.byRaw, keys, item);
       }
     }
     if (item.productId && productsById) {
       const p = productsById.get(item.productId);
       if (p) {
+        const keys = new Set<string>();
         if (p.sku) {
-          push(index.byProductSku, p.sku, item);
-          push(index.byProductSku, spaceless(p.sku), item);
-          push(index.byProductSku, stripped(p.sku), item);
+          const s = p.sku.trim();
+          if (s) {
+            keys.add(s);
+            const sl = spaceless(s);
+            if (sl) keys.add(sl);
+            const st = stripped(s);
+            if (st && st !== "0") keys.add(st);
+          }
         }
         if (p.normalizedSku) {
-          push(index.byProductSku, p.normalizedSku, item);
-          push(index.byProductSku, stripped(p.normalizedSku), item);
+          const ns = p.normalizedSku.trim();
+          if (ns) {
+            keys.add(ns);
+            const stNorm = stripped(ns);
+            if (stNorm && stNorm !== "0") keys.add(stNorm);
+          }
         }
+        addKeys(index.byProductSku, keys, item);
       }
     }
   }
@@ -108,28 +138,35 @@ export function matchWorksheetItem(
 
   // 1. If Cleaned SKU is supplied:
   if (cleanIn) {
-    const sl = spaceless(cleanIn);
-    const st = stripped(cleanIn);
-    const hits = [
-      ...(index.byClean.get(cleanIn) ?? []),
-      ...(index.byClean.get(sl) ?? []),
-      ...(index.byProductSku.get(cleanIn) ?? []),
-      ...(index.byProductSku.get(sl) ?? []),
-      ...(index.byClean.get(st) ?? []),
-      ...(index.byProductSku.get(st) ?? []),
-      ...(index.byRaw.get(cleanIn) ?? []),
-      ...(index.byRaw.get(sl) ?? []),
-    ];
-
-    const seen = new Set<string>();
-    const deduped: WorksheetItemLite[] = [];
-    for (const h of hits) {
-      if (!seen.has(h.id)) {
-        seen.add(h.id);
-        deduped.push(h);
-      }
+    // Fast path: single exact match on Cleaned SKU
+    const exactClean = index.byClean.get(cleanIn);
+    if (exactClean && exactClean.length === 1) {
+      return { match: exactClean[0], ambiguous: false };
     }
 
+    const sl = spaceless(cleanIn);
+    const st = stripped(cleanIn);
+
+    const hitMap = new Map<string, WorksheetItemLite>();
+    const addHits = (list?: WorksheetItemLite[]) => {
+      if (!list) return;
+      for (const item of list) {
+        if (!hitMap.has(item.id)) hitMap.set(item.id, item);
+      }
+    };
+
+    addHits(index.byClean.get(cleanIn));
+    if (sl !== cleanIn) addHits(index.byClean.get(sl));
+    addHits(index.byProductSku.get(cleanIn));
+    if (sl !== cleanIn) addHits(index.byProductSku.get(sl));
+    if (st && st !== cleanIn && st !== sl && st !== "0") {
+      addHits(index.byClean.get(st));
+      addHits(index.byProductSku.get(st));
+    }
+    addHits(index.byRaw.get(cleanIn));
+    if (sl !== cleanIn) addHits(index.byRaw.get(sl));
+
+    const deduped = Array.from(hitMap.values());
     if (deduped.length === 1) return { match: deduped[0], ambiguous: false };
     if (deduped.length > 1) {
       // If one is an exact verbatim match on cleanedSku or product SKU, prefer it
@@ -143,24 +180,30 @@ export function matchWorksheetItem(
   if (rawIn) {
     const candidates = skuCandidates(rawIn);
     for (const c of candidates) {
-      const hits = [
-        ...(index.byClean.get(c) ?? []),
-        ...(index.byRaw.get(c) ?? []),
-        ...(index.byProductSku.get(c) ?? []),
-        ...(index.byClean.get(stripped(c)) ?? []),
-        ...(index.byRaw.get(stripped(c)) ?? []),
-        ...(index.byProductSku.get(stripped(c)) ?? []),
-      ];
-
-      const seen = new Set<string>();
-      const deduped: WorksheetItemLite[] = [];
-      for (const h of hits) {
-        if (!seen.has(h.id)) {
-          seen.add(h.id);
-          deduped.push(h);
-        }
+      const exactRaw = index.byRaw.get(c);
+      if (exactRaw && exactRaw.length === 1) {
+        return { match: exactRaw[0], ambiguous: false };
       }
 
+      const st = stripped(c);
+      const hitMap = new Map<string, WorksheetItemLite>();
+      const addHits = (list?: WorksheetItemLite[]) => {
+        if (!list) return;
+        for (const item of list) {
+          if (!hitMap.has(item.id)) hitMap.set(item.id, item);
+        }
+      };
+
+      addHits(index.byClean.get(c));
+      addHits(index.byRaw.get(c));
+      addHits(index.byProductSku.get(c));
+      if (st && st !== c && st !== "0") {
+        addHits(index.byClean.get(st));
+        addHits(index.byRaw.get(st));
+        addHits(index.byProductSku.get(st));
+      }
+
+      const deduped = Array.from(hitMap.values());
       if (deduped.length === 1) return { match: deduped[0], ambiguous: false };
       if (deduped.length > 1) {
         const exact = deduped.filter((d) => d.rawVendorSku === rawIn || d.cleanedSku === c);
@@ -185,15 +228,18 @@ export async function computeFullVendorBulkPreview(
 ): Promise<BulkAddParsedItem[]> {
   const index = buildWorksheetItemIndex(existingItems, productsById);
 
-  // Collect Cleaned and Raw SKUs for items that will be genuinely new
+  // Pre-calculate matches once for each input row to avoid calling matchWorksheetItem twice
+  const matches: { match: WorksheetItemLite | null; ambiguous: boolean }[] = new Array(inputRows.length);
   const cleanedSkus: string[] = [];
   const rawOnlySkus: string[] = [];
 
-  for (const r of inputRows) {
-    const clean = String(r.cleanedSku ?? "").trim();
-    const raw = String(r.rawVendorSku ?? "").trim();
-    const { match } = matchWorksheetItem(r, index);
-    if (!match) {
+  for (let i = 0; i < inputRows.length; i++) {
+    const r = inputRows[i];
+    const m = matchWorksheetItem(r, index);
+    matches[i] = m;
+    if (!m.match && !m.ambiguous) {
+      const clean = String(r.cleanedSku ?? "").trim();
+      const raw = String(r.rawVendorSku ?? "").trim();
       if (clean) cleanedSkus.push(clean);
       else if (raw) rawOnlySkus.push(raw);
     }
@@ -261,8 +307,8 @@ export async function computeFullVendorBulkPreview(
       continue;
     }
 
-    // Try matching against existing worksheet items
-    const { match: existingItem, ambiguous } = matchWorksheetItem(row, index);
+    // Use precomputed match against existing worksheet items
+    const { match: existingItem, ambiguous } = matches[i];
 
     if (ambiguous) {
       results.push({
@@ -296,63 +342,69 @@ export async function computeFullVendorBulkPreview(
     }
 
     if (existingItem) {
-      // Existing row to UPDATE
-      const curRow: CurRow = {
-        rawVendorSku: existingItem.rawVendorSku,
-        cleanedSku: existingItem.cleanedSku,
-        cleanedOverridden: true,
-        discount: existingItem.discount ? String(existingItem.discount) : "0.00",
-        vendorListPriceNew: existingItem.vendorListPriceNew,
-        marginDivisor: existingItem.marginDivisor ? String(existingItem.marginDivisor) : DEFAULT_DIVISOR,
-        notes: existingItem.notes,
-        vendor: existingItem.vendor,
-        brand: existingItem.brand,
-        nearest9Custom: existingItem.nearest9Custom ?? null,
-      };
+      // Existing row to UPDATE — compute synchronously in-memory (no repeated DB lookups)
+      const discountVal =
+        row.discount !== undefined && String(row.discount).trim() !== ""
+          ? String(row.discount).trim().replace(/[%$,]/g, "")
+          : existingItem.discount || "0.00";
 
-      const patch: Record<string, unknown> = {};
-      if (cleanIn) {
-        patch.cleanedSku = cleanIn;
-      }
-      if (rawIn) {
-        patch.rawVendorSku = rawIn;
-      }
-      if (row.vendorListPriceNew !== undefined && String(row.vendorListPriceNew).trim() !== "") {
-        patch.vendorListPriceNew = String(row.vendorListPriceNew).trim();
-      }
-      if (row.discount !== undefined && String(row.discount).trim() !== "") {
-        patch.discount = String(row.discount).trim();
-      }
-      if (row.marginDivisor !== undefined && String(row.marginDivisor).trim() !== "") {
-        patch.marginDivisor = String(row.marginDivisor).trim();
-      }
+      const divisorVal =
+        row.marginDivisor !== undefined && String(row.marginDivisor).trim() !== ""
+          ? String(row.marginDivisor).trim()
+          : existingItem.marginDivisor || DEFAULT_DIVISOR;
+
+      const priceVal =
+        row.vendorListPriceNew !== undefined && String(row.vendorListPriceNew).trim() !== ""
+          ? String(row.vendorListPriceNew).trim().replace(/[$,]/g, "")
+          : existingItem.vendorListPriceNew;
+
+      let notesVal = existingItem.notes;
       if (row.notes !== undefined && String(row.notes).trim() !== "") {
-        patch.notes = String(row.notes).trim();
-      } else if (existingItem.notes.includes("not in vendor price list") && patch.vendorListPriceNew) {
-        patch.notes = "";
+        notesVal = String(row.notes).trim();
+      } else if (existingItem.notes.includes("not in vendor price list") && priceVal) {
+        notesVal = "";
       }
 
-      const recalculated = await recalcRow(curRow, patch);
+      const calc = calculateRow({
+        rawVendorSku: rawIn || existingItem.rawVendorSku,
+        cleanedSku: cleanIn || existingItem.cleanedSku,
+        cleanedOverridden: true,
+        discount: discountVal,
+        vendorListPriceNew: priceVal,
+        marginDivisor: divisorVal,
+        product: {
+          productNumber: existingItem.productNumber,
+          description: existingItem.productName,
+          brand: existingItem.brand,
+          vendor: existingItem.vendor,
+          listCost: existingItem.currentListPrice,
+          price: existingItem.oldRetailPrice,
+          isInactive: existingItem.isInactive,
+        },
+        defaultDiscount: existingItem.discount || "0.00",
+      });
+
+      const finalNearest9 = resolveNearest9(calc.nearest9, existingItem.nearest9Custom ?? null);
 
       results.push({
         index: i,
-        rawVendorSku: recalculated.rawVendorSku,
-        cleanedSku: recalculated.cleanedSku,
-        cleanedOverridden: recalculated.cleanedOverridden,
+        rawVendorSku: rawIn || existingItem.rawVendorSku,
+        cleanedSku: cleanIn || existingItem.cleanedSku,
+        cleanedOverridden: true,
         productId: existingItem.productId,
         productNumber: existingItem.productNumber,
         productName: existingItem.productName,
         brand: existingItem.brand,
         vendor: existingItem.vendor,
-        discount: recalculated.discount,
-        currentListPrice: recalculated.currentListPrice,
-        vendorListPriceNew: recalculated.vendorListPriceNew,
-        ourNewListPrice: recalculated.ourNewListPrice,
-        marginDivisor: recalculated.marginDivisor,
-        ourNewRetailPrice: recalculated.ourNewRetailPrice,
-        oldRetailPrice: recalculated.oldRetailPrice,
-        nearest9: recalculated.nearest9,
-        notes: recalculated.notes,
+        discount: calc.discount,
+        currentListPrice: calc.currentListPrice,
+        vendorListPriceNew: priceVal,
+        ourNewListPrice: calc.ourNewListPrice,
+        marginDivisor: calc.marginDivisor,
+        ourNewRetailPrice: calc.ourNewRetailPrice,
+        oldRetailPrice: calc.oldRetailPrice,
+        nearest9: finalNearest9,
+        notes: notesVal,
         matched: true,
         isInactive: existingItem.isInactive,
         isValid: true,
@@ -364,22 +416,12 @@ export async function computeFullVendorBulkPreview(
       continue;
     }
 
-    // Genuinely new product to ADD
-    let prod: ProductRow | null = null;
-    if (cleanIn) {
-      prod = cleanProductMap.get(cleanIn) ?? null;
-      if (!prod) prod = (await lookupProduct(cleanIn)) as ProductRow | null;
-      if (!prod && rawIn) {
-        const rawFallback = await findProductsByRawSkus([rawIn]);
-        prod = rawFallback.get(rawIn) ?? null;
-      }
-    } else if (rawIn) {
-      prod = rawProductMap.get(rawIn) ?? null;
-      if (!prod) {
-        const rawFallback = await findProductsByRawSkus([rawIn]);
-        prod = rawFallback.get(rawIn) ?? null;
-      }
-    }
+    // Genuinely new product to ADD — use preloaded bulk map (no repeated DB lookups)
+    const prod: ProductRow | null = cleanIn
+      ? cleanProductMap.get(cleanIn) ?? null
+      : rawIn
+      ? rawProductMap.get(rawIn) ?? null
+      : null;
 
     const cleanedOverridden = !!cleanIn;
     const defaultDiscount = prod ? resolveDefaultDiscount(discMaps, prod.vendor, prod.brand) : "0.00";
@@ -391,49 +433,38 @@ export async function computeFullVendorBulkPreview(
     const divisorInput =
       row.marginDivisor && String(row.marginDivisor).trim() !== "" ? String(row.marginDivisor).trim() : undefined;
 
-    const seed: CurRow = {
+    const calc = calculateRow({
       rawVendorSku: rawIn,
       cleanedSku: cleanIn,
       cleanedOverridden,
-      discount: discInput ?? defaultDiscount,
-      vendorListPriceNew: priceInput,
-      marginDivisor: divisorInput ?? DEFAULT_DIVISOR,
-      notes: String(row.notes ?? ""),
-      nearest9Custom: null,
-      vendor: prod?.vendor ?? "",
-      brand: prod?.brand ?? "",
-    };
-
-    const calculated = await recalcRow(seed, {
-      rawVendorSku: rawIn,
-      cleanedSku: cleanIn,
       discount: discInput,
       vendorListPriceNew: priceInput,
       marginDivisor: divisorInput,
-      notes: String(row.notes ?? ""),
+      product: prod,
+      defaultDiscount,
     });
 
     results.push({
       index: i,
-      rawVendorSku: calculated.rawVendorSku,
-      cleanedSku: calculated.cleanedSku,
-      cleanedOverridden: calculated.cleanedOverridden,
-      productId: calculated.productId,
-      productNumber: calculated.productNumber,
-      productName: calculated.productName,
-      brand: calculated.brand,
-      vendor: calculated.vendor,
-      discount: calculated.discount,
-      currentListPrice: calculated.currentListPrice,
-      vendorListPriceNew: calculated.vendorListPriceNew,
-      ourNewListPrice: calculated.ourNewListPrice,
-      marginDivisor: calculated.marginDivisor,
-      ourNewRetailPrice: calculated.ourNewRetailPrice,
-      oldRetailPrice: calculated.oldRetailPrice,
-      nearest9: calculated.nearest9,
-      notes: calculated.notes,
-      matched: calculated.matched,
-      isInactive: calculated.isInactive,
+      rawVendorSku: rawIn,
+      cleanedSku: calc.cleanedSku,
+      cleanedOverridden,
+      productId: prod?.id ?? null,
+      productNumber: calc.productNumber,
+      productName: calc.productName,
+      brand: calc.brand,
+      vendor: calc.vendor,
+      discount: calc.discount,
+      currentListPrice: calc.currentListPrice,
+      vendorListPriceNew: priceInput,
+      ourNewListPrice: calc.ourNewListPrice,
+      marginDivisor: calc.marginDivisor,
+      ourNewRetailPrice: calc.ourNewRetailPrice,
+      oldRetailPrice: calc.oldRetailPrice,
+      nearest9: calc.nearest9,
+      notes: String(row.notes ?? ""),
+      matched: calc.matched,
+      isInactive: calc.isInactive,
       isValid: true,
       isDuplicateInBatch,
       isDuplicateInWorksheet: false,

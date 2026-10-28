@@ -4,7 +4,7 @@ import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuar
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { fullVendorSessionIds } from "@/lib/fullVendorServer";
-import { buildFullVendorCountWorkbook, fullVendorNewPrice, type FullVendorCountRow } from "@/lib/fullVendorExcel";
+import { buildFullVendorCountWorkbook, fullVendorEffectivePrice, fullVendorNewPrice, type FullVendorCountRow } from "@/lib/fullVendorExcel";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,7 +31,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
-  const body = (raw && typeof raw === "object" ? raw : {}) as { ids?: unknown; sortKey?: unknown; sortDir?: unknown };
+  const body = (raw && typeof raw === "object" ? raw : {}) as {
+    ids?: unknown;
+    sortKey?: unknown;
+    sortDir?: unknown;
+    priceMode?: "changed" | "all";
+    productFilter?: "all" | "active" | "inactive";
+  };
+  const priceMode = body.priceMode === "all" ? "all" : "changed";
+  const productFilter = body.productFilter === "active" || body.productFilter === "inactive" ? body.productFilter : "all";
   const reqSort = parseSortParam(body.sortKey, body.sortDir);
   const orderIds = Array.isArray(body.ids) && body.ids.length
     ? [...new Set((body.ids as unknown[]).map((v) => String(v ?? "")).filter(Boolean))].slice(0, 50000)
@@ -95,6 +103,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     list = [...list].sort((a, b) => a.sku.localeCompare(b.sku));
   }
 
+  if (productFilter === "active") {
+    list = list.filter((r) => !r.isInactive);
+  } else if (productFilter === "inactive") {
+    list = list.filter((r) => r.isInactive);
+  }
+
   // One line per product even if a sheet somehow holds a duplicate row.
   const seen = new Set<string>();
   const rows: FullVendorCountRow[] = [];
@@ -102,9 +116,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const key = r.sku || r.id;
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push({ sku: r.sku, description: r.description, sizeDesc: r.sizeDesc, newPrice: fullVendorNewPrice(r.nearest9, r.oldRetailPrice) });
+    rows.push({
+      sku: r.sku,
+      description: r.description,
+      sizeDesc: r.sizeDesc,
+      newPrice: fullVendorEffectivePrice(r.nearest9, r.oldRetailPrice, priceMode),
+      isInactive: Boolean(r.isInactive),
+    });
   }
-  if (!rows.length) return NextResponse.json({ error: "This price update has no rows to export." }, { status: 400 });
+  if (!rows.length) return NextResponse.json({ error: "No products match the selected export options." }, { status: 400 });
 
   try {
     if (prisma) {
@@ -120,7 +140,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (isDbConnectionError(e)) return dbUnreachableResponse();
   }
 
-  const buf = buildFullVendorCountWorkbook(rows, { vendor, date: new Date() });
+  const buf = buildFullVendorCountWorkbook(rows, {
+    vendor,
+    date: new Date(),
+    priceMode,
+    productFilter,
+  });
   const safe = vendor.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "vendor";
   return new NextResponse(new Uint8Array(buf), {
     headers: {

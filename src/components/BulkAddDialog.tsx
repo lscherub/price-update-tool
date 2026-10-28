@@ -57,6 +57,20 @@ export function BulkAddDialog({
   const [previewError, setPreviewError] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const skipDuplicatesRef = useRef(skipDuplicates);
+  const lastPayloadRef = useRef<string>("");
+
+  useEffect(() => {
+    skipDuplicatesRef.current = skipDuplicates;
+  }, [skipDuplicates]);
+
+  // Clean up any pending abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
 
   // Download template helpers
   const downloadTemplate = (format: "csv" | "xlsx") => {
@@ -124,10 +138,24 @@ export function BulkAddDialog({
       setPreviewItems([]);
       setSelectedIndices(new Set());
       setPreviewError("");
+      lastPayloadRef.current = "";
       return;
     }
 
     const inputRows = applyColumnMapping(detectedColumns, rawRows, mapping);
+    const payloadKey = JSON.stringify({ inputRows, isFullVendor });
+    if (lastPayloadRef.current === payloadKey && previewItems.length > 0) {
+      return; // Already calculated for this exact input
+    }
+
+    // Cancel any previous in-flight preview request
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    lastPayloadRef.current = payloadKey;
+
     setPreviewLoading(true);
     setPreviewError("");
 
@@ -136,8 +164,12 @@ export function BulkAddDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preview: true, items: inputRows, isFullVendor }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const data = await res.json().catch(() => ({}));
+      if (controller.signal.aborted) return;
+
       if (!res.ok) {
         setPreviewError(data?.error || "Could not generate preview.");
         setPreviewItems([]);
@@ -148,29 +180,38 @@ export function BulkAddDialog({
       setPreviewItems(items);
 
       // Auto-select valid items (excluding duplicates if skipDuplicates is on)
+      const skip = skipDuplicatesRef.current;
       const newSelected = new Set<number>();
       items.forEach((item, idx) => {
         if (!item.isValid) return;
         if (isFullVendor) {
-          if (skipDuplicates && item.isDuplicateInBatch) return;
+          if (skip && item.isDuplicateInBatch) return;
         } else {
-          if (skipDuplicates && (item.isDuplicateInBatch || item.isDuplicateInWorksheet)) return;
+          if (skip && (item.isDuplicateInBatch || item.isDuplicateInWorksheet)) return;
         }
         newSelected.add(idx);
       });
       setSelectedIndices(newSelected);
-    } catch {
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === "AbortError" || controller.signal.aborted) {
+        return; // Ignore aborted requests
+      }
       setPreviewError("Network error while generating preview. Please check connection.");
       setPreviewItems([]);
     } finally {
-      setPreviewLoading(false);
+      if (abortRef.current === controller) {
+        setPreviewLoading(false);
+      }
     }
-  }, [sessionId, detectedColumns, rawRows, mapping, skipDuplicates, isFullVendor]);
+  }, [sessionId, detectedColumns, rawRows, mapping, isFullVendor, previewItems.length]);
 
-  // Automatically update preview when mapping or rows change
+  // Automatically update preview with debouncing when mapping or rows change
   useEffect(() => {
     if (rawRows.length > 0 && detectedColumns.length > 0) {
-      void runPreview();
+      const timer = setTimeout(() => {
+        void runPreview();
+      }, 250);
+      return () => clearTimeout(timer);
     }
   }, [runPreview]);
 

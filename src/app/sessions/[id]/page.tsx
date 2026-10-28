@@ -3,6 +3,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COLS, PriceGrid, type Item } from "@/components/PriceGrid";
 import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
 import { BulkAddDialog } from "@/components/BulkAddDialog";
+import { DigitalStoreCountExportDialog, type DigitalStoreCountExportOptions } from "@/components/DigitalStoreCountExportDialog";
 import type { BulkAddInputRow } from "@/lib/bulkAdd";
 import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
 import { applyPinnedOrder } from "@/lib/markdown";
@@ -133,6 +134,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [addBusy, setAddBusy] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkAddBusy, setBulkAddBusy] = useState(false);
+  const [showFvExportModal, setShowFvExportModal] = useState(false);
   // Undo/Redo of table actions (cell edits, fills, add/delete rows). The ref is
   // the synchronous source of truth; state only drives the buttons/shortcuts.
   // History is tagged with the price update it belongs to, so switching price
@@ -822,11 +824,15 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   };
 
   /** Fetch the Digital Store Count Excel for Full Vendor workflows. */
-  const downloadFullVendorExcel = async () => {
+  const downloadFullVendorExcel = async (options?: DigitalStoreCountExportOptions) => {
     if (exportBusy) return;
     setExportBusy("fv-storecount");
     try {
-      const body = sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+      const body = {
+        ...(sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {}),
+        priceMode: options?.priceMode ?? "changed",
+        productFilter: options?.productFilter ?? "all",
+      };
       const r = await fetch(`/api/fullvendor/sessions/${id}/storecount/excel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -843,6 +849,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       a.download = `digital-storecount-${id}.xlsx`;
       a.click();
       URL.revokeObjectURL(a.href);
+      setShowFvExportModal(false);
       toast.success("Digital Store Count Excel downloaded.");
     } catch {
       toast.error("Export failed.", "Could not reach the server while exporting.");
@@ -1008,7 +1015,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             <LoadingButton
               busy={exportBusy === "fv-storecount"}
               busyLabel="Preparing Excel..."
-              onClick={() => downloadFullVendorExcel()}
+              onClick={() => setShowFvExportModal(true)}
               className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-60"
             >
               Digital Store Count Excel
@@ -1124,6 +1131,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           isFullVendor={isFullVendor}
         />
       )}
+      <DigitalStoreCountExportDialog
+        isOpen={showFvExportModal}
+        busy={exportBusy === "fv-storecount"}
+        vendorName={vendor}
+        onClose={() => { if (!exportBusy) setShowFvExportModal(false); }}
+        onExport={(opts) => downloadFullVendorExcel(opts)}
+      />
       {confirmBulk && selected.size > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">

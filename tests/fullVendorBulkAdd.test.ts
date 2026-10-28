@@ -332,4 +332,47 @@ describe("Full Vendor Bulk Add Rows — Upsert Behavior", () => {
     expect(preview[0].isDuplicateInWorksheet).toBe(true);
     expect(preview[0].targetAction).toBeUndefined();
   });
+
+  it("10. Performance: efficiently processes a large 500-row batch in under 300ms", async () => {
+    // Generate 500 input rows with mix of existing SKU updates, new items, and duplicate keys
+    const largeBatch: BulkAddInputRow[] = [];
+    for (let i = 0; i < 500; i++) {
+      if (i % 2 === 0) {
+        // Targets existing item (prod-1: 06895801011)
+        largeBatch.push({ cleanedSku: "06895801011", vendorListPriceNew: (9.0 + (i % 5)).toFixed(2) });
+      } else {
+        // New item
+        largeBatch.push({ cleanedSku: `06895809${String(i).padStart(3, "0")}`, vendorListPriceNew: "15.00" });
+      }
+    }
+
+    const t0 = performance.now();
+    const preview = await computeFullVendorBulkPreview(largeBatch, baseExistingItems);
+    const duration = performance.now() - t0;
+
+    expect(preview).toHaveLength(500);
+    // Should run very fast (< 300ms)
+    expect(duration).toBeLessThan(300);
+
+    // Verify update rows vs add rows are correctly classified
+    const updateRows = preview.filter((r) => r.targetAction === "update");
+    const addRows = preview.filter((r) => r.targetAction === "add");
+    expect(updateRows.length).toBe(250);
+    expect(addRows.length).toBe(250);
+  });
+
+  it("11. Preserves leading zeros and matches each SKU independently", async () => {
+    const input: BulkAddInputRow[] = [
+      { cleanedSku: "06895801011", vendorListPriceNew: "9.49" },
+      { cleanedSku: "06895801014", vendorListPriceNew: "17.36" },
+    ];
+
+    const preview = await computeFullVendorBulkPreview(input, baseExistingItems);
+    expect(preview).toHaveLength(2);
+    expect(preview[0].cleanedSku).toBe("06895801011");
+    expect(preview[0].targetAction).toBe("update");
+    expect(preview[1].cleanedSku).toBe("06895801014");
+    expect(preview[1].targetAction).toBe("update");
+    expect(preview[0].productName).not.toBe(preview[1].productName);
+  });
 });

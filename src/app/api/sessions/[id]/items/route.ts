@@ -145,6 +145,36 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const isFullVendor = isFvFromReq ?? (await fullVendorSessionIds(prisma, [id])).has(id);
 
     if (isFullVendor) {
+      if (req.signal?.aborted) return NextResponse.json({ ok: false, aborted: true });
+
+      // Gather candidate keys from the pasted batch to query only relevant items and products
+      const candKeys = new Set<string>();
+      for (const r of rawItems) {
+        const c = String(r.cleanedSku ?? "").trim();
+        const raw = String(r.rawVendorSku ?? "").trim();
+        if (c) {
+          candKeys.add(c);
+          candKeys.add(c.replace(/[\s-]+/g, ""));
+          const st = c.replace(/[\s-]+/g, "").replace(/^0+/, "");
+          if (st) candKeys.add(st);
+        }
+        if (raw) {
+          candKeys.add(raw);
+          candKeys.add(raw.replace(/[\s-]+/g, ""));
+          const st = raw.replace(/[\s-]+/g, "").replace(/^0+/, "");
+          if (st) candKeys.add(st);
+          const norm = normalizeSku(raw);
+          if (norm) {
+            candKeys.add(norm);
+            const stNorm = norm.replace(/^0+/, "");
+            if (stNorm) candKeys.add(stNorm);
+          }
+        }
+      }
+      candKeys.delete("");
+      candKeys.delete("0");
+      const candKeysArr = Array.from(candKeys);
+
       let existingItems: WorksheetItemLite[] = [];
       let productsById: Map<string, { sku: string; normalizedSku: string }> | undefined;
 
@@ -153,43 +183,92 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         if (!store.sessions.some((s) => s.id === id)) {
           return NextResponse.json({ error: "Price update not found" }, { status: 404 });
         }
-        existingItems = store.items
-          .filter((i) => i.sessionId === id)
-          .map((cur) => ({
-            id: cur.id,
-            sessionId: cur.sessionId,
-            rawVendorSku: cur.rawVendorSku || "",
-            cleanedSku: cur.cleanedSku || "",
-            cleanedOverridden: Boolean(cur.cleanedOverridden),
-            productId: cur.productId ?? null,
-            productNumber: cur.productNumber || "",
-            productName: cur.productName || "",
-            brand: cur.brand || "",
-            vendor: cur.vendor || "",
-            discount: cur.discount != null ? String(cur.discount) : null,
-            currentListPrice: cur.currentListPrice != null ? String(cur.currentListPrice) : null,
-            vendorListPriceNew: cur.vendorListPriceNew != null ? String(cur.vendorListPriceNew) : null,
-            ourNewListPrice: cur.ourNewListPrice != null ? String(cur.ourNewListPrice) : null,
-            marginDivisor: cur.marginDivisor != null ? String(cur.marginDivisor) : null,
-            ourNewRetailPrice: cur.ourNewRetailPrice != null ? String(cur.ourNewRetailPrice) : null,
-            oldRetailPrice: cur.oldRetailPrice != null ? String(cur.oldRetailPrice) : null,
-            nearest9: cur.nearest9 != null ? String(cur.nearest9) : null,
-            nearest9Custom: cur.nearest9Custom != null ? String(cur.nearest9Custom) : null,
-            notes: cur.notes || "",
-            isInactive: Boolean(cur.isInactive),
-            matched: Boolean(cur.matched),
-          }));
 
-        const pIds = Array.from(new Set(existingItems.map((e) => e.productId).filter((pid): pid is string => Boolean(pid))));
-        if (pIds.length > 0) {
-          const prods = store.products.filter((p) => pIds.includes(p.id));
-          productsById = new Map(prods.map((p) => [p.id, { sku: p.sku, normalizedSku: p.normalizedSku }]));
-        }
+        // Fast in-memory match: only products and items relevant to this batch
+        const matchingProds = store.products.filter((p) => {
+          const skuSt = (p.sku || "").replace(/^0+/, "");
+          const normSt = (p.normalizedSku || "").replace(/^0+/, "");
+          return (
+            candKeys.has(p.sku) ||
+            candKeys.has(p.normalizedSku) ||
+            (skuSt && candKeys.has(skuSt)) ||
+            (normSt && candKeys.has(normSt))
+          );
+        });
+        const candProductIds = new Set(matchingProds.map((p) => p.id));
+        productsById = new Map(matchingProds.map((p) => [p.id, { sku: p.sku, normalizedSku: p.normalizedSku }]));
+
+        const sessionItems = store.items.filter((i) => i.sessionId === id);
+        const matchedItems = sessionItems.filter((i) => {
+          const cSt = (i.cleanedSku || "").replace(/^0+/, "");
+          const rSt = (i.rawVendorSku || "").replace(/^0+/, "");
+          return (
+            candKeys.has(i.cleanedSku) ||
+            candKeys.has(i.rawVendorSku) ||
+            (cSt && candKeys.has(cSt)) ||
+            (rSt && candKeys.has(rSt)) ||
+            (i.productId && candProductIds.has(i.productId))
+          );
+        });
+
+        existingItems = matchedItems.map((cur) => ({
+          id: cur.id,
+          sessionId: cur.sessionId,
+          rawVendorSku: cur.rawVendorSku || "",
+          cleanedSku: cur.cleanedSku || "",
+          cleanedOverridden: Boolean(cur.cleanedOverridden),
+          productId: cur.productId ?? null,
+          productNumber: cur.productNumber || "",
+          productName: cur.productName || "",
+          brand: cur.brand || "",
+          vendor: cur.vendor || "",
+          discount: cur.discount != null ? String(cur.discount) : null,
+          currentListPrice: cur.currentListPrice != null ? String(cur.currentListPrice) : null,
+          vendorListPriceNew: cur.vendorListPriceNew != null ? String(cur.vendorListPriceNew) : null,
+          ourNewListPrice: cur.ourNewListPrice != null ? String(cur.ourNewListPrice) : null,
+          marginDivisor: cur.marginDivisor != null ? String(cur.marginDivisor) : null,
+          ourNewRetailPrice: cur.ourNewRetailPrice != null ? String(cur.ourNewRetailPrice) : null,
+          oldRetailPrice: cur.oldRetailPrice != null ? String(cur.oldRetailPrice) : null,
+          nearest9: cur.nearest9 != null ? String(cur.nearest9) : null,
+          nearest9Custom: cur.nearest9Custom != null ? String(cur.nearest9Custom) : null,
+          notes: cur.notes || "",
+          isInactive: Boolean(cur.isInactive),
+          matched: Boolean(cur.matched),
+        }));
       } else {
         try {
-          const rows = await prisma.priceUpdateItem.findMany({
-            where: { sessionId: id },
-          });
+          // Query products matching candidate keys (chunked by 2000)
+          const matchingProds: { id: string; sku: string; normalizedSku: string }[] = [];
+          for (let i = 0; i < candKeysArr.length; i += 2000) {
+            const chunk = candKeysArr.slice(i, i + 2000);
+            const prods = await prisma.product.findMany({
+              where: { OR: [{ sku: { in: chunk } }, { normalizedSku: { in: chunk } }] },
+              select: { id: true, sku: true, normalizedSku: true },
+            });
+            matchingProds.push(...prods);
+          }
+          const candProductIds = matchingProds.map((p) => p.id);
+          productsById = new Map(matchingProds.map((p) => [p.id, { sku: p.sku, normalizedSku: p.normalizedSku }]));
+
+          // Query only worksheet items matching candidate keys or matching products
+          const orClauses: object[] = [];
+          if (candKeysArr.length > 0) {
+            orClauses.push({ cleanedSku: { in: candKeysArr.slice(0, 2000) } });
+            orClauses.push({ rawVendorSku: { in: candKeysArr.slice(0, 2000) } });
+          }
+          if (candProductIds.length > 0) {
+            orClauses.push({ productId: { in: candProductIds.slice(0, 2000) } });
+          }
+
+          const rows = orClauses.length > 0
+            ? await prisma.priceUpdateItem.findMany({
+                where: {
+                  sessionId: id,
+                  OR: orClauses as never,
+                },
+              })
+            : [];
+
           existingItems = rows.map((cur) => ({
             id: cur.id,
             sessionId: cur.sessionId,
@@ -215,13 +294,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             matched: Boolean(cur.matched),
           }));
 
-          const pIds = Array.from(new Set(existingItems.map((e) => e.productId).filter((pid): pid is string => Boolean(pid))));
-          if (pIds.length > 0) {
-            const prods = await prisma.product.findMany({
-              where: { id: { in: pIds } },
+          // In case any matched row had a productId not yet in productsById, fetch it
+          const missingPids = existingItems
+            .map((e) => e.productId)
+            .filter((pid): pid is string => Boolean(pid) && !productsById?.has(pid));
+          if (missingPids.length > 0) {
+            const extraProds = await prisma.product.findMany({
+              where: { id: { in: missingPids } },
               select: { id: true, sku: true, normalizedSku: true },
             });
-            productsById = new Map(prods.map((p) => [p.id, { sku: p.sku, normalizedSku: p.normalizedSku }]));
+            for (const ep of extraProds) {
+              productsById?.set(ep.id, { sku: ep.sku, normalizedSku: ep.normalizedSku });
+            }
           }
         } catch (e) {
           if (isDbConnectionError(e)) return dbUnreachableResponse();
@@ -230,6 +314,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       }
 
       if (body.preview) {
+        if (req.signal?.aborted) return NextResponse.json({ ok: false, aborted: true });
         const computed = await computeFullVendorBulkPreview(rawItems, existingItems, productsById);
         return NextResponse.json({ ok: true, preview: computed, isFullVendor: true });
       }

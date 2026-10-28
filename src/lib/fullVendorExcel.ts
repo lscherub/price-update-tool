@@ -22,7 +22,13 @@ export const FULL_VENDOR_COUNT_NOTE =
 /** Header row (1-based) of the table; rows above it are the sheet heading. */
 export const FULL_VENDOR_HEADER_ROW = 6;
 
-export type FullVendorCountRow = { sku: string; description: string; sizeDesc: string; newPrice: string };
+export type FullVendorCountRow = {
+  sku: string;
+  description: string;
+  sizeDesc: string;
+  newPrice: string;
+  isInactive?: boolean;
+};
 
 /**
  * New Price = the final effective worksheet price (Nearest 9, which already
@@ -30,6 +36,26 @@ export type FullVendorCountRow = { sku: string; description: string; sizeDesc: s
  * exact rule of the existing Store Count PDF (`storeCountNewPrice`).
  */
 export function fullVendorNewPrice(nearest9: string | null | undefined, oldRetailPrice: string | null | undefined): string {
+  return storeCountNewPrice(nearest9 ?? null, oldRetailPrice ?? null);
+}
+
+/**
+ * Effective New Price calculation based on priceMode option:
+ * - "changed" (default): populated only when effective retail price differs from old retail price, blank otherwise.
+ * - "all": populated with effective retail price (including Nearest 9 / custom override) for every product, even if unchanged.
+ */
+export function fullVendorEffectivePrice(
+  nearest9: string | null | undefined,
+  oldRetailPrice: string | null | undefined,
+  priceMode: "changed" | "all" = "changed",
+): string {
+  if (priceMode === "all") {
+    const n9 = String(nearest9 ?? "").trim();
+    if (n9 && Number.isFinite(Number(n9.replace(/[$,]/g, "")))) return n9;
+    const old = String(oldRetailPrice ?? "").trim();
+    if (old && Number.isFinite(Number(old.replace(/[$,]/g, "")))) return old;
+    return "";
+  }
   return storeCountNewPrice(nearest9 ?? null, oldRetailPrice ?? null);
 }
 
@@ -51,24 +77,28 @@ const COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 const S = {
   title: 1, label: 2, staffInput: 3, instructions: 4, note: 5, header: 6,
   lockedText: 7, lockedPrice: 8, editable: 9, info: 10,
+  lockedTextInactive: 11, lockedPriceInactive: 12, editableInactive: 13,
 } as const;
 
 const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="1"><numFmt numFmtId="164" formatCode="0.00"/></numFmts>
-<fonts count="5">
+<fonts count="7">
 <font><sz val="11"/><name val="Calibri"/><family val="2"/></font>
 <font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font>
 <font><b/><sz val="16"/><name val="Calibri"/><family val="2"/></font>
 <font><b/><sz val="12"/><color rgb="FF9C0006"/><name val="Calibri"/><family val="2"/></font>
 <font><sz val="12"/><name val="Calibri"/><family val="2"/></font>
+<font><sz val="11"/><color rgb="FF595959"/><name val="Calibri"/><family val="2"/></font>
+<font><b/><sz val="11"/><color rgb="FF595959"/><name val="Calibri"/><family val="2"/></font>
 </fonts>
-<fills count="5">
+<fills count="6">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFEAECEE"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="3">
 <border><left/><right/><top/><bottom/><diagonal/></border>
@@ -76,7 +106,7 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <border><left/><right/><top/><bottom style="medium"><color rgb="FF000000"/></bottom><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="11">
+<cellXfs count="14">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
@@ -88,6 +118,9 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="164" fontId="1" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/><protection locked="0"/></xf>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="49" fontId="5" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+<xf numFmtId="164" fontId="6" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>
+<xf numFmtId="0" fontId="5" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/><protection locked="0"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -102,7 +135,22 @@ function priceCell(ref: string, v: string, s: number): string {
   return `<c r="${ref}" s="${s}"><v>${n}</v></c>`;
 }
 
-function sheetXml(rows: FullVendorCountRow[], opts: { dateLabel: string; vendor: string }): string {
+export type FullVendorWorkbookOptions = {
+  date?: Date;
+  vendor?: string;
+  priceMode?: "changed" | "all";
+  productFilter?: "all" | "active" | "inactive";
+};
+
+function sheetXml(
+  rows: FullVendorCountRow[],
+  opts: {
+    dateLabel: string;
+    vendor: string;
+    priceMode?: "changed" | "all";
+    productFilter?: "all" | "active" | "inactive";
+  },
+): string {
   const H = FULL_VENDOR_HEADER_ROW;
   const last = H + Math.max(rows.length, 1);
   const out: string[] = [];
@@ -112,18 +160,32 @@ function sheetXml(rows: FullVendorCountRow[], opts: { dateLabel: string; vendor:
     ["B2", "C2", "D2"].map((r) => strCell(r, "", S.staffInput)).join("") + `</row>`,
   );
   out.push(`<row r="3" ht="34" customHeight="1">${strCell("A3", FULL_VENDOR_COUNT_INSTRUCTIONS, S.instructions)}</row>`);
-  out.push(`<row r="4" ht="38" customHeight="1">${strCell("A4", FULL_VENDOR_COUNT_NOTE, S.note)}${COLS.slice(1).map((c) => strCell(`${c}4`, "", S.note)).join("")}</row>`);
-  out.push(`<row r="5">${strCell("A5", `Vendor: ${opts.vendor}   •   ${rows.length} item${rows.length === 1 ? "" : "s"}`, S.info)}</row>`);
+
+  const noteText = opts.priceMode === "all"
+    ? "New Price shows the final effective retail price for all items. All items must still be counted for QOH and Expiry."
+    : FULL_VENDOR_COUNT_NOTE;
+  out.push(`<row r="4" ht="38" customHeight="1">${strCell("A4", noteText, S.note)}${COLS.slice(1).map((c) => strCell(`${c}4`, "", S.note)).join("")}</row>`);
+
+  const hasInactive = rows.some((r) => r.isInactive);
+  const filterLabel = opts.productFilter === "active" ? " (Active Only)" : opts.productFilter === "inactive" ? " (Inactive Only)" : "";
+  const legendLabel = hasInactive && opts.productFilter !== "inactive" ? "   •   Legend: Light-grey rows indicate Inactive products" : "";
+  out.push(`<row r="5">${strCell("A5", `Vendor: ${opts.vendor}   •   ${rows.length} item${rows.length === 1 ? "" : "s"}${filterLabel}${legendLabel}`, S.info)}</row>`);
+
   out.push(`<row r="${H}" ht="20" customHeight="1">${FULL_VENDOR_COUNT_HEADER.map((h, i) => strCell(`${COLS[i]}${H}`, h, S.header)).join("")}</row>`);
   rows.forEach((r, i) => {
     const n = H + 1 + i;
+    const isInactive = Boolean(r.isInactive);
+    const textStyle = isInactive ? S.lockedTextInactive : S.lockedText;
+    const priceStyle = isInactive ? S.lockedPriceInactive : S.lockedPrice;
+    const editStyle = isInactive ? S.editableInactive : S.editable;
+
     out.push(
       `<row r="${n}">` +
-      strCell(`A${n}`, r.sku, S.lockedText) +
-      strCell(`B${n}`, r.description, S.lockedText) +
-      strCell(`C${n}`, r.sizeDesc, S.lockedText) +
-      priceCell(`D${n}`, r.newPrice, S.lockedPrice) +
-      ["E", "F", "G", "H", "I"].map((c) => `<c r="${c}${n}" s="${S.editable}"/>`).join("") +
+      strCell(`A${n}`, r.sku, textStyle) +
+      strCell(`B${n}`, r.description, textStyle) +
+      strCell(`C${n}`, r.sizeDesc, textStyle) +
+      priceCell(`D${n}`, r.newPrice, priceStyle) +
+      ["E", "F", "G", "H", "I"].map((c) => `<c r="${c}${n}" s="${editStyle}"/>`).join("") +
       `</row>`,
     );
   });
@@ -149,7 +211,7 @@ function sheetXml(rows: FullVendorCountRow[], opts: { dateLabel: string; vendor:
 /** Build the .xlsx (real OOXML workbook) as a Buffer. */
 export function buildFullVendorCountWorkbook(
   rows: FullVendorCountRow[],
-  opts: { date?: Date; vendor?: string } = {},
+  opts: FullVendorWorkbookOptions = {},
 ): Buffer {
   const dateLabel = formatCountDate(opts.date ?? new Date());
   const vendor = String(opts.vendor ?? "").trim();
@@ -180,7 +242,12 @@ export function buildFullVendorCountWorkbook(
 <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`,
     "xl/styles.xml": STYLES_XML,
-    "xl/worksheets/sheet1.xml": sheetXml(rows, { dateLabel, vendor }),
+    "xl/worksheets/sheet1.xml": sheetXml(rows, {
+      dateLabel,
+      vendor,
+      priceMode: opts.priceMode,
+      productFilter: opts.productFilter,
+    }),
   };
 
   const CFB = XLSX.CFB as unknown as {
