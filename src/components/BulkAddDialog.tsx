@@ -21,12 +21,14 @@ export function BulkAddDialog({
   onClose,
   onSubmit,
   existingSkus,
+  isFullVendor,
 }: {
   sessionId: string;
   busy: boolean;
   onClose: () => void;
-  onSubmit: (items: BulkAddInputRow[], summary: { added: number; skipped: number }) => Promise<void>;
+  onSubmit: (items: BulkAddInputRow[], summary: { added: number; updated?: number; skipped: number }) => Promise<void>;
   existingSkus?: string[];
+  isFullVendor?: boolean;
 }) {
   const [mode, setMode] = useState<"paste" | "file">("paste");
   const [pastedText, setPastedText] = useState("");
@@ -133,7 +135,7 @@ export function BulkAddDialog({
       const res = await fetch(`/api/sessions/${sessionId}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preview: true, items: inputRows }),
+        body: JSON.stringify({ preview: true, items: inputRows, isFullVendor }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -149,7 +151,11 @@ export function BulkAddDialog({
       const newSelected = new Set<number>();
       items.forEach((item, idx) => {
         if (!item.isValid) return;
-        if (skipDuplicates && (item.isDuplicateInBatch || item.isDuplicateInWorksheet)) return;
+        if (isFullVendor) {
+          if (skipDuplicates && item.isDuplicateInBatch) return;
+        } else {
+          if (skipDuplicates && (item.isDuplicateInBatch || item.isDuplicateInWorksheet)) return;
+        }
         newSelected.add(idx);
       });
       setSelectedIndices(newSelected);
@@ -159,7 +165,7 @@ export function BulkAddDialog({
     } finally {
       setPreviewLoading(false);
     }
-  }, [sessionId, detectedColumns, rawRows, mapping, skipDuplicates]);
+  }, [sessionId, detectedColumns, rawRows, mapping, skipDuplicates, isFullVendor]);
 
   // Automatically update preview when mapping or rows change
   useEffect(() => {
@@ -183,7 +189,11 @@ export function BulkAddDialog({
     const next = new Set<number>();
     previewItems.forEach((item, idx) => {
       if (!item.isValid) return;
-      if (checked && (item.isDuplicateInBatch || item.isDuplicateInWorksheet)) return;
+      if (isFullVendor) {
+        if (checked && item.isDuplicateInBatch) return;
+      } else {
+        if (checked && (item.isDuplicateInBatch || item.isDuplicateInWorksheet)) return;
+      }
       next.add(idx);
     });
     setSelectedIndices(next);
@@ -221,6 +231,13 @@ export function BulkAddDialog({
   const duplicateCount = previewItems.filter((i) => i.isDuplicateInBatch || i.isDuplicateInWorksheet).length;
   const unmatchedCount = previewItems.filter((i) => i.isValid && !i.matched).length;
 
+  // Full Vendor specific preview counts
+  const rowsToUpdate = previewItems.filter((i) => i.isValid && i.targetAction === "update" && !i.isDuplicateInBatch).length;
+  const rowsToAdd = previewItems.filter((i) => i.isValid && i.targetAction === "add" && !i.isDuplicateInBatch).length;
+  const batchDuplicateCount = previewItems.filter((i) => i.isDuplicateInBatch).length;
+  const selectedUpdates = previewItems.filter((item, idx) => selectedIndices.has(idx) && item.targetAction === "update").length;
+  const selectedAdds = previewItems.filter((item, idx) => selectedIndices.has(idx) && item.targetAction === "add").length;
+
   // Confirm and submit
   const handleConfirm = async () => {
     if (selectedCount === 0 || busy) return;
@@ -230,7 +247,11 @@ export function BulkAddDialog({
       .map((idx) => allInputRows[idx])
       .filter(Boolean);
 
-    await onSubmit(selectedRows, { added: selectedCount, skipped: skippedCount });
+    await onSubmit(selectedRows, {
+      added: isFullVendor ? selectedAdds : selectedCount,
+      updated: isFullVendor ? selectedUpdates : 0,
+      skipped: skippedCount,
+    });
   };
 
   return (
@@ -244,9 +265,13 @@ export function BulkAddDialog({
         {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Bulk Add Rows</h2>
+            <h2 className="text-xl font-bold text-slate-900">
+              {isFullVendor ? "Bulk Add / Update Rows" : "Bulk Add Rows"}
+            </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Add multiple products at once by pasting from Excel or importing a file.
+              {isFullVendor
+                ? "Paste or import vendor data to update existing products or add new rows."
+                : "Add multiple products at once by pasting from Excel or importing a file."}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -422,29 +447,60 @@ export function BulkAddDialog({
           {detectedColumns.length > 0 && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="font-bold text-slate-800">Preview &amp; Validation:</span>
-                  {validCount > 0 && (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
-                      ✓ {validCount} Valid
-                    </span>
-                  )}
-                  {unmatchedCount > 0 && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800" title="SKU not found in inventory">
-                      ! {unmatchedCount} Unmatched
-                    </span>
-                  )}
-                  {duplicateCount > 0 && (
-                    <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
-                      ⧉ {duplicateCount} Duplicate
-                    </span>
-                  )}
-                  {invalidCount > 0 && (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
-                      ✕ {invalidCount} Invalid
-                    </span>
-                  )}
-                </div>
+                {isFullVendor ? (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-bold text-slate-800">Preview &amp; Validation:</span>
+                    {rowsToUpdate > 0 && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800" title="Existing products in worksheet that will be updated">
+                        ↻ {rowsToUpdate} to Update
+                      </span>
+                    )}
+                    {rowsToAdd > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800" title="Genuinely new products that will be added">
+                        + {rowsToAdd} to Add
+                      </span>
+                    )}
+                    {batchDuplicateCount > 0 && (
+                      <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800" title="SKUs appearing multiple times in pasted data">
+                        ⧉ {batchDuplicateCount} Duplicate (Batch)
+                      </span>
+                    )}
+                    {unmatchedCount > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800" title="SKUs not found in inventory">
+                        ! {unmatchedCount} Unmatched
+                      </span>
+                    )}
+                    {invalidCount > 0 && (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800" title="Invalid price or data format">
+                        ✕ {invalidCount} Invalid
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-bold text-slate-800">Preview &amp; Validation:</span>
+                    {validCount > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
+                        ✓ {validCount} Valid
+                      </span>
+                    )}
+                    {unmatchedCount > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800" title="SKU not found in inventory">
+                        ! {unmatchedCount} Unmatched
+                      </span>
+                    )}
+                    {duplicateCount > 0 && (
+                      <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
+                        ⧉ {duplicateCount} Duplicate
+                      </span>
+                    )}
+                    {invalidCount > 0 && (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
+                        ✕ {invalidCount} Invalid
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center gap-3 text-xs">
                   <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
@@ -454,7 +510,7 @@ export function BulkAddDialog({
                       onChange={(e) => onToggleSkipDuplicates(e.target.checked)}
                       className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
-                    <span>Skip duplicate products</span>
+                    <span>{isFullVendor ? "Skip duplicate SKUs in batch" : "Skip duplicate products"}</span>
                   </label>
                   <button
                     type="button"
@@ -516,19 +572,21 @@ export function BulkAddDialog({
                     ) : (
                       previewItems.map((item, idx) => {
                         const isSelected = selectedIndices.has(idx);
+                        let rowBg = "";
+                        if (!item.isValid) {
+                          rowBg = "bg-red-50/40 text-slate-500";
+                        } else if (item.isDuplicateInBatch) {
+                          rowBg = "bg-purple-50/30";
+                        } else if (isFullVendor && item.targetAction === "update") {
+                          rowBg = "bg-blue-50/30";
+                        } else if (!isFullVendor && item.isDuplicateInWorksheet) {
+                          rowBg = "bg-purple-50/30";
+                        } else if (!item.matched) {
+                          rowBg = "bg-amber-50/30";
+                        }
+
                         return (
-                          <tr
-                            key={idx}
-                            className={`hover:bg-slate-50/80 ${
-                              !item.isValid
-                                ? "bg-red-50/40 text-slate-500"
-                                : item.isDuplicateInBatch || item.isDuplicateInWorksheet
-                                ? "bg-purple-50/30"
-                                : !item.matched
-                                ? "bg-amber-50/30"
-                                : ""
-                            }`}
-                          >
+                          <tr key={idx} className={`hover:bg-slate-50/80 ${rowBg}`}>
                             <td className="px-2 py-1.5 text-center">
                               <input
                                 type="checkbox"
@@ -547,16 +605,48 @@ export function BulkAddDialog({
                                 >
                                   Invalid: {item.validationError}
                                 </span>
-                              ) : item.isDuplicateInWorksheet ? (
-                                <span className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800" title="This SKU already exists in this price update worksheet">
-                                  Duplicate (Worksheet)
-                                </span>
                               ) : item.isDuplicateInBatch ? (
-                                <span className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800" title="This SKU appears multiple times in your import list">
+                                <span
+                                  className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800"
+                                  title="This SKU appears multiple times in your pasted data"
+                                >
                                   Duplicate (Batch)
                                 </span>
+                              ) : isFullVendor ? (
+                                item.targetAction === "update" ? (
+                                  <span
+                                    className="inline-flex items-center rounded-sm bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800"
+                                    title="Matches existing product in worksheet — will update row"
+                                  >
+                                    Update Existing
+                                  </span>
+                                ) : !item.matched ? (
+                                  <span
+                                    className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                                    title="Not found in inventory"
+                                  >
+                                    Add New (Unmatched)
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800"
+                                    title="New product — will add as new row"
+                                  >
+                                    Add New
+                                  </span>
+                                )
+                              ) : item.isDuplicateInWorksheet ? (
+                                <span
+                                  className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800"
+                                  title="This SKU already exists in this price update worksheet"
+                                >
+                                  Duplicate (Worksheet)
+                                </span>
                               ) : !item.matched ? (
-                                <span className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800" title="Not found in inventory">
+                                <span
+                                  className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                                  title="Not found in inventory"
+                                >
                                   Unmatched
                                 </span>
                               ) : (
@@ -609,12 +699,22 @@ export function BulkAddDialog({
         <div className="flex items-center justify-between border-t bg-slate-50 px-6 py-3">
           <div className="text-xs text-slate-600">
             {previewItems.length > 0 ? (
-              <span>
-                <strong className="text-slate-900">{selectedCount}</strong> rows ready to add
-                {skippedCount > 0 && (
-                  <span className="text-slate-500"> ({skippedCount} will be skipped)</span>
-                )}
-              </span>
+              isFullVendor ? (
+                <span>
+                  <strong className="text-slate-900">{selectedUpdates}</strong> to update,{" "}
+                  <strong className="text-slate-900">{selectedAdds}</strong> to add
+                  {skippedCount > 0 && (
+                    <span className="text-slate-500"> ({skippedCount} will be skipped)</span>
+                  )}
+                </span>
+              ) : (
+                <span>
+                  <strong className="text-slate-900">{selectedCount}</strong> rows ready to add
+                  {skippedCount > 0 && (
+                    <span className="text-slate-500"> ({skippedCount} will be skipped)</span>
+                  )}
+                </span>
+              )
             ) : (
               <span>Enter or paste rows above to preview before adding.</span>
             )}
@@ -630,12 +730,14 @@ export function BulkAddDialog({
             </button>
             <LoadingButton
               busy={busy}
-              busyLabel="Adding rows..."
+              busyLabel={isFullVendor ? "Applying changes..." : "Adding rows..."}
               disabled={selectedCount === 0 || busy}
               onClick={handleConfirm}
               className="rounded bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Add {selectedCount > 0 ? `${selectedCount} Valid Row${selectedCount === 1 ? "" : "s"}` : "Rows"} to Worksheet
+              {isFullVendor
+                ? `Apply Changes (${selectedUpdates} update${selectedUpdates === 1 ? "" : "s"}, ${selectedAdds} addition${selectedAdds === 1 ? "" : "s"})`
+                : `Add ${selectedCount > 0 ? `${selectedCount} Valid Row${selectedCount === 1 ? "" : "s"}` : "Rows"} to Worksheet`}
             </LoadingButton>
           </div>
         </div>

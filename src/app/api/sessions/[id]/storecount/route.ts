@@ -4,30 +4,10 @@ import { getSession } from "@/lib/auth";
 import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
+import { storeCountNewPrice } from "@/lib/storeCountPricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-/**
- * Store Count PDF "New Price" display rule (mirrors the price update screen):
- * - If the calculated Nearest 9 equals the current/old retail price -> blank (no change).
- * - Otherwise -> show the exact Nearest 9 value already stored on the row.
- * - If there is no Nearest 9 stored, the cell stays blank.
- * This uses the existing row data only; it performs no new pricing calculation.
- */
-export function storeCountNewPrice(
-  nearest9: string | { toString(): string } | null | undefined,
-  oldRetailPrice: string | { toString(): string } | null | undefined,
-): string {
-  const n9 = nearest9 === null || nearest9 === undefined ? "" : String(nearest9).trim();
-  if (!n9) return "";
-  const old = oldRetailPrice === null || oldRetailPrice === undefined ? "" : String(oldRetailPrice).trim();
-  if (!old) return n9;
-  const a = Number(n9);
-  const b = Number(old);
-  if (Number.isFinite(a) && Number.isFinite(b)) return a === b ? "" : n9;
-  return n9 === old ? "" : n9;
-}
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();

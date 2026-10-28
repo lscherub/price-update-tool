@@ -613,65 +613,117 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   /**
    * Bulk Add Rows to this existing price update.
    * Reuses existing SKU matching and product lookup logic.
-   * Reports added and skipped rows, and records Undo/Redo history.
+   * In Full Vendor sessions, works as an upsert (updates matched rows and adds new ones).
+   * Reports added/updated and skipped rows, and records Undo/Redo history.
    */
-  const bulkAddItems = async (v: BulkAddInputRow[], summary: { added: number; skipped: number }) => {
+  const bulkAddItems = async (
+    v: BulkAddInputRow[],
+    summary: { added: number; updated?: number; skipped: number }
+  ) => {
     if (bulkAddBusy) return;
     setBulkAddBusy(true);
     try {
       const r = await fetch(`/api/sessions/${id}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: v }),
+        body: JSON.stringify({ items: v, isFullVendor }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const t = apiErrorText(d, "Could not add rows.");
+        const t = apiErrorText(d, isFullVendor ? "Could not apply changes." : "Could not add rows.");
         setMsg(t);
-        toast.error("Could not add rows.", t);
+        toast.error(isFullVendor ? "Could not apply changes." : "Could not add rows.", t);
         return;
       }
       setMsg("");
       setShowBulkAdd(false);
       setPinnedOrder(null); // membership changed: re-sort normally
 
-      const newItems = (d as { items?: { id?: string }[] })?.items;
-      const newIds = Array.isArray(newItems)
-        ? newItems.map((it) => it.id).filter((nid): nid is string => typeof nid === "string" && Boolean(nid))
-        : [];
+      if (isFullVendor) {
+        const updatedItems = (d as { updatedItems?: { id: string; previous: Record<string, unknown>; current: Record<string, unknown> }[] })?.updatedItems ?? [];
+        const addedIds = (d as { addedIds?: string[] })?.addedIds ?? [];
+        const updatedCount = (d as { updatedCount?: number })?.updatedCount ?? summary.updated ?? 0;
+        const addedCount = (d as { addedCount?: number })?.addedCount ?? summary.added ?? 0;
 
-      if (newIds.length > 0) {
-        const payloads = [...v];
-        const holder = { ids: [...newIds] };
-        recordHistory(
-          `Bulk add ${newIds.length} row${newIds.length === 1 ? "" : "s"}`,
-          async () => {
-            await deleteByIds(holder.ids);
-            holder.ids = [];
-            await load();
-          },
-          async () => {
-            const resp = await fetch(`/api/sessions/${id}/items`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ items: payloads }),
-            });
-            const respData = await resp.json().catch(() => ({}));
-            if (Array.isArray(respData.items)) {
-              holder.ids = respData.items
-                .map((it: { id?: string }) => it.id)
-                .filter((nid: unknown): nid is string => typeof nid === "string" && Boolean(nid));
-            }
-            await load();
-          },
-        );
+        if (updatedItems.length > 0 || addedIds.length > 0) {
+          const payloads = [...v];
+          recordHistory(
+            `Bulk update (${updatedCount} updated, ${addedCount} added)`,
+            async () => {
+              if (addedIds.length > 0) {
+                await deleteByIds(addedIds);
+              }
+              if (updatedItems.length > 0) {
+                const patchPayload = updatedItems.map((u) => ({
+                  id: u.id,
+                  rawVendorSku: u.previous.rawVendorSku,
+                  cleanedSku: u.previous.cleanedSku,
+                  discount: u.previous.discount,
+                  vendorListPriceNew: u.previous.vendorListPriceNew,
+                  marginDivisor: u.previous.marginDivisor,
+                  notes: u.previous.notes,
+                }));
+                await fetch(`/api/sessions/${id}/items`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ items: patchPayload }),
+                });
+              }
+              await load();
+            },
+            async () => {
+              await fetch(`/api/sessions/${id}/items`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items: payloads, isFullVendor: true }),
+              });
+              await load();
+            },
+          );
+        }
+
+        await load();
+        const skipMsg = summary.skipped > 0 ? ` (${summary.skipped} skipped)` : "";
+        toast.success(`Updated ${updatedCount} row${updatedCount === 1 ? "" : "s"} and added ${addedCount} row${addedCount === 1 ? "" : "s"} to worksheet${skipMsg}.`);
+      } else {
+        const newItems = (d as { items?: { id?: string }[] })?.items;
+        const newIds = Array.isArray(newItems)
+          ? newItems.map((it) => it.id).filter((nid): nid is string => typeof nid === "string" && Boolean(nid))
+          : [];
+
+        if (newIds.length > 0) {
+          const payloads = [...v];
+          const holder = { ids: [...newIds] };
+          recordHistory(
+            `Bulk add ${newIds.length} row${newIds.length === 1 ? "" : "s"}`,
+            async () => {
+              await deleteByIds(holder.ids);
+              holder.ids = [];
+              await load();
+            },
+            async () => {
+              const resp = await fetch(`/api/sessions/${id}/items`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items: payloads }),
+              });
+              const respData = await resp.json().catch(() => ({}));
+              if (Array.isArray(respData.items)) {
+                holder.ids = respData.items
+                  .map((it: { id?: string }) => it.id)
+                  .filter((nid: unknown): nid is string => typeof nid === "string" && Boolean(nid));
+              }
+              await load();
+            },
+          );
+        }
+
+        await load();
+        const skipMsg = summary.skipped > 0 ? ` (${summary.skipped} skipped)` : "";
+        toast.success(`Added ${summary.added} row${summary.added === 1 ? "" : "s"} to worksheet${skipMsg}.`);
       }
-
-      await load();
-      const skipMsg = summary.skipped > 0 ? ` (${summary.skipped} skipped)` : "";
-      toast.success(`Added ${summary.added} row${summary.added === 1 ? "" : "s"} to worksheet${skipMsg}.`);
     } catch {
-      toast.error("Could not add rows.", "Could not reach the server while adding rows.");
+      toast.error(isFullVendor ? "Could not apply changes." : "Could not add rows.", "Could not reach the server while adding rows.");
     } finally {
       setBulkAddBusy(false);
     }
@@ -1069,6 +1121,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           onClose={() => { if (!bulkAddBusy) setShowBulkAdd(false); }}
           onSubmit={bulkAddItems}
           existingSkus={items.flatMap((r) => [r.rawVendorSku, r.cleanedSku])}
+          isFullVendor={isFullVendor}
         />
       )}
       {confirmBulk && selected.size > 0 && (

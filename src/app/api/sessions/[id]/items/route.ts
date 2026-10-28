@@ -9,6 +9,12 @@ import { DEFAULT_DIVISOR } from "@/lib/pricing";
 import { cuid, loadFileStore, saveFileStore, type ItemRow } from "@/lib/store";
 import { computeBulkAddPreview } from "@/lib/bulkAddServer";
 import type { BulkAddInputRow } from "@/lib/bulkAdd";
+import { fullVendorSessionIds } from "@/lib/fullVendorServer";
+import {
+  computeFullVendorBulkPreview,
+  applyFullVendorBulkUpsert,
+  type WorksheetItemLite,
+} from "@/lib/fullVendorBulkAdd";
 
 export const runtime = "nodejs";
 
@@ -134,6 +140,120 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const prisma = getPrisma();
     const prodErr = productionDbGuard(prisma);
     if (prodErr) return prodErr;
+
+    const isFvFromReq = typeof body.isFullVendor === "boolean" ? body.isFullVendor : undefined;
+    const isFullVendor = isFvFromReq ?? (await fullVendorSessionIds(prisma, [id])).has(id);
+
+    if (isFullVendor) {
+      let existingItems: WorksheetItemLite[] = [];
+      let productsById: Map<string, { sku: string; normalizedSku: string }> | undefined;
+
+      if (!prisma) {
+        const store = loadFileStore();
+        if (!store.sessions.some((s) => s.id === id)) {
+          return NextResponse.json({ error: "Price update not found" }, { status: 404 });
+        }
+        existingItems = store.items
+          .filter((i) => i.sessionId === id)
+          .map((cur) => ({
+            id: cur.id,
+            sessionId: cur.sessionId,
+            rawVendorSku: cur.rawVendorSku || "",
+            cleanedSku: cur.cleanedSku || "",
+            cleanedOverridden: Boolean(cur.cleanedOverridden),
+            productId: cur.productId ?? null,
+            productNumber: cur.productNumber || "",
+            productName: cur.productName || "",
+            brand: cur.brand || "",
+            vendor: cur.vendor || "",
+            discount: cur.discount != null ? String(cur.discount) : null,
+            currentListPrice: cur.currentListPrice != null ? String(cur.currentListPrice) : null,
+            vendorListPriceNew: cur.vendorListPriceNew != null ? String(cur.vendorListPriceNew) : null,
+            ourNewListPrice: cur.ourNewListPrice != null ? String(cur.ourNewListPrice) : null,
+            marginDivisor: cur.marginDivisor != null ? String(cur.marginDivisor) : null,
+            ourNewRetailPrice: cur.ourNewRetailPrice != null ? String(cur.ourNewRetailPrice) : null,
+            oldRetailPrice: cur.oldRetailPrice != null ? String(cur.oldRetailPrice) : null,
+            nearest9: cur.nearest9 != null ? String(cur.nearest9) : null,
+            nearest9Custom: cur.nearest9Custom != null ? String(cur.nearest9Custom) : null,
+            notes: cur.notes || "",
+            isInactive: Boolean(cur.isInactive),
+            matched: Boolean(cur.matched),
+          }));
+
+        const pIds = Array.from(new Set(existingItems.map((e) => e.productId).filter((pid): pid is string => Boolean(pid))));
+        if (pIds.length > 0) {
+          const prods = store.products.filter((p) => pIds.includes(p.id));
+          productsById = new Map(prods.map((p) => [p.id, { sku: p.sku, normalizedSku: p.normalizedSku }]));
+        }
+      } else {
+        try {
+          const rows = await prisma.priceUpdateItem.findMany({
+            where: { sessionId: id },
+          });
+          existingItems = rows.map((cur) => ({
+            id: cur.id,
+            sessionId: cur.sessionId,
+            rawVendorSku: cur.rawVendorSku || "",
+            cleanedSku: cur.cleanedSku || "",
+            cleanedOverridden: Boolean(cur.cleanedOverridden),
+            productId: cur.productId ?? null,
+            productNumber: cur.productNumber || "",
+            productName: cur.productName || "",
+            brand: cur.brand || "",
+            vendor: cur.vendor || "",
+            discount: cur.discount != null ? cur.discount.toString() : null,
+            currentListPrice: cur.currentListPrice != null ? cur.currentListPrice.toString() : null,
+            vendorListPriceNew: cur.vendorListPriceNew != null ? cur.vendorListPriceNew.toString() : null,
+            ourNewListPrice: cur.ourNewListPrice != null ? cur.ourNewListPrice.toString() : null,
+            marginDivisor: cur.marginDivisor != null ? cur.marginDivisor.toString() : null,
+            ourNewRetailPrice: cur.ourNewRetailPrice != null ? cur.ourNewRetailPrice.toString() : null,
+            oldRetailPrice: cur.oldRetailPrice != null ? cur.oldRetailPrice.toString() : null,
+            nearest9: cur.nearest9 != null ? cur.nearest9.toString() : null,
+            nearest9Custom: cur.nearest9Custom != null ? cur.nearest9Custom.toString() : null,
+            notes: cur.notes || "",
+            isInactive: Boolean(cur.isInactive),
+            matched: Boolean(cur.matched),
+          }));
+
+          const pIds = Array.from(new Set(existingItems.map((e) => e.productId).filter((pid): pid is string => Boolean(pid))));
+          if (pIds.length > 0) {
+            const prods = await prisma.product.findMany({
+              where: { id: { in: pIds } },
+              select: { id: true, sku: true, normalizedSku: true },
+            });
+            productsById = new Map(prods.map((p) => [p.id, { sku: p.sku, normalizedSku: p.normalizedSku }]));
+          }
+        } catch (e) {
+          if (isDbConnectionError(e)) return dbUnreachableResponse();
+          return NextResponse.json({ error: "Could not load session items." }, { status: 500 });
+        }
+      }
+
+      if (body.preview) {
+        const computed = await computeFullVendorBulkPreview(rawItems, existingItems, productsById);
+        return NextResponse.json({ ok: true, preview: computed, isFullVendor: true });
+      }
+
+      try {
+        const result = await applyFullVendorBulkUpsert(id, rawItems, existingItems, prisma, productsById);
+        if (result.updatedCount === 0 && result.addedCount === 0) {
+          return NextResponse.json({ error: "No valid rows to update or add." }, { status: 400 });
+        }
+        return NextResponse.json({
+          ok: true,
+          isFullVendor: true,
+          count: result.addedCount + result.updatedCount,
+          updatedCount: result.updatedCount,
+          addedCount: result.addedCount,
+          items: result.items,
+          updatedItems: result.updatedItems,
+          addedIds: result.addedIds,
+        });
+      } catch (e) {
+        if (isDbConnectionError(e)) return dbUnreachableResponse();
+        return NextResponse.json({ error: "Could not apply bulk changes." }, { status: 500 });
+      }
+    }
 
     // Fetch existing worksheet SKUs for duplicate detection
     let existingSkus: string[] = [];

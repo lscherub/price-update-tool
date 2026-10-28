@@ -37,6 +37,8 @@ export type BulkAddParsedItem = {
   validationError?: string;
   isDuplicateInBatch: boolean;
   isDuplicateInWorksheet: boolean;
+  targetAction?: "add" | "update";
+  existingItemId?: string;
 };
 
 export const TARGET_COLUMNS = [

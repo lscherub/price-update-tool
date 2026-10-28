@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { storeCountNewPrice } from "@/app/api/sessions/[id]/storecount/route";
+import { storeCountNewPrice } from "@/lib/storeCountPricing";
 
 /**
  * Digital Store Count workbook for the Full Vendor Price Update.

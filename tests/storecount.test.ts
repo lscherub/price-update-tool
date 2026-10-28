@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { storeCountNewPrice } from "@/app/api/sessions/[id]/storecount/route";
 import {
+  storeCountNewPrice,
   buildStoreCountWorkbook,
   STORE_COUNT_EXCEL_HEADER,
   storeCountExcelPrice,
-} from "@/app/api/sessions/[id]/storecount/excel/route";
+} from "@/lib/storeCountPricing";
 
 
 describe("store count PDF New Price rule", () => {

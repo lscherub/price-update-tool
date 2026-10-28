@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { resolveNearest9 } from "@/lib/nearest9";
 import { recalcRow, type CurRow } from "@/lib/recalc";
 import { resolveDefaultDiscount, type DiscountMaps } from "@/lib/lookup";
-import { storeCountNewPrice } from "@/app/api/sessions/[id]/storecount/route";
+import { storeCountNewPrice } from "@/lib/storeCountPricing";
 
 // Force the local (empty) file store so these stay fast, hermetic calculation
 // tests — no database needed to prove the override rules.
