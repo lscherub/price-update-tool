@@ -194,10 +194,10 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
     label: string,
     hint: string,
   ) => (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="font-medium text-slate-700">{label}</span>
+    <label className="flex flex-col gap-1 text-xs">
+      <span className="font-medium text-slate-700 dark:text-zinc-300">{label}</span>
       <input
-        className="rounded border px-3 py-1.5"
+        className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-500 focus:border-indigo-500 focus:outline-none transition-colors"
         value={v[key]}
         placeholder={hint}
         aria-label={label}
@@ -208,13 +208,13 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Add product row">
-      <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs" role="dialog" aria-modal="true" aria-label="Add product row">
+      <div className="w-full max-w-lg rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 shadow-2xl text-slate-900 dark:text-zinc-100">
         <h2 className="text-lg font-bold">Add Product</h2>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">
           Enter <span className="font-semibold">either</span> a Raw Vendor SKU/Code <span className="font-semibold">or</span> a Cleaned SKU — you don&apos;t need both.
           The remaining product details are filled in by the existing SKU matching logic. If the SKU is not in inventory the row keeps the usual{" "}
-          <span className="font-semibold text-red-700">Not Found</span> flag.
+          <span className="font-semibold text-red-700 dark:text-red-400">Not Found</span> flag.
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {field("rawVendorSku", "Raw Vendor SKU/Code", "e.g. 0588-12345A")}
@@ -223,16 +223,17 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
           {field("vendorListPriceNew", "Vendor List Price (New)", "optional")}
           {field("marginDivisor", "Margin/Divisor", "optional, default 0.605")}
         </div>
-        <div className="mt-3 flex flex-col gap-1 text-sm">
-          <label className="flex items-center gap-2">
+        <div className="mt-3 flex flex-col gap-1 text-xs">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-zinc-300">
             <input
               type="checkbox"
               checked={boxMode}
               onChange={(e) => setBoxMode(e.target.checked)}
+              className="rounded border-slate-300 text-indigo-600"
             />
             <span className="font-medium">Calculate price from a box/case</span>
           </label>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-500 dark:text-zinc-400">
             For one sellable unit: box price is divided by quantity first, then
             the saved vendor/brand discount and worksheet nearest-9 apply.
           </span>
@@ -349,7 +350,7 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
           <p className="mt-2 text-sm text-slate-500">Complete the box/case fields to enable Add Row.</p>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={busy} onClick={onClose}>
+          <button type="button" className="rounded-lg border border-slate-200 dark:border-zinc-700 px-3.5 py-1.5 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60 transition-colors" disabled={busy} onClick={onClose}>
             Cancel
           </button>
           <LoadingButton
@@ -357,7 +358,7 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
             busyLabel="Adding..."
             disabled={!canSubmit}
             onClick={() => submit()}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="rounded-lg bg-emerald-600 dark:bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 dark:hover:bg-emerald-600 disabled:opacity-50 transition-colors shadow-xs"
           >
             Add Row
           </LoadingButton>

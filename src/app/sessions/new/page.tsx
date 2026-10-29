@@ -168,7 +168,9 @@ export default function NewSessionPage() {
       {/* Alternative Full Vendor Callout */}
       <div className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50/50 p-3.5 text-xs text-violet-900 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-300">
         <div className="flex items-center gap-2">
-          <span>🏢</span>
+          <svg className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
           <span>Need to update all catalog products for a specific vendor?</span>
         </div>
         <Link
@@ -237,7 +239,11 @@ export default function NewSessionPage() {
 
           {inputTab === "file" ? (
             <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/20">
-              <span className="text-2xl">📄</span>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400">
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
               <span className="mt-2 text-xs font-bold text-slate-800 dark:text-zinc-200">
                 Choose vendor price spreadsheet (Excel or CSV)
               </span>
@@ -252,8 +258,11 @@ export default function NewSessionPage() {
                 className="mt-3 block text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800 dark:file:bg-white dark:file:text-slate-900"
               />
               {file && (
-                <div className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  ✓ Selected: {file.name}
+                <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Selected: {file.name}</span>
                 </div>
               )}
             </div>

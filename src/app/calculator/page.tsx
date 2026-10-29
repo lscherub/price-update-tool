@@ -102,27 +102,48 @@ export default function CalculatorPage() {
 
       {/* Segmented Tab Controls */}
       <div className="flex items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-100/70 p-1 shadow-2xs dark:border-zinc-800 dark:bg-zinc-900 w-fit">
-        {(
-          [
-            ["single", "Single Item", "🔍"],
-            ["batch", "Batch Calculator", "📋"],
-            ["bulk", "Bulk CSV Upload", "📊"],
-          ] as const
-        ).map(([v, label, icon]) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setTab(v)}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
-              tab === v
-                ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
-                : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
-            }`}
-          >
-            <span>{icon}</span>
-            <span>{label}</span>
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={() => setTab("single")}
+          className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
+            tab === "single"
+              ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
+              : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
+          }`}
+        >
+          <svg className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <span>Single Item</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("batch")}
+          className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
+            tab === "batch"
+              ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
+              : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
+          }`}
+        >
+          <svg className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+          <span>Batch Calculator</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("bulk")}
+          className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
+            tab === "bulk"
+              ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
+              : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
+          }`}
+        >
+          <svg className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          <span>Bulk CSV Upload</span>
+        </button>
       </div>
 
       {/* Calculator Body */}
@@ -133,8 +154,11 @@ export default function CalculatorPage() {
       </div>
 
       {/* Safety Notice */}
-      <div className="rounded-xl border border-slate-200/70 bg-slate-50/50 p-3 text-[11px] text-slate-500 dark:border-zinc-800/80 dark:bg-zinc-900/40 dark:text-zinc-400">
-        ℹ️ Calculations are completely non-destructive and never modify live inventory, vendor discounts, or saved price sheets. Nearest-9 rounding matches the live price worksheet logic exactly.
+      <div className="flex items-start gap-2.5 rounded-xl border border-slate-200/70 bg-slate-50/50 p-3 text-[11px] text-slate-500 dark:border-zinc-800/80 dark:bg-zinc-900/40 dark:text-zinc-400">
+        <svg className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>Calculations are completely non-destructive and never modify live inventory, vendor discounts, or saved price sheets. Nearest-9 rounding matches the live price worksheet logic exactly.</span>
       </div>
     </div>
   );

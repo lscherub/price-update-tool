@@ -11,6 +11,18 @@
   --table-py: 0.5rem;
   --table-px: 0.75rem;
   --table-text-size: 0.8125rem;
+  --grid-bg: #ffffff;
+  --grid-header-bg: #f8fafc;
+  --grid-header-hover: #f1f5f9;
+  --grid-border: #e2e8f0;
+  --grid-cell-hover: #f8fafc;
+  --grid-editable-bg: #f0fdf4;
+  --grid-editable-border: #bbf7d0;
+  --grid-unmatched-bg: #fef2f2;
+  --grid-selected-bg: #e0f2fe;
+  --grid-custom-bg: #fffbeb;
+  --grid-text: #0f172a;
+  --grid-text-muted: #64748b;
 }
 
 /* Accent Color Variations */
@@ -74,9 +86,22 @@
 }
 
 /* Dark Mode Tokens for New UI */
-html.dark[data-ui-mode="new"] {
+html.dark[data-ui-mode="new"],
+html.dark {
   --background: #090d16;
   --foreground: #f1f5f9;
+  --grid-bg: #0d121f;
+  --grid-header-bg: #131b2e;
+  --grid-header-hover: #1e293b;
+  --grid-border: #1e293b;
+  --grid-cell-hover: #162035;
+  --grid-editable-bg: rgba(16, 185, 129, 0.08);
+  --grid-editable-border: rgba(16, 185, 129, 0.25);
+  --grid-unmatched-bg: rgba(239, 68, 68, 0.15);
+  --grid-selected-bg: rgba(14, 165, 233, 0.2);
+  --grid-custom-bg: rgba(245, 158, 11, 0.15);
+  --grid-text: #f1f5f9;
+  --grid-text-muted: #94a3b8;
 }
 
 html.dark[data-ui-mode="new"] [data-ui-accent="indigo"] {

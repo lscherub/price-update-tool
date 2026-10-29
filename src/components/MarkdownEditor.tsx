@@ -59,10 +59,10 @@ export function MarkdownEditor({ value, onChange, minHeight = 220 }: {
   const [tab, setTab] = useState<"write" | "preview">("write");
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  const btn = "rounded border px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100";
-  const tool = (label: string, title: string, before: string, after: string, placeholder: string) => (
+  const btn = "rounded border border-slate-200 dark:border-zinc-700 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors";
+  const tool = (label: React.ReactNode, title: string, before: string, after: string, placeholder: string) => (
     <button
-      key={label}
+      key={title}
       type="button"
       title={title}
       aria-label={title}
@@ -90,7 +90,7 @@ export function MarkdownEditor({ value, onChange, minHeight = 220 }: {
 
   return (
     <div>
-      <div className="mb-1 flex flex-wrap items-center gap-1">
+      <div className="mb-1.5 flex flex-wrap items-center gap-1">
         {tool("B", "Bold", "**", "**", "bold text")}
         {tool("I", "Italic", "*", "*", "italic text")}
         {tool("H", "Heading", "## ", "", "Heading")}
@@ -101,24 +101,37 @@ export function MarkdownEditor({ value, onChange, minHeight = 220 }: {
         >
           1.
         </button>
-        {tool("🔗", "Link", "[", "](https://)", "link text")}
+        {tool(
+          <span className="inline-flex items-center gap-1">
+            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <span>Link</span>
+          </span>,
+          "Link", "[", "](https://)", "link text"
+        )}
         <button
           type="button" title="Insert table" aria-label="Insert table" className={btn}
           onClick={() => onChange(
             `${value}${value.endsWith("\n") || !value ? "" : "\n"}\n| Column A | Column B |\n| -------- | -------: |\n| Item 1   |   $0.00  |\n`,
           )}
         >
-          ⊞
+          <span className="inline-flex items-center gap-1">
+            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 4h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>Table</span>
+          </span>
         </button>
         <span className="ml-auto flex gap-1">
           <button
-            type="button" className={`rounded px-2 py-0.5 text-xs font-semibold ${tab === "write" ? "bg-slate-900 text-white" : "border text-slate-600"}`}
+            type="button" className={`rounded px-2.5 py-0.5 text-xs font-semibold transition-colors ${tab === "write" ? "bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800"}`}
             onClick={() => setTab("write")}
           >
             Write
           </button>
           <button
-            type="button" className={`rounded px-2 py-0.5 text-xs font-semibold ${tab === "preview" ? "bg-slate-900 text-white" : "border text-slate-600"}`}
+            type="button" className={`rounded px-2.5 py-0.5 text-xs font-semibold transition-colors ${tab === "preview" ? "bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800"}`}
             onClick={() => setTab("preview")}
           >
             Preview
@@ -128,7 +141,7 @@ export function MarkdownEditor({ value, onChange, minHeight = 220 }: {
       {tab === "write" ? (
         <textarea
           ref={taRef}
-          className="w-full rounded border px-3 py-2 font-mono text-sm"
+          className="w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-zinc-100 focus:border-indigo-500 focus:outline-none"
           style={{ minHeight }}
           value={value}
           placeholder={"Write notes in Markdown…\n\n**Bold**, *italic*, ## headings, - lists, [links](https://…), | tables |"}
@@ -136,8 +149,8 @@ export function MarkdownEditor({ value, onChange, minHeight = 220 }: {
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
-        <div className="w-full overflow-auto rounded border bg-slate-50 px-3 py-2" style={{ minHeight }}>
-          {value.trim() ? <MarkdownDoc source={value} /> : <span className="text-sm text-slate-400">Nothing to preview yet.</span>}
+        <div className="w-full overflow-auto rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900/50 px-3 py-2 text-slate-900 dark:text-zinc-100" style={{ minHeight }}>
+          {value.trim() ? <MarkdownDoc source={value} /> : <span className="text-xs text-slate-400 dark:text-zinc-500">Nothing to preview yet.</span>}
         </div>
       )}
     </div>
@@ -166,22 +179,22 @@ export function NotesModal({ title, subtitle, initial, busy, saveLabel = "Save",
   }, [busy, onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 shadow-xl text-slate-900 dark:text-zinc-100">
         <h2 className="text-lg font-bold">{title}</h2>
-        {subtitle && <p className="mt-1 text-sm text-slate-600">{subtitle}</p>}
+        {subtitle && <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">{subtitle}</p>}
         <div className="mt-3 min-h-0 flex-1 overflow-auto">
           <MarkdownEditor value={draft} onChange={setDraft} minHeight={260} />
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={busy} onClick={onClose}>
+          <button type="button" className="rounded-lg border border-slate-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60 transition-colors" disabled={busy} onClick={onClose}>
             Cancel
           </button>
           <LoadingButton
             busy={busy}
             busyLabel="Saving..."
             onClick={() => onSave(draft)}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+            className="rounded-lg bg-slate-900 dark:bg-zinc-100 px-3.5 py-1.5 text-xs font-semibold text-white dark:text-zinc-900 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-60 transition-colors"
           >
             {saveLabel}
           </LoadingButton>

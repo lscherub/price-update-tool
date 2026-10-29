@@ -302,26 +302,26 @@ export function BulkAddDialog({
       aria-modal="true"
       aria-label="Bulk Add Rows Dialog"
     >
-      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-2xl">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xl text-slate-900 dark:text-zinc-100">
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-6 py-4">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 px-6 py-4">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">
               {isFullVendor ? "Bulk Add / Update Rows" : "Bulk Add Rows"}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400">
               {isFullVendor
                 ? "Paste or import vendor data to update existing products or add new rows."
                 : "Add multiple products at once by pasting from Excel or importing a file."}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 text-xs text-slate-600">
+            <div className="flex items-center gap-1 text-xs text-slate-600 dark:text-zinc-400">
               <span>Template:</span>
               <button
                 type="button"
                 onClick={() => downloadTemplate("xlsx")}
-                className="font-medium text-emerald-700 hover:underline"
+                className="font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
               >
                 Excel (.xlsx)
               </button>
@@ -329,7 +329,7 @@ export function BulkAddDialog({
               <button
                 type="button"
                 onClick={() => downloadTemplate("csv")}
-                className="font-medium text-emerald-700 hover:underline"
+                className="font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
               >
                 CSV
               </button>
@@ -338,10 +338,12 @@ export function BulkAddDialog({
               type="button"
               onClick={onClose}
               disabled={busy}
-              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="rounded p-1 text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors"
               aria-label="Close"
             >
-              ✕
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>
@@ -507,37 +509,40 @@ export function BulkAddDialog({
                       </span>
                     )}
                     {unmatchedCount > 0 && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800" title="SKUs not found in inventory">
-                        ! {unmatchedCount} Unmatched
+                      <span className="rounded-full bg-amber-100 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 font-medium text-amber-800 dark:text-amber-300" title="SKUs not found in inventory">
+                        {unmatchedCount} Unmatched
                       </span>
                     )}
                     {invalidCount > 0 && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800" title="Invalid price or data format">
-                        ✕ {invalidCount} Invalid
+                      <span className="rounded-full bg-red-100 dark:bg-red-950/50 border border-red-200 dark:border-red-800 px-2 py-0.5 font-medium text-red-800 dark:text-red-300" title="Invalid price or data format">
+                        {invalidCount} Invalid
                       </span>
                     )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="font-bold text-slate-800">Preview &amp; Validation:</span>
+                    <span className="font-bold text-slate-800 dark:text-zinc-200">Preview &amp; Validation:</span>
                     {validCount > 0 && (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
-                        ✓ {validCount} Valid
+                      <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 font-medium text-emerald-800 dark:text-emerald-300 inline-flex items-center gap-1">
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>{validCount} Valid</span>
                       </span>
                     )}
                     {unmatchedCount > 0 && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800" title="SKU not found in inventory">
-                        ! {unmatchedCount} Unmatched
+                      <span className="rounded-full bg-amber-100 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 font-medium text-amber-800 dark:text-amber-300" title="SKU not found in inventory">
+                        {unmatchedCount} Unmatched
                       </span>
                     )}
                     {duplicateCount > 0 && (
-                      <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
-                        ⧉ {duplicateCount} Duplicate
+                      <span className="rounded-full bg-purple-100 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 px-2 py-0.5 font-medium text-purple-800 dark:text-purple-300">
+                        {duplicateCount} Duplicate
                       </span>
                     )}
                     {invalidCount > 0 && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
-                        ✕ {invalidCount} Invalid
+                      <span className="rounded-full bg-red-100 dark:bg-red-950/50 border border-red-200 dark:border-red-800 px-2 py-0.5 font-medium text-red-800 dark:text-red-300">
+                        {invalidCount} Invalid
                       </span>
                     )}
                   </div>

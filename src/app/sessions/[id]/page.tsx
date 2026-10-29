@@ -1099,13 +1099,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Status selector */}
           <label className="flex items-center gap-1.5 text-xs">
-            <span className="font-medium text-slate-500">Status:</span>
+            <span className="font-medium text-slate-500 dark:text-zinc-400">Status:</span>
             <select
               aria-label="Review status"
               value={sheetStatus}
               disabled={statusBusy}
               onChange={(e) => void changeStatus(e.target.value)}
-              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60"
+              className="h-8 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-slate-800 dark:text-zinc-200 shadow-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60"
             >
               {sheetStatus && !["Ready", "Being Reviewed", "Reviewed"].includes(sheetStatus) && (
                 <option value={sheetStatus}>{sheetStatus}</option>
@@ -1117,12 +1117,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           </label>
 
           {/* Export Toolbar Group */}
-          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50/70 p-0.5 gap-0.5 shadow-xs text-xs">
+          <div className="flex items-center rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50/70 dark:bg-zinc-800/60 p-0.5 gap-0.5 shadow-xs text-xs">
             <LoadingButton
               busy={exportBusy === "pos"}
               busyLabel="Exporting..."
               onClick={() => download("pos")}
-              className="rounded-md bg-white border border-slate-200/80 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-2xs transition-colors disabled:opacity-60"
+              className="rounded-md bg-white dark:bg-zinc-800 border border-slate-200/80 dark:border-zinc-700 px-2.5 py-1 font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 hover:text-slate-900 dark:hover:text-white shadow-2xs transition-colors disabled:opacity-60"
               title="Export CSV for Point of Sale system"
             >
               Export for POS
@@ -1132,7 +1132,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                 busy={exportBusy === "fv-storecount"}
                 busyLabel="Excel..."
                 onClick={() => setShowFvExportModal(true)}
-                className="rounded-md bg-white border border-slate-200/80 px-2.5 py-1 font-medium text-indigo-700 hover:bg-indigo-50 shadow-2xs transition-colors disabled:opacity-60"
+                className="rounded-md bg-white dark:bg-zinc-800 border border-slate-200/80 dark:border-zinc-700 px-2.5 py-1 font-medium text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 shadow-2xs transition-colors disabled:opacity-60"
                 title="Export Digital Store Count spreadsheet in Excel format"
               >
                 Digital Store Count Excel
@@ -1142,7 +1142,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                 busy={exportBusy === "storecount"}
                 busyLabel="Excel..."
                 onClick={() => downloadExcel()}
-                className="rounded-md bg-white border border-slate-200/80 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors disabled:opacity-60"
+                className="rounded-md bg-white dark:bg-zinc-800 border border-slate-200/80 dark:border-zinc-700 px-2.5 py-1 font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 shadow-2xs transition-colors disabled:opacity-60"
                 title="Export Store Count spreadsheet in Excel format"
               >
                 Store Count Excel
@@ -1152,7 +1152,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               busy={pdfBusy}
               busyLabel="PDF..."
               onClick={pdf}
-              className="rounded-md bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800 shadow-2xs transition-colors disabled:opacity-60"
+              className="rounded-md bg-slate-900 dark:bg-zinc-100 px-2.5 py-1 font-medium text-white dark:text-zinc-900 hover:bg-slate-800 dark:hover:bg-white shadow-2xs transition-colors disabled:opacity-60"
               title="Generate printable Store Count PDF"
             >
               Generate Store Count PDF
@@ -1162,7 +1162,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       </header>
 
       {/* 2. Compact Workspace Controls Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 bg-white p-2 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-xs">
         {/* Left: Row addition & History group */}
         <div className="flex items-center gap-1.5">
           <div className="flex items-center gap-1">
@@ -1176,32 +1176,38 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             <button
               type="button"
               onClick={() => setShowBulkAdd(true)}
-              className="h-8 rounded-lg border border-slate-200 bg-emerald-50/60 px-3 text-xs font-semibold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition-colors"
+              className="h-8 rounded-lg border border-slate-200 dark:border-zinc-700 bg-emerald-50/60 dark:bg-emerald-950/30 px-3 text-xs font-semibold text-emerald-800 dark:text-emerald-300 shadow-2xs hover:bg-emerald-100 dark:hover:bg-emerald-950/50 transition-colors"
             >
               Bulk Add Rows
             </button>
           </div>
 
-          <div className="h-4 w-px bg-slate-200 mx-1" aria-hidden="true" />
+          <div className="h-4 w-px bg-slate-200 dark:bg-zinc-700 mx-1" aria-hidden="true" />
 
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white shadow-2xs divide-x divide-slate-200">
+          <div className="inline-flex rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-2xs divide-x divide-slate-200 dark:divide-zinc-700">
             <button
               type="button"
               onClick={() => void runHistory("undo")}
               disabled={!canUndo(history) || histBusy}
               title={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
-              className="h-8 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+              className="h-8 px-2.5 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
             >
-              ↶ Undo
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 0 1 5 5v2m-15-7l4-4m-4 4l4 4" />
+              </svg>
+              <span>Undo</span>
             </button>
             <button
               type="button"
               onClick={() => void runHistory("redo")}
               disabled={!canRedo(history) || histBusy}
               title={canRedo(history) ? `Redo ${redoLabel(history)} (Ctrl/Cmd+Shift+Z)` : "Nothing to redo"}
-              className="h-8 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+              className="h-8 px-2.5 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1.5"
             >
-              ↷ Redo
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a5 5 0 0 0-5 5v2m15-7l-4-4m4 4l-4 4" />
+              </svg>
+              <span>Redo</span>
             </button>
           </div>
         </div>
@@ -1209,13 +1215,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         {/* Center: Search, Flags Filter, and Row Filter in a single compact toolbar */}
         <div className="flex flex-1 items-center gap-1.5 min-w-64 max-w-xl">
           <div className="relative flex-1">
-            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
+            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 dark:text-zinc-500">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </span>
             <input
-              className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none transition-colors"
+              className="h-8 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50/50 dark:bg-zinc-800/50 pl-8 pr-2.5 text-xs text-slate-800 dark:text-zinc-200 placeholder-slate-400 dark:placeholder-zinc-500 focus:border-indigo-500 focus:bg-white dark:focus:bg-zinc-800 focus:outline-none transition-colors"
               placeholder="Search products..."
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); setPinnedOrder(null); }}
@@ -1228,8 +1234,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               onClick={() => setShowFlagMenu((v) => !v)}
               className={`h-8 flex items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
                 selectedFlags.size > 0
-                  ? "border-indigo-400 bg-indigo-50 text-indigo-900"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-2xs"
+                  ? "border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200"
+                  : "border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 shadow-2xs"
               }`}
               aria-expanded={showFlagMenu}
               aria-haspopup="dialog"
@@ -1240,19 +1246,21 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                   {selectedFlags.size}
                 </span>
               )}
-              <span className="text-[10px] text-slate-400">▾</span>
+              <svg className="h-2.5 w-2.5 text-slate-400 dark:text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
             {showFlagMenu && (
               <div
                 ref={flagMenuRef}
-                className="absolute left-0 top-full z-40 mt-1 min-w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl text-xs"
+                className="absolute left-0 top-full z-40 mt-1 min-w-56 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-2 shadow-xl text-xs dark:text-zinc-200"
               >
-                <div className="flex items-center justify-between border-b pb-1.5 font-semibold text-slate-700">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-700 pb-1.5 font-semibold text-slate-700 dark:text-zinc-200">
                   <span>Filter by flag:</span>
                   {selectedFlags.size > 0 && (
                     <button
                       type="button"
-                      className="text-xs text-blue-600 hover:underline"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                       onClick={clearFlagFilter}
                     >
                       Clear all
@@ -1261,7 +1269,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                 </div>
                 <div className="flex flex-col gap-1 py-1.5 max-h-60 overflow-y-auto">
                   {availableFlags.length === 0 ? (
-                    <span className="text-slate-400 px-1">No flags in worksheet</span>
+                    <span className="text-slate-400 dark:text-zinc-500 px-1">No flags in worksheet</span>
                   ) : (
                     availableFlags.map((flag) => {
                       const count = flagCounts.get(flag) ?? 0;
@@ -1269,7 +1277,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                       return (
                         <label
                           key={flag}
-                          className="flex cursor-pointer items-center justify-between rounded px-2 py-1 hover:bg-slate-100"
+                          className="flex cursor-pointer items-center justify-between rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-zinc-700"
                         >
                           <div className="flex items-center gap-2">
                             <input
@@ -1280,17 +1288,17 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                             />
                             <span>{flag}</span>
                           </div>
-                          <span className="text-slate-400 font-mono">({count})</span>
+                          <span className="text-slate-400 dark:text-zinc-400 font-mono">({count})</span>
                         </label>
                       );
                     })
                   )}
                 </div>
                 {availableFlags.length > 0 && (
-                  <div className="flex justify-between border-t pt-1.5">
+                  <div className="flex justify-between border-t border-slate-200 dark:border-zinc-700 pt-1.5">
                     <button
                       type="button"
-                      className="text-xs text-slate-600 hover:underline"
+                      className="text-xs text-slate-600 dark:text-zinc-300 hover:underline"
                       onClick={() => {
                         setSelectedFlags(new Set(availableFlags));
                         setPage(1);
@@ -1301,7 +1309,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                     </button>
                     <button
                       type="button"
-                      className="text-xs text-slate-600 hover:underline"
+                      className="text-xs text-slate-600 dark:text-zinc-300 hover:underline"
                       onClick={() => setShowFlagMenu(false)}
                     >
                       Close
@@ -1313,7 +1321,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           </div>
 
           <select
-            className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-2xs focus:border-indigo-500 focus:outline-none"
+            className="h-8 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 text-xs font-medium text-slate-700 dark:text-zinc-200 shadow-2xs focus:border-indigo-500 focus:outline-none"
             value={filter}
             onChange={(e) => { setFilter(e.target.value); setPage(1); setPinnedOrder(null); }}
           >
@@ -1328,7 +1336,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </div>
 
         {/* Right: Selection Actions (Set Lower & Destructive Delete visually separated) */}
-        <div className="flex items-center gap-1.5 border-l border-slate-200 pl-2">
+        <div className="flex items-center gap-1.5 border-l border-slate-200 dark:border-zinc-700 pl-2">
           <LoadingButton
             busy={lowerBusy}
             busyLabel="Applying..."
@@ -1341,7 +1349,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                   ? "None of the selected products have a lower Nearest 9 price."
                   : `Set Old Retail Price as the Custom Nearest 9 for ${lowerCount} selected product${lowerCount === 1 ? "" : "s"}`
             }
-            className="h-8 rounded-lg border border-violet-200 bg-violet-50/70 px-2.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="h-8 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/40 px-2.5 text-xs font-medium text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {selected.size > 0 && lowerCount > 0
               ? `Set Lower (${lowerCount})`
@@ -1355,7 +1363,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             busyLabel="Deleting..."
             disabled={selected.size === 0}
             onClick={() => setConfirmBulk(true)}
-            className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="h-8 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-2.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {selected.size > 0 ? `Delete (${selected.size})` : "Delete Selection"}
           </LoadingButton>
@@ -1363,18 +1371,18 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       </div>
 
       {msg && (
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
-          <span className="font-semibold text-slate-900">Notice:</span> {msg}
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/60 px-3 py-1.5 text-xs text-slate-700 dark:text-zinc-200">
+          <span className="font-semibold text-slate-900 dark:text-white">Notice:</span> {msg}
         </div>
       )}
       {fillBusy && (
-        <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-700 animate-pulse">
+        <div className="flex items-center gap-2 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 px-3 py-1.5 text-xs text-indigo-700 dark:text-indigo-300 animate-pulse">
           Copying value to selected rows...
         </div>
       )}
 
       {/* 3. Worksheet Table Area */}
-      <div ref={gridContainerRef} className="rounded-xl border border-slate-200/90 bg-white overflow-hidden shadow-xs">
+      <div ref={gridContainerRef} className="rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
         <PriceGrid
           rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
           selected={selected} onToggle={toggleOne} onToggleAll={togglePageVisible}
@@ -1390,29 +1398,31 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       </div>
 
       {/* 4. Compact Pagination Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white px-3.5 py-2 text-xs shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs shadow-xs">
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={page <= 1}
-            className="h-7 rounded-md border border-slate-200 bg-white px-2.5 font-medium text-slate-700 shadow-2xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            className="h-7 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1"
             onClick={() => goToPage(page - 1)}
           >
-            ← Prev
+            <span>←</span>
+            <span>Prev</span>
           </button>
           <button
             type="button"
             disabled={page >= totalPages}
-            className="h-7 rounded-md border border-slate-200 bg-white px-2.5 font-medium text-slate-700 shadow-2xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            className="h-7 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1"
             onClick={() => goToPage(page + 1)}
           >
-            Next →
+            <span>Next</span>
+            <span>→</span>
           </button>
         </div>
-        <div className="font-medium text-slate-700">
+        <div className="font-medium text-slate-700 dark:text-zinc-300">
           Page {page} of {totalPages} · {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} products
         </div>
-        <div className="text-slate-400">
+        <div className="text-slate-400 dark:text-zinc-500">
           {pageSize} products per page
         </div>
       </div>
@@ -1443,21 +1453,21 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         onExport={(opts) => downloadFullVendorExcel(opts)}
       />
       {confirmBulk && selected.size > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 shadow-xl text-slate-900 dark:text-zinc-100">
             <h2 className="text-lg font-bold">Delete {selected.size} selected row{selected.size === 1 ? "" : "s"}?</h2>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
               This will permanently delete the selected price-update items from this price update only.{" "}
-              <span className="font-semibold text-red-700">This cannot be undone.</span>
+              <span className="font-semibold text-red-700 dark:text-red-400">This cannot be undone.</span>
             </p>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
               Inventory, pricing calculations, flags, and all other data are unchanged — only the selected rows are removed.
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={bulkBusy} onClick={() => setConfirmBulk(false)}>
+              <button type="button" className="rounded border border-slate-200 dark:border-zinc-700 px-3 py-1.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60" disabled={bulkBusy} onClick={() => setConfirmBulk(false)}>
                 Cancel
               </button>
-              <LoadingButton busy={bulkBusy} busyLabel="Deleting..." onClick={deleteSelection} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
+              <LoadingButton busy={bulkBusy} busyLabel="Deleting..." onClick={deleteSelection} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
                 Delete permanently
               </LoadingButton>
             </div>
@@ -1465,34 +1475,34 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </div>
       )}
       {confirmLower && selected.size > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Confirm set lower prices to old retail">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm set lower prices to old retail">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 shadow-xl text-slate-900 dark:text-zinc-100">
             <h2 className="text-lg font-bold">Set Lower Prices to Old Retail?</h2>
             {lowerCount > 0 ? (
               <>
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
                   Set Old Retail Price as the Custom Nearest 9 for {lowerCount} selected product{lowerCount === 1 ? "" : "s"}?
                 </p>
                 {selected.size !== lowerCount && (
-                  <p className="mt-2 text-sm text-slate-600">
+                  <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
                     Only the selected rows where the automatic Nearest 9 is lower than Old Retail Price will change. The other {selected.size - lowerCount} selected row{selected.size - lowerCount === 1 ? "" : "s"} will stay unchanged.
                   </p>
                 )}
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
                   Each changed row keeps a real custom Nearest 9 override (shown with the existing Custom label), and this can be undone with Undo.
                 </p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
                 None of the selected products have a lower Nearest 9 price.
               </p>
             )}
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="rounded border px-3 py-1.5 text-sm disabled:opacity-60" disabled={lowerBusy} onClick={() => setConfirmLower(false)}>
+              <button type="button" className="rounded border border-slate-200 dark:border-zinc-700 px-3 py-1.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60" disabled={lowerBusy} onClick={() => setConfirmLower(false)}>
                 Cancel
               </button>
               {lowerCount > 0 && (
-                <LoadingButton busy={lowerBusy} busyLabel="Applying..." onClick={applyLowerToOld} className="rounded bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
+                <LoadingButton busy={lowerBusy} busyLabel="Applying..." onClick={applyLowerToOld} className="rounded bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-60">
                   Apply
                 </LoadingButton>
               )}
@@ -1514,28 +1524,31 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       )}
 
       {/* 5. Collapsible Price Sheet Notes (Collapsed by default) */}
-      <section aria-label="Price Sheet Notes" className="rounded-xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
+      <section aria-label="Price Sheet Notes" className="rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs overflow-hidden">
         <div
           role="button"
           tabIndex={0}
           onClick={() => setNotesExpanded((v) => !v)}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setNotesExpanded((v) => !v); } }}
-          className="flex cursor-pointer items-center justify-between px-4 py-3 hover:bg-slate-50/70 transition-colors"
+          className="flex cursor-pointer items-center justify-between px-4 py-3 hover:bg-slate-50/70 dark:hover:bg-zinc-800/60 transition-colors"
         >
           <div className="flex items-center gap-2.5">
-            <span
-              className="text-slate-400 text-xs transition-transform duration-200"
-              style={{ display: "inline-block", transform: notesExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
+            <svg
+              className={`h-3 w-3 text-slate-400 dark:text-zinc-500 transition-transform duration-200 ${notesExpanded ? "rotate-90" : "rotate-0"}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
             >
-              ▶
-            </span>
-            <h2 className="text-sm font-semibold text-slate-800">Price Sheet Notes</h2>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">Price Sheet Notes</h2>
             {sheetNotes ? (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+              <span className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-zinc-300">
                 Notes attached
               </span>
             ) : (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-400 dark:text-zinc-500">
                 (empty)
               </span>
             )}
@@ -1544,7 +1557,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             {!sheetNotesEditing && (
               <button
                 type="button"
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+                className="rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors"
                 onClick={() => {
                   setSheetNotesDraft(sheetNotes);
                   setSheetNotesEditing(true);
@@ -1556,7 +1569,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             )}
             <button
               type="button"
-              className="text-xs font-medium text-slate-500 hover:text-slate-800"
+              className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200"
               onClick={() => setNotesExpanded((v) => !v)}
               aria-expanded={notesExpanded}
             >
@@ -1566,8 +1579,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </div>
 
         {notesExpanded && (
-          <div className="border-t border-slate-100 p-4">
-            <p className="text-xs text-slate-500">
+          <div className="border-t border-slate-100 dark:border-zinc-800 p-4">
+            <p className="text-xs text-slate-500 dark:text-zinc-400">
               General notes for this entire price update (e.g. vendor comparisons). Markdown supported — including tables — with no changes to the table structure.
             </p>
             {sheetNotesEditing ? (
@@ -1576,7 +1589,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                 <div className="mt-3 flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                    className="rounded-md border border-slate-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60"
                     disabled={sheetNotesBusy}
                     onClick={() => setSheetNotesEditing(false)}
                   >
@@ -1586,18 +1599,18 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                     busy={sheetNotesBusy}
                     busyLabel="Saving..."
                     onClick={saveSheetNotes}
-                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="rounded-md bg-slate-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-60"
                   >
                     Save Notes
                   </LoadingButton>
                 </div>
               </div>
             ) : sheetNotes ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3 text-xs">
+              <div className="mt-3 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-800/40 p-3 text-xs dark:text-zinc-200">
                 <MarkdownDoc source={sheetNotes} />
               </div>
             ) : (
-              <p className="mt-3 text-xs text-slate-400">
+              <p className="mt-3 text-xs text-slate-400 dark:text-zinc-500">
                 No price sheet notes yet. Click “+ Add Notes” to record vendor comparisons or general remarks.
               </p>
             )}
@@ -1605,22 +1618,22 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         )}
       </section>
       {askSync && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Update App Inventory Prices?">
-          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Update App Inventory Prices?">
+          <div className="w-full max-w-lg rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 shadow-xl text-slate-900 dark:text-zinc-100">
             {!syncResult ? (
               <>
                 <h2 className="text-lg font-bold">Update App Inventory Prices?</h2>
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
                   The POS CSV has been generated. Would you also like to update the
                   corresponding product prices in the app&apos;s inventory using this price update sheet?
                 </p>
                 {syncError && (
-                  <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{syncError}</p>
+                  <p className="mt-3 rounded border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-700 dark:text-red-300">{syncError}</p>
                 )}
                 <div className="mt-4 flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded border px-3 py-1.5 text-sm disabled:opacity-60"
+                    className="rounded border border-slate-200 dark:border-zinc-700 px-3 py-1.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60"
                     disabled={syncBusy}
                     onClick={() => { if (!syncBusy) { setAskSync(false); setSyncError(""); } }}
                   >
@@ -1630,7 +1643,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                     busy={syncBusy}
                     busyLabel="Updating..."
                     onClick={runInventorySync}
-                    className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                    className="rounded bg-slate-900 dark:bg-zinc-100 px-3 py-1.5 text-sm font-semibold text-white dark:text-zinc-900 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-60"
                   >
                     Update Inventory Prices
                   </LoadingButton>
@@ -1639,7 +1652,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             ) : (
               <>
                 <h2 className="text-lg font-bold">Inventory Price Update</h2>
-                <div className="mt-2 text-sm text-slate-700">
+                <div className="mt-2 text-sm text-slate-700 dark:text-zinc-300">
                   <p>Products successfully updated: <span className="font-semibold">{syncResult.updated}</span></p>
                   <p>Exported rows considered: <span className="font-semibold">{syncResult.exportedRows}</span></p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -1651,18 +1664,18 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                     <li>Failed updates: {syncResult.failedCount}{syncResult.failed.length ? ` — e.g. ${syncResult.failed.slice(0, 5).join(", ")}` : ""}</li>
                   </ul>
                   {syncResult.updated > 0 ? (
-                    <p className="mt-2 text-slate-600">
+                    <p className="mt-2 text-slate-600 dark:text-zinc-400">
                       Inventory prices now match the POS CSV (Nearest 9 &#8594; Price, Our New List Price &#8594; list cost).
                       {syncResult.lastUpdatedAt ? ` Last updated: ${new Date(syncResult.lastUpdatedAt).toLocaleString()}.` : ""}
                     </p>
                   ) : (
-                    <p className="mt-2 text-amber-700">No prices were updated, so Last updated was left unchanged.</p>
+                    <p className="mt-2 text-amber-700 dark:text-amber-400">No prices were updated, so Last updated was left unchanged.</p>
                   )}
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded border px-3 py-1.5 text-sm"
+                    className="rounded border border-slate-200 dark:border-zinc-700 px-3 py-1.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800"
                     onClick={() => { setAskSync(false); setSyncResult(null); setSyncError(""); }}
                   >
                     Close

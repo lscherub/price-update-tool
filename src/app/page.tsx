@@ -122,41 +122,61 @@ export default function Home() {
   const inactiveProducts = data?.totals.inactive ?? 0;
   const activeRatio = totalProducts > 0 ? Math.round((activeProducts / totalProducts) * 100) : 0;
 
-  const METRIC_DEFS: { key: MetricKey; label: string; value: string | number; sub: string; icon: string }[] = [
+  const METRIC_DEFS: { key: MetricKey; label: string; value: string | number; sub: string; icon: React.ReactNode }[] = [
     {
       key: "products",
       label: "Total Products",
       value: data?.totals.products?.toLocaleString() ?? "—",
       sub: "Master catalog SKUs",
-      icon: "📦",
+      icon: (
+        <svg className="h-4 w-4 text-slate-700 dark:text-zinc-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      ),
     },
     {
       key: "active",
       label: "Active Products",
       value: data?.totals.active?.toLocaleString() ?? "—",
       sub: `${activeRatio}% catalog active`,
-      icon: "✅",
+      icon: (
+        <svg className="h-4 w-4 text-emerald-600 dark:text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      ),
     },
     {
       key: "inactive",
       label: "Inactive Products",
       value: data?.totals.inactive?.toLocaleString() ?? "—",
       sub: "Excluded from updates",
-      icon: "⏸️",
+      icon: (
+        <svg className="h-4 w-4 text-amber-600 dark:text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
     },
     {
       key: "vendors",
       label: "Vendor Discounts",
       value: data?.totals.vendors?.toLocaleString() ?? "—",
       sub: "Discount rules configured",
-      icon: "🏷️",
+      icon: (
+        <svg className="h-4 w-4 text-violet-600 dark:text-violet-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+        </svg>
+      ),
     },
     {
       key: "sessions",
       label: "Price Updates",
       value: data?.totals.sessions?.toLocaleString() ?? "—",
       sub: "Historical worksheets",
-      icon: "📋",
+      icon: (
+        <svg className="h-4 w-4 text-indigo-600 dark:text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
     },
   ];
 
@@ -213,8 +233,10 @@ export default function Home() {
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400">
-                      ⚡
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-400">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
                     </span>
                     <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
                       Start →
@@ -235,8 +257,10 @@ export default function Home() {
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400">
-                      🏢
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-400">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
                     </span>
                     <span className="text-xs font-bold text-violet-600 dark:text-violet-400 opacity-0 group-hover:opacity-100 transition-opacity">
                       Create →
@@ -257,8 +281,10 @@ export default function Home() {
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                      📥
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-400">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
                     </span>
                     <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity">
                       Manage →
@@ -279,8 +305,10 @@ export default function Home() {
               >
                 <div>
                   <div className="flex items-center justify-between">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400">
-                      🧮
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-400">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
                     </span>
                     <span className="text-xs font-bold text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
                       Calculate →
@@ -385,8 +413,12 @@ export default function Home() {
                     <tr>
                       <td colSpan={5} className="px-5 py-8 text-center text-slate-600 dark:text-zinc-300">
                         <div className="flex flex-col items-center justify-center gap-2">
-                          <span className="text-2xl">📋</span>
-                          <span className="font-semibold">No price updates created yet</span>
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-zinc-800 dark:text-zinc-500">
+                            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <span className="font-semibold text-slate-800 dark:text-zinc-200">No price updates created yet</span>
                           <Link
                             href="/sessions/new"
                             className="mt-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-slate-900"

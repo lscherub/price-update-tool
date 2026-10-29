@@ -195,22 +195,46 @@ export default function SettingsPage() {
             <div className="mt-4 grid grid-cols-3 gap-3 max-w-md">
               {(
                 [
-                  { id: "light" as UiTheme, label: "Light", icon: "☀️" },
-                  { id: "dark" as UiTheme, label: "Dark", icon: "🌙" },
-                  { id: "system" as UiTheme, label: "System", icon: "💻" },
+                  {
+                    id: "light" as UiTheme,
+                    label: "Light",
+                    icon: (
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                    ),
+                  },
+                  {
+                    id: "dark" as UiTheme,
+                    label: "Dark",
+                    icon: (
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                      </svg>
+                    ),
+                  },
+                  {
+                    id: "system" as UiTheme,
+                    label: "System",
+                    icon: (
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    ),
+                  },
                 ] as const
               ).map((t) => (
                 <button
                   key={t.id}
                   type="button"
                   onClick={() => setTheme(t.id)}
-                  className={`flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3 text-xs font-semibold transition-all ${
+                  className={`flex flex-col items-center justify-center gap-2 rounded-xl border p-3 text-xs font-semibold transition-all ${
                     theme === t.id
                       ? "border-indigo-600 bg-indigo-50/50 font-bold text-indigo-900 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-200 ring-1 ring-indigo-500/30"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
                   }`}
                 >
-                  <span className="text-base">{t.icon}</span>
+                  <span className="text-slate-600 dark:text-zinc-400">{t.icon}</span>
                   <span>{t.label}</span>
                 </button>
               ))}
@@ -398,7 +422,16 @@ export default function SettingsPage() {
                         : "border-slate-200 bg-white text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                     }`}
                   >
-                    {isHidden ? `+ Show ${item.label}` : `✓ ${item.label}`}
+                    {isHidden ? (
+                      `+ Show ${item.label}`
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                        </svg>
+                        {item.label}
+                      </span>
+                    )}
                   </button>
                 );
               })}

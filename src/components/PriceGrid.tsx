@@ -40,6 +40,26 @@ export const COLS: { key: string; label: string; editable?: boolean; kind: "text
 
 export const FLAGS_COL_KEY = "flags";
 
+/** Sensible default column widths (px) ensuring predictable table proportions. */
+export const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  rawVendorSku: 145,
+  cleanedSku: 145,
+  productNumber: 120,
+  productName: 280,
+  brand: 125,
+  vendor: 125,
+  discount: 105,
+  currentListPrice: 115,
+  vendorListPriceNew: 125,
+  ourNewListPrice: 115,
+  marginDivisor: 105,
+  ourNewRetailPrice: 120,
+  oldRetailPrice: 115,
+  nearest9: 110,
+  notes: 190,
+  flags: 145,
+};
+
 /** Freezable headers in display order: every data column, then Flags. */
 export const FREEZE_KEYS: string[] = [...COLS.map((c) => c.key), FLAGS_COL_KEY];
 
@@ -50,11 +70,14 @@ const CHECK_W = 36;
 const ROW_NUM_KEY = "__rownum";
 const CHECK_KEY = "__checkbox";
 /** Right-edge shadow marking the last sticky column. */
-const EDGE_SHADOW = "4px 0 6px -5px rgba(15,23,42,0.65)";
-const HEADER_BG = "#f1f5f9"; // matches <thead className="bg-slate-100">
-const WHITE_BG = "#ffffff";
-const UNMATCHED_BG = "#fef2f2"; // matches bg-red-50 on unmatched rows
-const SELECTED_BG = "#e0f2fe"; // sky-100, matches the selected-row highlight
+const EDGE_SHADOW = "4px 0 6px -5px rgba(15,23,42,0.45)";
+const HEADER_BG = "var(--grid-header-bg, #f1f5f9)";
+const WHITE_BG = "var(--grid-bg, #ffffff)";
+const UNMATCHED_BG = "var(--grid-unmatched-bg, #fef2f2)";
+const SELECTED_BG = "var(--grid-selected-bg, #e0f2fe)";
+const EDITABLE_BG = "var(--grid-editable-bg, #ecfdf5)";
+const CUSTOM_BG = "var(--grid-custom-bg, #fffbeb)";
+const FILL_BG = "var(--grid-selected-bg, #dbeafe)";
 
 /** useLayoutEffect that is safe in client components rendered by the server. */
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -67,15 +90,35 @@ function sameWidths(a: Readonly<Record<string, number>>, b: Readonly<Record<stri
 
 export function Flags({ r }: { r: Item }) {
   return (
-    <span className="whitespace-nowrap">
-      {!r.matched && <span className="mr-1 rounded bg-red-600 px-1.5 py-0.5 text-white">Not Found</span>}
-      {r.isInactive && <span className="mr-1 rounded bg-amber-200 px-1.5 py-0.5">Inactive</span>}
-      {r.cleanedOverridden && <span className="mr-1 rounded bg-blue-100 px-1.5 py-0.5">Manual SKU</span>}
-      {!!r.nearest9Custom && String(r.nearest9Custom).trim() !== "" && (
-        <span className="mr-1 rounded bg-violet-100 px-1.5 py-0.5">Custom</span>
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {!r.matched && (
+        <span className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/60 dark:text-red-300">
+          Not Found
+        </span>
       )}
-      {r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice && <span className="rounded bg-emerald-100 px-1.5 py-0.5">Changed</span>}
-      {r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 === r.oldRetailPrice && <span className="text-slate-400">No change</span>}
+      {r.isInactive && (
+        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/60 dark:text-amber-300">
+          Inactive
+        </span>
+      )}
+      {r.cleanedOverridden && (
+        <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/60 dark:text-blue-300">
+          Manual SKU
+        </span>
+      )}
+      {!!r.nearest9Custom && String(r.nearest9Custom).trim() !== "" && (
+        <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/60 dark:text-violet-300">
+          Custom
+        </span>
+      )}
+      {r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice && (
+        <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-300">
+          Changed
+        </span>
+      )}
+      {r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 === r.oldRetailPrice && (
+        <span className="text-[11px] text-slate-400 dark:text-zinc-500">No change</span>
+      )}
     </span>
   );
 }
@@ -226,15 +269,13 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   const rowDragRef = useRef<{ id: string; startY: number; startH: number; liveH: number } | null>(null);
   const rafRef = useRef(0);
 
-  /** Fixed-width style for a user-resized column (applied to <th> and <td>). */
+  /** Fixed-width style for a column (with stable defaults, applied to <th> and <td>). */
   const colWidthStyle = (key: string): CSSProperties => {
     if (liveCol && liveCol.key === key) {
       return { width: liveCol.w, minWidth: liveCol.w, maxWidth: liveCol.w };
     }
-    // Only pin columns the user actually resized; every other column keeps
-    // its natural auto width, exactly as before.
-    if (key in colWidths) {
-      const w = colWidths[key];
+    const w = colWidths[key] ?? DEFAULT_COL_WIDTHS[key];
+    if (w !== undefined) {
       return { width: w, minWidth: w, maxWidth: w };
     }
     return {};
@@ -380,10 +421,10 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   const freezeMenu = (key: string) => {
     const frozen = isFrozen(FREEZE_KEYS, frozenCount, key);
     const wrapOn = wrappedNow(key);
-    const cls = "block w-full px-3 py-1.5 text-left hover:bg-slate-100 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
+    const cls = "block w-full px-3 py-1.5 text-left text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
     return (
       <>
-        <div className="my-1 border-t border-slate-200" />
+        <div className="my-1 border-t border-slate-200 dark:border-zinc-700" />
         <button
           type="button"
           className={cls}
@@ -402,7 +443,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
         >
           Unfreeze Column
         </button>
-        <div className="my-1 border-t border-slate-200" />
+        <div className="my-1 border-t border-slate-200 dark:border-zinc-700" />
         <button
           type="button"
           role="menuitemcheckbox"
@@ -413,7 +454,14 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
             : "Wrap long text onto multiple lines so you can read more without opening the editor."}
           onClick={() => setWrap(key, !wrapOn)}
         >
-          {wrapOn ? "✓ Wrap Text" : "Wrap Text"}
+          <span className="flex items-center gap-1.5">
+            {wrapOn && (
+              <svg className="h-3 w-3 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+            <span>Wrap Text</span>
+          </span>
         </button>
         {wrapOn && (
           <button
@@ -452,13 +500,13 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
     ];
   };
   return (
-    <div ref={listRef} className="overflow-auto rounded-xl border bg-white" style={{ maxHeight: "65vh" }}>
+    <div ref={listRef} className="overflow-auto rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900" style={{ maxHeight: "65vh" }}>
       <table className="w-full min-w-[1800px] border-collapse text-xs">
-        <thead className="sticky top-0 bg-slate-100" style={{ zIndex: 20 }}>
+        <thead className="sticky top-0 bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200" style={{ zIndex: 20 }}>
           <tr>
             <th
               ref={(el) => { headRefs.current[ROW_NUM_KEY] = el; }}
-              className="border px-1 py-2 text-center text-[10px] font-normal text-slate-400"
+              className="border border-slate-200 dark:border-zinc-800 px-1 py-2 text-center text-[10px] font-normal text-slate-400 dark:text-zinc-500"
               style={{ width: ROW_NUM_W, ...gutterStyle("row", true, HEADER_BG) }}
               title="Row number — click a row number to select that row"
             >
@@ -466,7 +514,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
             </th>
             <th
               ref={(el) => { headRefs.current[CHECK_KEY] = el; }}
-              className="border px-2 py-2"
+              className="border border-slate-200 dark:border-zinc-800 px-2 py-2"
               style={{ width: CHECK_W, ...gutterStyle("check", true, HEADER_BG) }}
             >
               <input
@@ -479,28 +527,48 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
             </th>
             {COLS.map((c) => {
               const active = sortKey === c.key;
+              const isNum = c.kind === "number";
               return (
                 <th
                   key={c.label}
                   data-col={c.key}
                   ref={(el) => { headRefs.current[c.key] = el; }}
-                  className={`relative border px-2 py-2 text-left font-semibold ${c.editable ? "bg-emerald-50" : ""}`}
-                  style={{ ...stickyStyle(c.key, true, c.editable ? "#ecfdf5" : HEADER_BG), ...colWidthStyle(c.key) }}
+                  className={`relative border border-slate-200 dark:border-zinc-800 px-2 py-2 font-semibold ${
+                    c.editable
+                      ? "bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-950 dark:text-emerald-300"
+                      : "text-slate-700 dark:text-zinc-200"
+                  }`}
+                  style={{ ...stickyStyle(c.key, true, c.editable ? EDITABLE_BG : HEADER_BG), ...colWidthStyle(c.key) }}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    <span>{c.label}{c.editable ? " ✎" : ""}</span>
-                    {active && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
-                    <button
-                      type="button"
-                      aria-label={`Sort ${c.label}`}
-                      aria-haspopup="menu"
-                      aria-expanded={openMenu === c.key}
-                      className="rounded px-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
-                      onClick={() => setOpenMenu(openMenu === c.key ? null : c.key)}
-                    >
-                      ▾
-                    </button>
-                  </span>
+                  <div className={`flex items-center gap-1.5 ${isNum ? "justify-end text-right" : "justify-between text-left"}`}>
+                    <span className="truncate">{c.label}</span>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {c.editable && (
+                        <span title="Editable column" className="text-emerald-600 dark:text-emerald-400 opacity-60">
+                          <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                          </svg>
+                        </span>
+                      )}
+                      {active && sortDir && (
+                        <svg className="h-3 w-3 text-slate-700 dark:text-zinc-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          {sortDir === "asc" ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />}
+                        </svg>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Sort ${c.label}`}
+                        aria-haspopup="menu"
+                        aria-expanded={openMenu === c.key}
+                        className="rounded p-0.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 hover:text-slate-900"
+                        onClick={() => setOpenMenu(openMenu === c.key ? null : c.key)}
+                      >
+                        <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                   {/* Excel-style column resize handle: drag the divider. */}
                   <span
                     role="separator"
@@ -523,14 +591,14 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     <span className="absolute top-0 right-0 h-full w-[3px] bg-transparent hover:bg-sky-500" />
                   </span>
                   {openMenu === c.key && (
-                    <div ref={menuRef} role="menu" aria-label={`Sort ${c.label}`} className="absolute left-0 top-full z-30 min-w-44 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
+                    <div ref={menuRef} role="menu" aria-label={`Sort ${c.label}`} className="absolute left-0 top-full z-30 min-w-44 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 py-1 text-xs font-normal shadow-lg dark:text-zinc-200">
                       {menuFor(c.kind, c.key).map((o) => (
                         <button
                           key={o.dir}
                           type="button"
                           role="menuitemradio"
                           aria-checked={active && sortDir === o.dir}
-                          className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 ${active && sortDir === o.dir ? "font-bold" : ""}`}
+                          className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700 ${active && sortDir === o.dir ? "font-bold text-slate-900 dark:text-white" : ""}`}
                           onClick={() => { onSort(c.key as SortableItemKey, o.dir); setOpenMenu(null); }}
                         >
                           {o.label}
@@ -540,7 +608,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                         type="button"
                         role="menuitemradio"
                         aria-checked={!active || !sortDir}
-                        className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100"
+                        className="block w-full px-3 py-1.5 text-left text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700"
                         onClick={() => { onSort(c.key as SortableItemKey, null); setOpenMenu(null); }}
                       >
                         Clear sort
@@ -554,32 +622,40 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
             <th
               data-col={FLAGS_COL_KEY}
               ref={(el) => { headRefs.current[FLAGS_COL_KEY] = el; }}
-              className="relative border px-2 py-2 text-left font-semibold"
+              className="relative border border-slate-200 dark:border-zinc-800 px-2 py-2 text-left font-semibold text-slate-700 dark:text-zinc-200"
               style={{ ...stickyStyle(FLAGS_COL_KEY, true, HEADER_BG), ...colWidthStyle(FLAGS_COL_KEY) }}
             >
-              <span className="inline-flex items-center gap-1">
+              <div className="flex items-center justify-between gap-1.5">
                 <span>Flags</span>
-                {sortKey === FLAGS_COL_KEY && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
-                <button
-                  type="button"
-                  aria-label="Sort Flags"
-                  aria-haspopup="menu"
-                  aria-expanded={openMenu === FLAGS_COL_KEY}
-                  className="rounded px-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
-                  onClick={() => setOpenMenu(openMenu === FLAGS_COL_KEY ? null : FLAGS_COL_KEY)}
-                >
-                  ▾
-                </button>
-              </span>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {sortKey === FLAGS_COL_KEY && sortDir && (
+                    <svg className="h-3 w-3 text-slate-700 dark:text-zinc-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      {sortDir === "asc" ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />}
+                    </svg>
+                  )}
+                  <button
+                    type="button"
+                    aria-label="Sort Flags"
+                    aria-haspopup="menu"
+                    aria-expanded={openMenu === FLAGS_COL_KEY}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 hover:text-slate-900"
+                    onClick={() => setOpenMenu(openMenu === FLAGS_COL_KEY ? null : FLAGS_COL_KEY)}
+                  >
+                    <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
               {openMenu === FLAGS_COL_KEY && (
-                <div ref={menuRef} role="menu" aria-label="Sort Flags" className="absolute left-0 top-full z-30 min-w-44 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
+                <div ref={menuRef} role="menu" aria-label="Sort Flags" className="absolute left-0 top-full z-30 min-w-44 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 py-1 text-xs font-normal shadow-lg dark:text-zinc-200">
                   {menuFor("flags", FLAGS_COL_KEY).map((o) => (
                     <button
                       key={o.dir}
                       type="button"
                       role="menuitemradio"
                       aria-checked={sortKey === FLAGS_COL_KEY && sortDir === o.dir}
-                      className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 ${sortKey === FLAGS_COL_KEY && sortDir === o.dir ? "font-bold" : ""}`}
+                      className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700 ${sortKey === FLAGS_COL_KEY && sortDir === o.dir ? "font-bold text-slate-900 dark:text-white" : ""}`}
                       onClick={() => { onSort(FLAGS_COL_KEY, o.dir); setOpenMenu(null); }}
                     >
                       {o.label}
@@ -589,21 +665,21 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     type="button"
                     role="menuitemradio"
                     aria-checked={sortKey !== FLAGS_COL_KEY || !sortDir}
-                    className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100"
+                    className="block w-full px-3 py-1.5 text-left text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700"
                     onClick={() => { onSort(FLAGS_COL_KEY, null); setOpenMenu(null); }}
                   >
                     Clear sort
                   </button>
                   {freezeMenu(FLAGS_COL_KEY)}
                   {availableFlags && availableFlags.length > 0 && (
-                    <div className="border-t pt-1 mt-1">
-                      <div className="px-3 py-1 font-semibold text-slate-700">Filter by Flag:</div>
+                    <div className="border-t border-slate-200 dark:border-zinc-700 pt-1 mt-1">
+                      <div className="px-3 py-1 font-semibold text-slate-700 dark:text-zinc-200">Filter by Flag:</div>
                       {availableFlags.map((flag) => {
                         const checked = selectedFlags?.has(flag) ?? false;
                         return (
                           <label
                             key={flag}
-                            className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-slate-100"
+                            className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-slate-100 dark:hover:bg-zinc-700"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
@@ -619,7 +695,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                       {selectedFlags && selectedFlags.size > 0 && (
                         <button
                           type="button"
-                          className="block w-full px-3 py-1 text-left text-blue-600 hover:bg-slate-100"
+                          className="block w-full px-3 py-1 text-left text-blue-600 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-zinc-700"
                           onClick={() => onClearFlags?.()}
                         >
                           Clear flag filter
@@ -651,7 +727,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                 <span className="absolute top-0 right-0 h-full w-[3px] bg-transparent hover:bg-sky-500" />
               </span>
             </th>
-            <th className="border px-2 py-2"></th>
+            <th className="border border-slate-200 dark:border-zinc-800 px-2 py-2 w-10"></th>
           </tr>
         </thead>
         <tbody>
@@ -664,16 +740,16 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
               key={r.id}
               data-fill-row={r.id}
               data-row={r.id}
-              className={`border-t ${!r.matched ? "bg-red-50" : ""}`}
+              className={`border-t border-slate-200 dark:border-zinc-800/80 ${!r.matched ? "bg-red-50/70 dark:bg-red-950/20" : ""}`}
               style={{ background: rowBgOf(r), ...(rowH ? { height: rowH } : {}) }}
             >
               <td
-                className="relative border px-1 py-1 text-center"
+                className="relative border border-slate-200 dark:border-zinc-800 px-1 py-1 text-center"
                 style={{ width: ROW_NUM_W, ...gutterStyle("row", false, rowBgOf(r)) }}
               >
                 <button
                   type="button"
-                  className="w-full cursor-pointer select-none rounded px-1 py-0.5 text-[11px] text-slate-500 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  className="w-full cursor-pointer select-none rounded px-1 py-0.5 text-[11px] text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                   aria-label={`Select row ${r.cleanedSku || r.rawVendorSku}`}
                   title="Click to select this row — drag or Shift+click to select several"
                   onPointerDown={(e) => onRowNumPointerDown(r, e)}
@@ -703,7 +779,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                 </span>
               </td>
               <td
-                className="border px-2 py-1 text-center"
+                className="border border-slate-200 dark:border-zinc-800 px-2 py-1 text-center"
                 style={{ width: CHECK_W, ...gutterStyle("check", false, rowBgOf(r)) }}
               >
                 <input
@@ -715,6 +791,8 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
               </td>
               {COLS.map((c) => {
                 const v = ((r as unknown as Record<string, string | null>)[c.key] ?? "") as string;
+                const isNum = c.kind === "number";
+                const isSku = c.key === "rawVendorSku" || c.key === "cleanedSku" || c.key === "productNumber";
                 if (c.editable) {
                   // Notes open the Markdown editor popup instead of an inline
                   // input; everything else keeps its existing inline editor.
@@ -724,12 +802,12 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                       <td
                         key={c.label}
                         data-col={c.key}
-                        className={`relative border bg-emerald-50/40 px-1 py-0.5 ${wrap ? "" : "max-w-56"}`}
-                        style={{ ...stickyStyle(c.key, false, "#ecfdf5"), ...colWidthStyle(c.key) }}
+                        className={`relative border border-slate-200 dark:border-zinc-800 bg-emerald-50/30 dark:bg-emerald-950/20 px-1 py-0.5 ${wrap ? "" : "max-w-56"}`}
+                        style={{ ...stickyStyle(c.key, false, EDITABLE_BG), ...colWidthStyle(c.key) }}
                       >
                         <button
                           type="button"
-                          className="block w-full px-1 py-1 text-left outline-none hover:bg-white focus:bg-white"
+                          className="block w-full px-1 py-1 text-left outline-none rounded hover:bg-white dark:hover:bg-zinc-800 focus:bg-white dark:focus:bg-zinc-800 transition-colors"
                           title={v ? "Open note (Markdown) — Wrap Text shows more inline; widen/resize for a bigger preview" : "Add note (Markdown)"}
                           aria-label={`Notes for ${r.cleanedSku || r.rawVendorSku}${v ? `: ${markdownExcerpt(v, 80)}` : " (empty)"}`}
                           onClick={() => onOpenNotes?.(r)}
@@ -743,7 +821,9 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                               <MarkdownDoc source={v} compact />
                             )
                           ) : (
-                            <span className="text-slate-300">＋ note</span>
+                            <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300">
+                              + Note
+                            </span>
                           )}
                         </button>
                       </td>
@@ -767,17 +847,22 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     <td
                       key={c.label}
                       data-col={c.key}
-                      className={`relative border px-1 py-0.5${wrapClassOf(c.key)} ${inFill ? "bg-blue-100" : customN9 ? "bg-amber-50" : "bg-emerald-50/40"}`}
-                      style={{ ...stickyStyle(c.key, false, inFill ? "#dbeafe" : customN9 ? "#fffbeb" : "#ecfdf5"), ...colWidthStyle(c.key) }}
+                      className={`relative border border-slate-200 dark:border-zinc-800 px-1 py-0.5${wrapClassOf(c.key)} ${
+                        inFill
+                          ? "bg-sky-100 dark:bg-sky-950/40"
+                          : customN9
+                            ? "bg-amber-50 dark:bg-amber-950/30"
+                            : "bg-emerald-50/30 dark:bg-emerald-950/20"
+                      }`}
+                      style={{ ...stickyStyle(c.key, false, inFill ? FILL_BG : customN9 ? CUSTOM_BG : EDITABLE_BG), ...colWidthStyle(c.key) }}
                       onContextMenu={canRestore ? (e) => { e.preventDefault(); onRestoreDiscount?.(r); } : undefined}
                       title={canRestore ? "Edit the discount, clear it to restore the configured Vendor/Brand default, or right-click to restore the default" : undefined}
                     >
                       {wrap ? (
-                        // Wrapped: multi-line editor that grows with the row.
-                        // Same commit path as before (blur saves; Enter adds a
-                        // newline, blur/Tab commits) — only presentation changes.
                         <textarea
-                          className="w-full min-w-24 bg-transparent px-1 py-1 pr-4 outline-none focus:bg-white"
+                          className={`w-full min-w-24 bg-transparent px-1.5 py-1 text-slate-900 dark:text-zinc-100 outline-none focus:bg-white dark:focus:bg-zinc-800 rounded ${
+                            isNum ? "text-right font-mono tabular-nums" : isSku ? "font-mono text-[11px]" : ""
+                          }`}
                           style={{ fieldSizing: "content" } as CSSProperties}
                           rows={1}
                           defaultValue={v ?? ""}
@@ -791,24 +876,26 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                           aria-label={`${c.label} for ${r.cleanedSku || r.rawVendorSku}`}
                         />
                       ) : (
-                      <input
-                        className="w-full min-w-24 bg-transparent px-1 py-1 pr-4 outline-none focus:bg-white"
-                        defaultValue={v ?? ""}
-                        key={`${r.id}-${c.key}-${v}`}
-                        onBlur={(e) => { if (e.target.value !== (v ?? "")) onEdit(r, c.key, e.target.value); }}
-                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                        title={c.key === "nearest9"
-                          ? (customN9
-                            ? "Custom Nearest 9 — clear this cell to go back to the calculated value"
-                            : "Nearest 9 is calculated automatically — type a price to override it")
-                          : undefined}
-                        aria-label={`${c.label} for ${r.cleanedSku || r.rawVendorSku}`}
-                      />
+                        <input
+                          className={`w-full min-w-24 bg-transparent px-1.5 py-1 text-slate-900 dark:text-zinc-100 outline-none focus:bg-white dark:focus:bg-zinc-800 rounded ${
+                            isNum ? "text-right font-mono tabular-nums" : isSku ? "font-mono text-[11px]" : ""
+                          }`}
+                          defaultValue={v ?? ""}
+                          key={`${r.id}-${c.key}-${v}`}
+                          onBlur={(e) => { if (e.target.value !== (v ?? "")) onEdit(r, c.key, e.target.value); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                          title={c.key === "nearest9"
+                            ? (customN9
+                              ? "Custom Nearest 9 — clear this cell to go back to the calculated value"
+                              : "Nearest 9 is calculated automatically — type a price to override it")
+                            : undefined}
+                          aria-label={`${c.label} for ${r.cleanedSku || r.rawVendorSku}`}
+                        />
                       )}
                       {customN9 && (
                         <span
                           aria-hidden="true"
-                          className="pointer-events-none absolute right-0.5 top-0.5 rounded bg-amber-400 px-1 text-[9px] font-bold leading-tight text-amber-950"
+                          className="pointer-events-none absolute right-0.5 top-0.5 rounded bg-amber-400/90 dark:bg-amber-500/80 px-1 text-[9px] font-bold leading-tight text-amber-950"
                         >
                           custom
                         </span>
@@ -888,7 +975,9 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                   <td
                     key={c.label}
                     data-col={c.key}
-                    className={`border px-2 py-1${wrapClassOf(c.key)}`}
+                    className={`border border-slate-200 dark:border-zinc-800 px-2 py-1 text-slate-800 dark:text-zinc-200 ${
+                      isNum ? "text-right font-mono tabular-nums" : isSku ? "font-mono text-[11px]" : ""
+                    }${wrapClassOf(c.key)}`}
                     style={{
                       ...stickyStyle(c.key, false, rowBgOf(r)),
                       ...colWidthStyle(c.key),
@@ -901,12 +990,24 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
               })}
               <td
                 data-col={FLAGS_COL_KEY}
-                className={`border px-2 py-1${wrapClassOf(FLAGS_COL_KEY)}`}
+                className={`border border-slate-200 dark:border-zinc-800 px-2 py-1${wrapClassOf(FLAGS_COL_KEY)}`}
                 style={{ ...stickyStyle(FLAGS_COL_KEY, false, rowBgOf(r)), ...colWidthStyle(FLAGS_COL_KEY) }}
               >
                 <Flags r={r} />
               </td>
-              <td className="border px-2 py-1"><button className="text-red-600" onClick={() => onDelete(r)}>✕</button></td>
+              <td className="border border-slate-200 dark:border-zinc-800 px-1.5 py-1 text-center">
+                <button
+                  type="button"
+                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors"
+                  onClick={() => onDelete(r)}
+                  aria-label={`Delete row ${r.cleanedSku || r.rawVendorSku}`}
+                  title="Delete row"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </td>
             </tr>
             );
           })}

@@ -556,24 +556,30 @@ export default function VendorsPage() {
           <button
             type="button"
             onClick={() => { setActiveFormTab("vendor"); if (editing?.kind === "brand") cancelEditing(); }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
               activeFormTab === "vendor"
                 ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
                 : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
             }`}
           >
-            🏢 Vendor Default Discount
+            <svg className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            Vendor Default Discount
           </button>
           <button
             type="button"
             onClick={() => { setActiveFormTab("brand"); if (editing?.kind === "vendor") cancelEditing(); }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
               activeFormTab === "brand"
                 ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
                 : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
             }`}
           >
-            🏷️ Brand-Specific Override
+            <svg className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            Brand-Specific Override
           </button>
         </div>
 
@@ -802,7 +808,9 @@ export default function VendorsPage() {
                   <tr key={g.vendor.id} className="bg-slate-50/70 font-semibold dark:bg-zinc-800/40">
                     <td className="px-5 py-3 text-slate-900 dark:text-white">
                       <div className="flex items-center gap-2">
-                        <span>🏢</span>
+                        <svg className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
                         <span>{g.vendor.vendor}</span>
                       </div>
                     </td>
@@ -834,7 +842,9 @@ export default function VendorsPage() {
                   <tr key={`novendor:${norm(g.brands[0]?.vendor ?? "")}`} className="bg-slate-50/70 font-semibold dark:bg-zinc-800/40">
                     <td className="px-5 py-3 text-slate-900 dark:text-white">
                       <div className="flex items-center gap-2">
-                        <span>🏢</span>
+                        <svg className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
                         <span>{g.brands[0]?.vendor}</span>
                         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                           No Vendor Default Set
