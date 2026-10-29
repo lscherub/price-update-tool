@@ -353,7 +353,7 @@ export default function SessionsPage() {
                         minute: "2-digit",
                       })}
                     </td>
-                    <td className="px-5 py-3.5 text-right">
+                    <td className="px-5 py-3.5">
                       <div className="inline-flex items-center gap-2">
                         <Link
                           href={`/sessions/${s.id}`}
