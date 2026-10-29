@@ -149,6 +149,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
 
   const [selectedFlags, setSelectedFlags] = useState<Set<string>>(new Set());
   const [showFlagMenu, setShowFlagMenu] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const flagMenuRef = useRef<HTMLDivElement | null>(null);
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -1060,25 +1061,45 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold">{name || "Price Update"}</h1>
-          {isFullVendor && (
-            <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-800">
-              Full Vendor
+    <div className="flex flex-col gap-3.5">
+      {/* 1. Header & Actions Toolbar */}
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">{name || "Price Update"}</h1>
+            {isFullVendor && (
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                Full Vendor
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+              {items.length.toLocaleString()} product{items.length === 1 ? "" : "s"}
             </span>
-          )}
+            {filtered.length !== items.length && (
+              <span className="text-slate-500 font-medium">
+                ({filtered.length.toLocaleString()} matching filter)
+              </span>
+            )}
+            {vendor && (
+              <span className="text-slate-500">
+                • Vendor: <span className="font-semibold text-slate-700">{vendor}</span>
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <label className="flex items-center gap-2 rounded border bg-white px-3 py-1.5 text-slate-900">
-            <span className="font-semibold">Status:</span>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Status selector */}
+          <label className="flex items-center gap-1.5 text-xs">
+            <span className="font-medium text-slate-500">Status:</span>
             <select
               aria-label="Review status"
               value={sheetStatus}
               disabled={statusBusy}
               onChange={(e) => void changeStatus(e.target.value)}
-              className="bg-white disabled:opacity-60"
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60"
             >
               {sheetStatus && !["Ready", "Being Reviewed", "Reviewed"].includes(sheetStatus) && (
                 <option value={sheetStatus}>{sheetStatus}</option>
@@ -1088,191 +1109,266 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               <option value="Reviewed">Reviewed</option>
             </select>
           </label>
-          <LoadingButton busy={exportBusy === "pos"} busyLabel="Preparing CSV..." onClick={() => download("pos")} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
-            Export for POS
-          </LoadingButton>
-          {isFullVendor ? (
+
+          {/* Export Toolbar Group */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50/70 p-0.5 gap-0.5 shadow-xs text-xs">
             <LoadingButton
-              busy={exportBusy === "fv-storecount"}
-              busyLabel="Preparing Excel..."
-              onClick={() => setShowFvExportModal(true)}
-              className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-60"
+              busy={exportBusy === "pos"}
+              busyLabel="Exporting..."
+              onClick={() => download("pos")}
+              className="rounded-md bg-white border border-slate-200/80 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-2xs transition-colors disabled:opacity-60"
+              title="Export CSV for Point of Sale system"
             >
-              Digital Store Count Excel
+              Export for POS
             </LoadingButton>
-          ) : (
-            <LoadingButton busy={exportBusy === "storecount"} busyLabel="Preparing Excel..." onClick={() => downloadExcel()} className="rounded border bg-white px-3 py-1.5 text-slate-900 disabled:opacity-60">
-              Store Count Excel
+            {isFullVendor ? (
+              <LoadingButton
+                busy={exportBusy === "fv-storecount"}
+                busyLabel="Excel..."
+                onClick={() => setShowFvExportModal(true)}
+                className="rounded-md bg-white border border-slate-200/80 px-2.5 py-1 font-medium text-indigo-700 hover:bg-indigo-50 shadow-2xs transition-colors disabled:opacity-60"
+                title="Export Digital Store Count spreadsheet in Excel format"
+              >
+                Digital Store Count Excel
+              </LoadingButton>
+            ) : (
+              <LoadingButton
+                busy={exportBusy === "storecount"}
+                busyLabel="Excel..."
+                onClick={() => downloadExcel()}
+                className="rounded-md bg-white border border-slate-200/80 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors disabled:opacity-60"
+                title="Export Store Count spreadsheet in Excel format"
+              >
+                Store Count Excel
+              </LoadingButton>
+            )}
+            <LoadingButton
+              busy={pdfBusy}
+              busyLabel="PDF..."
+              onClick={pdf}
+              className="rounded-md bg-slate-900 px-2.5 py-1 font-medium text-white hover:bg-slate-800 shadow-2xs transition-colors disabled:opacity-60"
+              title="Generate printable Store Count PDF"
+            >
+              Generate Store Count PDF
             </LoadingButton>
-          )}
-          <LoadingButton busy={pdfBusy} busyLabel="Generating PDF..." onClick={pdf} className="rounded bg-slate-900 px-3 py-1.5 text-white disabled:opacity-60">
-            Generate Store Count PDF
+          </div>
+        </div>
+      </header>
+
+      {/* 2. Compact Workspace Controls Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 bg-white p-2 shadow-xs">
+        {/* Left: Row addition & History group */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowAdd(true)}
+              className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 transition-colors"
+            >
+              + Add Row
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowBulkAdd(true)}
+              className="h-8 rounded-lg border border-slate-200 bg-emerald-50/60 px-3 text-xs font-semibold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition-colors"
+            >
+              Bulk Add Rows
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-slate-200 mx-1" aria-hidden="true" />
+
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white shadow-2xs divide-x divide-slate-200">
+            <button
+              type="button"
+              onClick={() => void runHistory("undo")}
+              disabled={!canUndo(history) || histBusy}
+              title={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
+              className="h-8 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            >
+              ↶ Undo
+            </button>
+            <button
+              type="button"
+              onClick={() => void runHistory("redo")}
+              disabled={!canRedo(history) || histBusy}
+              title={canRedo(history) ? `Redo ${redoLabel(history)} (Ctrl/Cmd+Shift+Z)` : "Nothing to redo"}
+              className="h-8 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            >
+              ↷ Redo
+            </button>
+          </div>
+        </div>
+
+        {/* Center: Search, Flags Filter, and Row Filter in a single compact toolbar */}
+        <div className="flex flex-1 items-center gap-1.5 min-w-64 max-w-xl">
+          <div className="relative flex-1">
+            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </span>
+            <input
+              className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-2.5 text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none transition-colors"
+              placeholder="Search products..."
+              value={q}
+              onChange={(e) => { setQ(e.target.value); setPage(1); setPinnedOrder(null); }}
+            />
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFlagMenu((v) => !v)}
+              className={`h-8 flex items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
+                selectedFlags.size > 0
+                  ? "border-indigo-400 bg-indigo-50 text-indigo-900"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-2xs"
+              }`}
+              aria-expanded={showFlagMenu}
+              aria-haspopup="dialog"
+            >
+              <span>Flags</span>
+              {selectedFlags.size > 0 && (
+                <span className="rounded-full bg-indigo-600 px-1.5 py-0.2 text-[10px] font-semibold text-white">
+                  {selectedFlags.size}
+                </span>
+              )}
+              <span className="text-[10px] text-slate-400">▾</span>
+            </button>
+            {showFlagMenu && (
+              <div
+                ref={flagMenuRef}
+                className="absolute left-0 top-full z-40 mt-1 min-w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-xl text-xs"
+              >
+                <div className="flex items-center justify-between border-b pb-1.5 font-semibold text-slate-700">
+                  <span>Filter by flag:</span>
+                  {selectedFlags.size > 0 && (
+                    <button
+                      type="button"
+                      className="text-xs text-blue-600 hover:underline"
+                      onClick={clearFlagFilter}
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 py-1.5 max-h-60 overflow-y-auto">
+                  {availableFlags.length === 0 ? (
+                    <span className="text-slate-400 px-1">No flags in worksheet</span>
+                  ) : (
+                    availableFlags.map((flag) => {
+                      const count = flagCounts.get(flag) ?? 0;
+                      const isChecked = selectedFlags.has(flag);
+                      return (
+                        <label
+                          key={flag}
+                          className="flex cursor-pointer items-center justify-between rounded px-2 py-1 hover:bg-slate-100"
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleFlagFilter(flag)}
+                              className="rounded border-slate-300 text-indigo-600"
+                            />
+                            <span>{flag}</span>
+                          </div>
+                          <span className="text-slate-400 font-mono">({count})</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {availableFlags.length > 0 && (
+                  <div className="flex justify-between border-t pt-1.5">
+                    <button
+                      type="button"
+                      className="text-xs text-slate-600 hover:underline"
+                      onClick={() => {
+                        setSelectedFlags(new Set(availableFlags));
+                        setPage(1);
+                        setPinnedOrder(null);
+                      }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-slate-600 hover:underline"
+                      onClick={() => setShowFlagMenu(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <select
+            className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-2xs focus:border-indigo-500 focus:outline-none"
+            value={filter}
+            onChange={(e) => { setFilter(e.target.value); setPage(1); setPinnedOrder(null); }}
+          >
+            <option value="all">All rows</option>
+            <option value="unmatched">Unmatched</option>
+            <option value="notfound">Not Found</option>
+            <option value="changed">Price Changed</option>
+            <option value="inactive">Inactive</option>
+            <option value="missing">Vendor price missing</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+
+        {/* Right: Selection Actions (Set Lower & Destructive Delete visually separated) */}
+        <div className="flex items-center gap-1.5 border-l border-slate-200 pl-2">
+          <LoadingButton
+            busy={lowerBusy}
+            busyLabel="Applying..."
+            disabled={selected.size === 0}
+            onClick={() => setConfirmLower(true)}
+            title={
+              selected.size === 0
+                ? "Select rows with the checkboxes first"
+                : lowerCount === 0
+                  ? "None of the selected products have a lower Nearest 9 price."
+                  : `Set Old Retail Price as the Custom Nearest 9 for ${lowerCount} selected product${lowerCount === 1 ? "" : "s"}`
+            }
+            className="h-8 rounded-lg border border-violet-200 bg-violet-50/70 px-2.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {selected.size > 0 && lowerCount > 0
+              ? `Set Lower (${lowerCount})`
+              : selected.size > 0
+                ? `Set Lower (${selected.size})`
+                : "Set Lower Prices"}
+          </LoadingButton>
+
+          <LoadingButton
+            busy={bulkBusy}
+            busyLabel="Deleting..."
+            disabled={selected.size === 0}
+            onClick={() => setConfirmBulk(true)}
+            className="h-8 rounded-lg border border-red-200 bg-red-50 px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {selected.size > 0 ? `Delete (${selected.size})` : "Delete Selection"}
           </LoadingButton>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2 text-sm">
-        <button
-          type="button"
-          onClick={() => setShowAdd(true)}
-          className="rounded border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800"
-        >
-          + Add Row
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowBulkAdd(true)}
-          className="rounded border border-emerald-400 bg-emerald-100 px-3 py-1.5 font-semibold text-emerald-900 hover:bg-emerald-200"
-        >
-          Bulk Add Rows
-        </button>
-        <button
-          type="button"
-          onClick={() => void runHistory("undo")}
-          disabled={!canUndo(history) || histBusy}
-          title={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
-          className="rounded border px-3 py-1.5 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ↶ Undo
-        </button>
-        <button
-          type="button"
-          onClick={() => void runHistory("redo")}
-          disabled={!canRedo(history) || histBusy}
-          title={canRedo(history) ? `Redo ${redoLabel(history)} (Ctrl/Cmd+Shift+Z)` : "Nothing to redo"}
-          className="rounded border px-3 py-1.5 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ↷ Redo
-        </button>
-        <input className="min-w-60 flex-1 rounded border px-3 py-1.5" placeholder="Search..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); setPinnedOrder(null); }} />
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowFlagMenu((v) => !v)}
-            className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-sm font-medium ${
-              selectedFlags.size > 0 ? "border-indigo-400 bg-indigo-50 text-indigo-900" : "bg-white text-slate-700"
-            }`}
-            aria-expanded={showFlagMenu}
-            aria-haspopup="dialog"
-          >
-            <span>Flags</span>
-            {selectedFlags.size > 0 && (
-              <span className="rounded-full bg-indigo-600 px-1.5 py-0.2 text-[10px] font-semibold text-white">
-                {selectedFlags.size}
-              </span>
-            )}
-            <span className="text-xs text-slate-500">▾</span>
-          </button>
-          {showFlagMenu && (
-            <div
-              ref={flagMenuRef}
-              className="absolute left-0 top-full z-40 mt-1 min-w-56 rounded-lg border bg-white p-2 shadow-xl text-xs"
-            >
-              <div className="flex items-center justify-between border-b pb-1.5 font-semibold text-slate-700">
-                <span>Filter by flag:</span>
-                {selectedFlags.size > 0 && (
-                  <button
-                    type="button"
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={clearFlagFilter}
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-col gap-1 py-1.5 max-h-60 overflow-y-auto">
-                {availableFlags.length === 0 ? (
-                  <span className="text-slate-400 px-1">No flags in worksheet</span>
-                ) : (
-                  availableFlags.map((flag) => {
-                    const count = flagCounts.get(flag) ?? 0;
-                    const isChecked = selectedFlags.has(flag);
-                    return (
-                      <label
-                        key={flag}
-                        className="flex cursor-pointer items-center justify-between rounded px-2 py-1 hover:bg-slate-100"
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleFlagFilter(flag)}
-                            className="rounded border-slate-300 text-indigo-600"
-                          />
-                          <span>{flag}</span>
-                        </div>
-                        <span className="text-slate-400 font-mono">({count})</span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-              {availableFlags.length > 0 && (
-                <div className="flex justify-between border-t pt-1.5">
-                  <button
-                    type="button"
-                    className="text-xs text-slate-600 hover:underline"
-                    onClick={() => {
-                      setSelectedFlags(new Set(availableFlags));
-                      setPage(1);
-                      setPinnedOrder(null);
-                    }}
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    className="text-xs text-slate-600 hover:underline"
-                    onClick={() => setShowFlagMenu(false)}
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+
+      {msg && (
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+          <span className="font-semibold text-slate-900">Notice:</span> {msg}
         </div>
-        <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); setPinnedOrder(null); }}>
-          <option value="all">All rows</option>
-          <option value="unmatched">Unmatched</option>
-          <option value="notfound">Not Found</option>
-          <option value="changed">Price Changed</option>
-          <option value="inactive">Inactive</option>
-          <option value="missing">Vendor price missing</option>
-          <option value="custom">Custom</option>
-        </select>
-        <LoadingButton
-          busy={lowerBusy}
-          busyLabel="Applying..."
-          disabled={selected.size === 0}
-          onClick={() => setConfirmLower(true)}
-          title={
-            selected.size === 0
-              ? "Select rows with the checkboxes first"
-              : lowerCount === 0
-                ? "None of the selected products have a lower Nearest 9 price."
-                : `Set Old Retail Price as the Custom Nearest 9 for ${lowerCount} selected product${lowerCount === 1 ? "" : "s"}`
-          }
-          className="rounded border border-violet-300 bg-violet-50 px-3 py-1.5 font-semibold text-violet-800 disabled:opacity-50"
-        >
-          {selected.size > 0 && lowerCount > 0
-            ? `Set Lower Prices to Old Retail (${lowerCount} of ${selected.size} selected)`
-            : selected.size > 0
-              ? `Set Lower Prices to Old Retail (${selected.size} selected)`
-              : "Set Lower Prices to Old Retail"}
-        </LoadingButton>
-        <LoadingButton
-          busy={bulkBusy}
-          busyLabel="Deleting..."
-          disabled={selected.size === 0}
-          onClick={() => setConfirmBulk(true)}
-          className="rounded border border-red-200 bg-red-50 px-3 py-1.5 font-semibold text-red-700 disabled:opacity-50"
-        >
-          {selected.size > 0 ? `Delete Selection (${selected.size})` : "Delete Selection"}
-        </LoadingButton>
-      </div>
-      {msg && <div className="text-sm text-slate-600">{msg}</div>}
-      {fillBusy && <div className="text-sm text-slate-500">Copying value to selected rows...</div>}
-      <div ref={gridContainerRef}>
+      )}
+      {fillBusy && (
+        <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-700 animate-pulse">
+          Copying value to selected rows...
+        </div>
+      )}
+
+      {/* 3. Worksheet Table Area */}
+      <div ref={gridContainerRef} className="rounded-xl border border-slate-200/90 bg-white overflow-hidden shadow-xs">
         <PriceGrid
           rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
           selected={selected} onToggle={toggleOne} onToggleAll={togglePageVisible}
@@ -1286,6 +1382,35 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           onClearFlags={clearFlagFilter}
         />
       </div>
+
+      {/* 4. Compact Pagination Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white px-3.5 py-2 text-xs shadow-xs">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={page <= 1}
+            className="h-7 rounded-md border border-slate-200 bg-white px-2.5 font-medium text-slate-700 shadow-2xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            onClick={() => goToPage(page - 1)}
+          >
+            ← Prev
+          </button>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            className="h-7 rounded-md border border-slate-200 bg-white px-2.5 font-medium text-slate-700 shadow-2xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            onClick={() => goToPage(page + 1)}
+          >
+            Next →
+          </button>
+        </div>
+        <div className="font-medium text-slate-700">
+          Page {page} of {totalPages} · {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} products
+        </div>
+        <div className="text-slate-400">
+          {pageSize} products per page
+        </div>
+      </div>
+
       {showAdd && (
         <AddItemDialog
           busy={addBusy}
@@ -1369,25 +1494,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           </div>
         </div>
       )}
-      <div className="flex items-center gap-3 text-sm">
-        <button
-          disabled={page <= 1}
-          className="rounded border px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
-          onClick={() => goToPage(page - 1)}
-        >
-          Prev
-        </button>
-        <span className="font-medium text-slate-700">
-          Page {page} of {totalPages} · {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} products
-        </span>
-        <button
-          disabled={page >= totalPages}
-          className="rounded border px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
-          onClick={() => goToPage(page + 1)}
-        >
-          Next
-        </button>
-      </div>
+
       {noteRow && (
         <NotesModal
           title={`Notes — ${noteRow.productName || noteRow.cleanedSku || noteRow.rawVendorSku || "product"}`}
@@ -1399,50 +1506,96 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           onClose={() => { if (!noteBusy) setNoteRow(null); }}
         />
       )}
-      <section aria-label="Price Sheet Notes" className="rounded-xl border bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-bold">Price Sheet Notes</h2>
-          {!sheetNotesEditing && (
-            <button
-              type="button"
-              className="rounded border px-3 py-1.5 text-sm font-semibold text-slate-700"
-              onClick={() => { setSheetNotesDraft(sheetNotes); setSheetNotesEditing(true); }}
+
+      {/* 5. Collapsible Price Sheet Notes (Collapsed by default) */}
+      <section aria-label="Price Sheet Notes" className="rounded-xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setNotesExpanded((v) => !v)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setNotesExpanded((v) => !v); } }}
+          className="flex cursor-pointer items-center justify-between px-4 py-3 hover:bg-slate-50/70 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className="text-slate-400 text-xs transition-transform duration-200"
+              style={{ display: "inline-block", transform: notesExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
             >
-              {sheetNotes ? "Edit" : "Add notes"}
-            </button>
-          )}
-        </div>
-        <p className="mt-1 text-sm text-slate-600">
-          General notes for this entire price update (e.g. vendor comparisons). Markdown supported — including tables — with no changes to the table structure.
-        </p>
-        {sheetNotesEditing ? (
-          <div className="mt-3">
-            <MarkdownEditor value={sheetNotesDraft} onChange={setSheetNotesDraft} />
-            <div className="mt-3 flex justify-end gap-2">
+              ▶
+            </span>
+            <h2 className="text-sm font-semibold text-slate-800">Price Sheet Notes</h2>
+            {sheetNotes ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                Notes attached
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400">
+                (empty)
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {!sheetNotesEditing && (
               <button
                 type="button"
-                className="rounded border px-3 py-1.5 text-sm disabled:opacity-60"
-                disabled={sheetNotesBusy}
-                onClick={() => setSheetNotesEditing(false)}
+                className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+                onClick={() => {
+                  setSheetNotesDraft(sheetNotes);
+                  setSheetNotesEditing(true);
+                  setNotesExpanded(true);
+                }}
               >
-                Cancel
+                {sheetNotes ? "Edit Notes" : "+ Add Notes"}
               </button>
-              <LoadingButton
-                busy={sheetNotesBusy}
-                busyLabel="Saving..."
-                onClick={saveSheetNotes}
-                className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                Save Notes
-              </LoadingButton>
-            </div>
+            )}
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-500 hover:text-slate-800"
+              onClick={() => setNotesExpanded((v) => !v)}
+              aria-expanded={notesExpanded}
+            >
+              {notesExpanded ? "Collapse" : "Expand"}
+            </button>
           </div>
-        ) : sheetNotes ? (
-          <div className="mt-3 rounded border bg-slate-50 px-3 py-2">
-            <MarkdownDoc source={sheetNotes} />
+        </div>
+
+        {notesExpanded && (
+          <div className="border-t border-slate-100 p-4">
+            <p className="text-xs text-slate-500">
+              General notes for this entire price update (e.g. vendor comparisons). Markdown supported — including tables — with no changes to the table structure.
+            </p>
+            {sheetNotesEditing ? (
+              <div className="mt-3">
+                <MarkdownEditor value={sheetNotesDraft} onChange={setSheetNotesDraft} />
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                    disabled={sheetNotesBusy}
+                    onClick={() => setSheetNotesEditing(false)}
+                  >
+                    Cancel
+                  </button>
+                  <LoadingButton
+                    busy={sheetNotesBusy}
+                    busyLabel="Saving..."
+                    onClick={saveSheetNotes}
+                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    Save Notes
+                  </LoadingButton>
+                </div>
+              </div>
+            ) : sheetNotes ? (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/50 p-3 text-xs">
+                <MarkdownDoc source={sheetNotes} />
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-slate-400">
+                No price sheet notes yet. Click “+ Add Notes” to record vendor comparisons or general remarks.
+              </p>
+            )}
           </div>
-        ) : (
-          <p className="mt-3 text-sm text-slate-400">No price sheet notes yet. Use “Add notes” to record vendor comparisons or general remarks.</p>
         )}
       </section>
       {askSync && (
