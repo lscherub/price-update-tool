@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "rea
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast, InlineSpinner } from "@/components/Toast";
+import { useUiMode } from "@/contexts/UiModeContext";
 
 type VendorRow = { id: string; vendor: string; defaultDiscount: string };
 type BrandRow = { id: string; brand: string; vendor: string; defaultDiscount: string };
@@ -91,6 +92,8 @@ function NameSuggest({ label, value, onPick, endpoint, kind, disabled }: {
 
 export default function VendorsPage() {
   const toast = useToast();
+  const { mode } = useUiMode();
+  const [activeFormTab, setActiveFormTab] = useState<"vendor" | "brand">("vendor");
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<VendorRow[]>([]);
   const [brandRows, setBrandRows] = useState<BrandRow[]>([]);
@@ -355,158 +358,534 @@ export default function VendorsPage() {
     setVendor(""); setDiscount(""); setBrand(""); setBrandVendor(""); setBrandDiscount("");
   };
 
-  return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold">Vendor Discounts</h1>
-      <div className="flex gap-2">
-        <input className="w-full max-w-md rounded border px-3 py-2 disabled:opacity-60" placeholder="Search vendors..." disabled={loading || saving} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} />
-        <LoadingButton busy={loading} busyLabel="Searching..." onClick={search} className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-60">
-          Search
-        </LoadingButton>
+  // ==========================================
+  // CLASSIC UI MODE (Preserved pixel-perfect)
+  // ==========================================
+  if (mode === "classic") {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-2xl font-bold">Vendor Discounts</h1>
+        <div className="flex gap-2">
+          <input className="w-full max-w-md rounded border px-3 py-2 disabled:opacity-60" placeholder="Search vendors..." disabled={loading || saving} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} />
+          <LoadingButton busy={loading} busyLabel="Searching..." onClick={search} className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-60">
+            Search
+          </LoadingButton>
+        </div>
+        {msg && <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{msg}</div>}
+        {loading && <InlineSpinner label="Loading vendor discounts..." />}
+        <form
+          className="flex flex-wrap items-end gap-2 rounded-xl border bg-white p-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await save();
+          }}
+        >
+          <label className="flex flex-col text-sm">Vendor
+            <NameSuggest label="Vendor" value={vendor} onPick={setVendor} endpoint="/api/vendors/options" kind="vendor" disabled={saving} />
+          </label>
+          <datalist id="vendor-discount-vendors">
+            {rows.map((r) => <option key={r.id} value={r.vendor} />)}
+          </datalist>
+          <label className="flex flex-col text-sm">Default Discount (%)<input className="rounded border px-2 py-1 disabled:opacity-60" value={discount} disabled={saving} onChange={(e) => setDiscount(e.target.value)} placeholder="10" /></label>
+          <LoadingButton type="submit" busy={saving} busyLabel="Saving..." className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-60">
+            Add / Update
+          </LoadingButton>
+          {editing?.kind === "vendor" && (
+            <button type="button" className="rounded border px-3 py-2 text-sm" onClick={cancelEditing}>Cancel edit</button>
+          )}
+        </form>
+        <form
+          className="flex flex-wrap items-end gap-2 rounded-xl border bg-white p-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await saveBrand();
+          }}
+        >
+          <label className="flex flex-col text-sm">Brand
+            <NameSuggest label="Brand" value={brand} onPick={setBrand} endpoint="/api/vendors/brands/options" kind="brand" disabled={savingBrand} />
+          </label>
+          <datalist id="brand-discount-brands">
+            {[...new Set(brandRows.map((b) => b.brand))].sort((a, b) => a.localeCompare(b)).map((b) => <option key={b} value={b} />)}
+          </datalist>
+          <label className="flex flex-col text-sm">Vendor (link the brand to a vendor)
+            <NameSuggest label="Vendor" value={brandVendor} onPick={setBrandVendor} endpoint="/api/vendors/options" kind="vendor" disabled={savingBrand} />
+          </label>
+          <label className="flex flex-col text-sm">Default Discount (%)<input className="rounded border px-2 py-1 disabled:opacity-60" value={brandDiscount} disabled={savingBrand} onChange={(e) => setBrandDiscount(e.target.value)} placeholder="5" /></label>
+          <LoadingButton type="submit" busy={savingBrand} busyLabel="Saving..." className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-60">
+            Add / Update
+          </LoadingButton>
+          {editing?.kind === "brand" && (
+            <button type="button" className="rounded border px-3 py-2 text-sm" onClick={cancelEditing}>Cancel edit</button>
+          )}
+        </form>
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold text-slate-600">Active filters:</span>
+            {activeFilters.map((f) => <FilterChip key={f.label} label={f.label} onClear={f.clear} />)}
+            <button
+              className="rounded border px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
+              onClick={() => { setFVendor(""); setFBrand(""); setFDiscount(""); setQ(""); void fetchAll(""); }}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+        <div className="overflow-auto rounded-xl border bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr className="text-left">
+                <th className="relative px-4 py-2">
+                  <span className="inline-flex items-center gap-1">
+                    Vendor / Brand
+                    {sortKey === "name" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "A" : "Z"}</span>}
+                    <button type="button" aria-label="Sort Vendor / Brand" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "name" ? null : "name")}>v</button>
+                  </span>
+                  {openMenu === "name" && (
+                    <div ref={menuRef} role="menu" aria-label="Sort Vendor / Brand" className="absolute left-0 top-full z-30 min-w-60 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
+                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
+                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
+                      <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                      <div className="border-t px-3 py-2">
+                        <label className="mb-1 block font-semibold">Filter Vendor</label>
+                        <input className="w-full rounded border px-2 py-1" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
+                      </div>
+                      <div className="border-t px-3 py-2">
+                        <label className="mb-1 block font-semibold">Filter Brand</label>
+                        <input className="w-full rounded border px-2 py-1" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </th>
+                <th className="relative px-4 py-2">
+                  <span className="inline-flex items-center gap-1">
+                    Default Discount
+                    {sortKey === "discount" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "lo" : "hi"}</span>}
+                    <button type="button" aria-label="Sort Default Discount" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "discount" ? null : "discount")}>v</button>
+                  </span>
+                  {openMenu === "discount" && (
+                    <div ref={menuRef} role="menu" aria-label="Sort Default Discount" className="absolute left-0 top-full z-30 min-w-60 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
+                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
+                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
+                      <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                      <div className="border-t px-3 py-2">
+                        <label className="mb-1 block font-semibold">Filter Discount</label>
+                        <input className="w-full rounded border px-2 py-1" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </th>
+                <th className="px-4 py-2"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <Fragment key={g.vendor?.id ?? `novendor:${norm(g.brands[0]?.vendor ?? "")}`}>
+                  {g.vendor ? (
+                    <tr key={g.vendor.id} className="border-t bg-slate-50 font-semibold">
+                      <td className="px-4 py-2">{g.vendor.vendor}</td>
+                      <td className="px-4 py-2">{g.vendor.defaultDiscount}%</td>
+                      <td className="px-4 py-2 text-right">
+                        <button disabled={!!deletingId} onClick={() => startVendorEdit(g.vendor!)} className="mr-3 text-xs text-blue-700 underline disabled:opacity-40">Edit</button>
+                        <button disabled={!!deletingId} onClick={() => remove(g.vendor!.id, g.vendor!.vendor)} className="text-xs text-red-600 underline disabled:opacity-40">
+                          {deletingId === g.vendor!.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={`novendor:${norm(g.brands[0]?.vendor ?? "")}`} className="border-t bg-slate-50 font-semibold">
+                      <td className="px-4 py-2">{g.brands[0]?.vendor} <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">no vendor default</span></td>
+                      <td className="px-4 py-2 text-slate-400">-</td>
+                      <td className="px-4 py-2" />
+                    </tr>
+                  )}
+                  {g.brands.map((b) => (
+                    <tr key={b.id} className="border-t border-slate-100 bg-white">
+                      <td className="px-4 py-2 pl-8 text-slate-700">{b.brand}</td>
+                      <td className="px-4 py-2 text-slate-700">{b.defaultDiscount}%</td>
+                      <td className="px-4 py-2 text-right">
+                        <button disabled={!!deletingId} onClick={() => startBrandEdit(b)} className="mr-3 text-xs text-blue-700 underline disabled:opacity-40">Edit</button>
+                        <button disabled={!!deletingId} onClick={() => removeBrand(b.id, `${b.brand} / ${b.vendor}`)} className="text-xs text-red-600 underline disabled:opacity-40">
+                          {deletingId === b.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+              {groups.length === 0 && (
+                <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">No discounts found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-      {msg && <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{msg}</div>}
-      {loading && <InlineSpinner label="Loading vendor discounts..." />}
-      <form
-        className="flex flex-wrap items-end gap-2 rounded-xl border bg-white p-4"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          await save();
-        }}
-      >
-        <label className="flex flex-col text-sm">Vendor
-          <NameSuggest label="Vendor" value={vendor} onPick={setVendor} endpoint="/api/vendors/options" kind="vendor" disabled={saving} />
-        </label>
-        <datalist id="vendor-discount-vendors">
-          {rows.map((r) => <option key={r.id} value={r.vendor} />)}
-        </datalist>
-        <label className="flex flex-col text-sm">Default Discount (%)<input className="rounded border px-2 py-1 disabled:opacity-60" value={discount} disabled={saving} onChange={(e) => setDiscount(e.target.value)} placeholder="10" /></label>
-        <LoadingButton type="submit" busy={saving} busyLabel="Saving..." className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-60">
-          Add / Update
-        </LoadingButton>
-        {editing?.kind === "vendor" && (
-          <button type="button" className="rounded border px-3 py-2 text-sm" onClick={cancelEditing}>Cancel edit</button>
-        )}
-      </form>
-      <form
-        className="flex flex-wrap items-end gap-2 rounded-xl border bg-white p-4"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          await saveBrand();
-        }}
-      >
-        <label className="flex flex-col text-sm">Brand
-          <NameSuggest label="Brand" value={brand} onPick={setBrand} endpoint="/api/vendors/brands/options" kind="brand" disabled={savingBrand} />
-        </label>
-        <datalist id="brand-discount-brands">
-          {[...new Set(brandRows.map((b) => b.brand))].sort((a, b) => a.localeCompare(b)).map((b) => <option key={b} value={b} />)}
-        </datalist>
-        <label className="flex flex-col text-sm">Vendor (link the brand to a vendor)
-          <NameSuggest label="Vendor" value={brandVendor} onPick={setBrandVendor} endpoint="/api/vendors/options" kind="vendor" disabled={savingBrand} />
-        </label>
-        <label className="flex flex-col text-sm">Default Discount (%)<input className="rounded border px-2 py-1 disabled:opacity-60" value={brandDiscount} disabled={savingBrand} onChange={(e) => setBrandDiscount(e.target.value)} placeholder="5" /></label>
-        <LoadingButton type="submit" busy={savingBrand} busyLabel="Saving..." className="rounded bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-60">
-          Add / Update
-        </LoadingButton>
-        {editing?.kind === "brand" && (
-          <button type="button" className="rounded border px-3 py-2 text-sm" onClick={cancelEditing}>Cancel edit</button>
-        )}
-      </form>
-      {activeFilters.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold text-slate-600">Active filters:</span>
-          {activeFilters.map((f) => <FilterChip key={f.label} label={f.label} onClear={f.clear} />)}
-          <button
-            className="rounded border px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
-            onClick={() => { setFVendor(""); setFBrand(""); setFDiscount(""); setQ(""); void fetchAll(""); }}
-          >
-            Clear all
-          </button>
+    );
+  }
+
+  // ==========================================
+  // NEW UI MODE (Modernized layout)
+  // ==========================================
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+              Vendor Discounts & Brand Rules
+            </h1>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
+              {rows.length} Vendors • {brandRows.length} Brand Overrides
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+            Define default vendor discounts and brand-specific overrides applied across all price worksheets and calculations.
+          </p>
+        </div>
+      </div>
+
+      {msg && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-medium text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          {msg}
         </div>
       )}
-      <div className="overflow-auto rounded-xl border bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr className="text-left">
-              <th className="relative px-4 py-2">
+
+      {/* Add / Edit Form Card with Tabs */}
+      <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
+        <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
+          <button
+            type="button"
+            onClick={() => { setActiveFormTab("vendor"); if (editing?.kind === "brand") cancelEditing(); }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+              activeFormTab === "vendor"
+                ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
+                : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
+            }`}
+          >
+            🏢 Vendor Default Discount
+          </button>
+          <button
+            type="button"
+            onClick={() => { setActiveFormTab("brand"); if (editing?.kind === "vendor") cancelEditing(); }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+              activeFormTab === "brand"
+                ? "bg-white text-slate-900 shadow-xs dark:bg-zinc-800 dark:text-white"
+                : "text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
+            }`}
+          >
+            🏷️ Brand-Specific Override
+          </button>
+        </div>
+
+        <div className="p-4">
+          {activeFormTab === "vendor" ? (
+            <form
+              className="flex flex-wrap items-end gap-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await save();
+              }}
+            >
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700 dark:text-zinc-300">
+                Vendor Name
+                <NameSuggest label="Vendor" value={vendor} onPick={setVendor} endpoint="/api/vendors/options" kind="vendor" disabled={saving} />
+              </label>
+              <datalist id="vendor-discount-vendors">
+                {rows.map((r) => <option key={r.id} value={r.vendor} />)}
+              </datalist>
+
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700 dark:text-zinc-300">
+                Default Discount (%)
+                <div className="relative">
+                  <input
+                    className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 pl-2.5 pr-6 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    value={discount}
+                    disabled={saving}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    placeholder="e.g. 15"
+                  />
+                  <span className="absolute inset-y-0 right-0 flex items-center pr-2 text-xs text-slate-400">%</span>
+                </div>
+              </label>
+
+              <LoadingButton
+                type="submit"
+                busy={saving}
+                busyLabel="Saving..."
+                className="h-8.5 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white shadow-xs hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+              >
+                {editing?.kind === "vendor" ? "Update Vendor Discount" : "+ Add Vendor Discount"}
+              </LoadingButton>
+
+              {editing?.kind === "vendor" && (
+                <button
+                  type="button"
+                  className="h-8.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300"
+                  onClick={cancelEditing}
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </form>
+          ) : (
+            <form
+              className="flex flex-wrap items-end gap-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await saveBrand();
+              }}
+            >
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700 dark:text-zinc-300">
+                Brand Name
+                <NameSuggest label="Brand" value={brand} onPick={setBrand} endpoint="/api/vendors/brands/options" kind="brand" disabled={savingBrand} />
+              </label>
+              <datalist id="brand-discount-brands">
+                {[...new Set(brandRows.map((b) => b.brand))].sort((a, b) => a.localeCompare(b)).map((b) => <option key={b} value={b} />)}
+              </datalist>
+
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700 dark:text-zinc-300">
+                Parent Vendor
+                <NameSuggest label="Vendor" value={brandVendor} onPick={setBrandVendor} endpoint="/api/vendors/options" kind="vendor" disabled={savingBrand} />
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs font-medium text-slate-700 dark:text-zinc-300">
+                Brand Discount (%)
+                <div className="relative">
+                  <input
+                    className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 pl-2.5 pr-6 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    value={brandDiscount}
+                    disabled={savingBrand}
+                    onChange={(e) => setBrandDiscount(e.target.value)}
+                    placeholder="e.g. 20"
+                  />
+                  <span className="absolute inset-y-0 right-0 flex items-center pr-2 text-xs text-slate-400">%</span>
+                </div>
+              </label>
+
+              <LoadingButton
+                type="submit"
+                busy={savingBrand}
+                busyLabel="Saving..."
+                className="h-8.5 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white shadow-xs hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+              >
+                {editing?.kind === "brand" ? "Update Brand Override" : "+ Add Brand Override"}
+              </LoadingButton>
+
+              {editing?.kind === "brand" && (
+                <button
+                  type="button"
+                  className="h-8.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300"
+                  onClick={cancelEditing}
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </form>
+          )}
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-1 items-center gap-2 max-w-md">
+          <input
+            className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            placeholder="Search vendors..."
+            disabled={loading || saving}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && search()}
+          />
+          <LoadingButton
+            busy={loading}
+            busyLabel="Searching..."
+            onClick={search}
+            className="h-8.5 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white shadow-xs hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+          >
+            Search
+          </LoadingButton>
+        </div>
+
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {activeFilters.map((f) => (
+              <FilterChip key={f.label} label={f.label} onClear={f.clear} />
+            ))}
+            <button
+              className="text-[11px] text-slate-500 hover:underline"
+              onClick={() => { setFVendor(""); setFBrand(""); setFDiscount(""); setQ(""); void fetchAll(""); }}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+      </div>
+
+      {loading && <InlineSpinner label="Loading vendor discounts..." />}
+
+      {/* Hierarchy Table */}
+      <div className="overflow-auto rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
+              <th className="relative px-5 py-3">
                 <span className="inline-flex items-center gap-1">
                   Vendor / Brand
-                  {sortKey === "name" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "A" : "Z"}</span>}
-                  <button type="button" aria-label="Sort Vendor / Brand" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "name" ? null : "name")}>v</button>
+                  {sortKey === "name" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? " (A-Z)" : " (Z-A)"}</span>}
+                  <button
+                    type="button"
+                    aria-label="Sort Vendor / Brand"
+                    className="rounded px-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700"
+                    onClick={() => setOpenMenu(openMenu === "name" ? null : "name")}
+                  >
+                    ▾
+                  </button>
                 </span>
                 {openMenu === "name" && (
-                  <div ref={menuRef} role="menu" aria-label="Sort Vendor / Brand" className="absolute left-0 top-full z-30 min-w-60 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
-                    <div className="border-t px-3 py-2">
-                      <label className="mb-1 block font-semibold">Filter Vendor</label>
-                      <input className="w-full rounded border px-2 py-1" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
+                  <div
+                    ref={menuRef}
+                    role="menu"
+                    aria-label="Sort Vendor / Brand"
+                    className="absolute left-0 top-full z-30 min-w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-normal shadow-xl dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
+                      <label className="mb-1 block font-semibold text-[11px]">Filter Vendor</label>
+                      <input className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
                     </div>
-                    <div className="border-t px-3 py-2">
-                      <label className="mb-1 block font-semibold">Filter Brand</label>
-                      <input className="w-full rounded border px-2 py-1" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
+                    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
+                      <label className="mb-1 block font-semibold text-[11px]">Filter Brand</label>
+                      <input className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
                     </div>
                   </div>
                 )}
               </th>
-              <th className="relative px-4 py-2">
+              <th className="relative px-5 py-3">
                 <span className="inline-flex items-center gap-1">
                   Default Discount
-                  {sortKey === "discount" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "lo" : "hi"}</span>}
-                  <button type="button" aria-label="Sort Default Discount" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "discount" ? null : "discount")}>v</button>
+                  {sortKey === "discount" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? " (Low-High)" : " (High-Low)"}</span>}
+                  <button
+                    type="button"
+                    aria-label="Sort Default Discount"
+                    className="rounded px-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700"
+                    onClick={() => setOpenMenu(openMenu === "discount" ? null : "discount")}
+                  >
+                    ▾
+                  </button>
                 </span>
                 {openMenu === "discount" && (
-                  <div ref={menuRef} role="menu" aria-label="Sort Default Discount" className="absolute left-0 top-full z-30 min-w-60 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
-                    <div className="border-t px-3 py-2">
-                      <label className="mb-1 block font-semibold">Filter Discount</label>
-                      <input className="w-full rounded border px-2 py-1" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
+                  <div
+                    ref={menuRef}
+                    role="menu"
+                    aria-label="Sort Default Discount"
+                    className="absolute left-0 top-full z-30 min-w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-normal shadow-xl dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
+                      <label className="mb-1 block font-semibold text-[11px]">Filter Discount</label>
+                      <input className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
                     </div>
                   </div>
                 )}
               </th>
-              <th className="px-4 py-2"><span className="sr-only">Actions</span></th>
+              <th className="px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
             {groups.map((g) => (
               <Fragment key={g.vendor?.id ?? `novendor:${norm(g.brands[0]?.vendor ?? "")}`}>
                 {g.vendor ? (
-                  <tr key={g.vendor.id} className="border-t bg-slate-50 font-semibold">
-                    <td className="px-4 py-2">{g.vendor.vendor}</td>
-                    <td className="px-4 py-2">{g.vendor.defaultDiscount}%</td>
-                    <td className="px-4 py-2 text-right">
-                      <button disabled={!!deletingId} onClick={() => startVendorEdit(g.vendor!)} className="mr-3 text-xs text-blue-700 underline disabled:opacity-40">Edit</button>
-                      <button disabled={!!deletingId} onClick={() => remove(g.vendor!.id, g.vendor!.vendor)} className="text-xs text-red-600 underline disabled:opacity-40">
-                        {deletingId === g.vendor!.id ? "Deleting..." : "Delete"}
-                      </button>
+                  <tr key={g.vendor.id} className="bg-slate-50/70 font-semibold dark:bg-zinc-800/40">
+                    <td className="px-5 py-3 text-slate-900 dark:text-white">
+                      <div className="flex items-center gap-2">
+                        <span>🏢</span>
+                        <span>{g.vendor.vendor}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="inline-flex rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:border-indigo-800 dark:text-indigo-300">
+                        {g.vendor.defaultDiscount}%
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          disabled={!!deletingId}
+                          onClick={() => { startVendorEdit(g.vendor!); setActiveFormTab("vendor"); }}
+                          className="rounded border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          disabled={!!deletingId}
+                          onClick={() => remove(g.vendor!.id, g.vendor!.vendor)}
+                          className="rounded border border-red-200 bg-red-50/60 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 dark:border-red-900 dark:bg-red-950 dark:text-red-400"
+                        >
+                          {deletingId === g.vendor!.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  <tr key={`novendor:${norm(g.brands[0]?.vendor ?? "")}`} className="border-t bg-slate-50 font-semibold">
-                    <td className="px-4 py-2">{g.brands[0]?.vendor} <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">no vendor default</span></td>
-                    <td className="px-4 py-2 text-slate-400">-</td>
-                    <td className="px-4 py-2" />
+                  <tr key={`novendor:${norm(g.brands[0]?.vendor ?? "")}`} className="bg-slate-50/70 font-semibold dark:bg-zinc-800/40">
+                    <td className="px-5 py-3 text-slate-900 dark:text-white">
+                      <div className="flex items-center gap-2">
+                        <span>🏢</span>
+                        <span>{g.brands[0]?.vendor}</span>
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          No Vendor Default Set
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-slate-400">—</td>
+                    <td className="px-5 py-3 text-right" />
                   </tr>
                 )}
                 {g.brands.map((b) => (
-                  <tr key={b.id} className="border-t border-slate-100 bg-white">
-                    <td className="px-4 py-2 pl-8 text-slate-700">{b.brand}</td>
-                    <td className="px-4 py-2 text-slate-700">{b.defaultDiscount}%</td>
-                    <td className="px-4 py-2 text-right">
-                      <button disabled={!!deletingId} onClick={() => startBrandEdit(b)} className="mr-3 text-xs text-blue-700 underline disabled:opacity-40">Edit</button>
-                      <button disabled={!!deletingId} onClick={() => removeBrand(b.id, `${b.brand} / ${b.vendor}`)} className="text-xs text-red-600 underline disabled:opacity-40">
-                        {deletingId === b.id ? "Deleting..." : "Delete"}
-                      </button>
+                  <tr key={b.id} className="transition-colors hover:bg-slate-50/50 dark:hover:bg-zinc-800/30">
+                    <td className="px-5 py-2.5 pl-12 text-slate-700 dark:text-zinc-300">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">└─</span>
+                        <span className="font-medium">{b.brand}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-2.5">
+                      <span className="inline-flex rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-300">
+                        {b.defaultDiscount}% override
+                      </span>
+                    </td>
+                    <td className="px-5 py-2.5 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          disabled={!!deletingId}
+                          onClick={() => { startBrandEdit(b); setActiveFormTab("brand"); }}
+                          className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          disabled={!!deletingId}
+                          onClick={() => removeBrand(b.id, `${b.brand} / ${b.vendor}`)}
+                          className="rounded border border-red-200 bg-red-50/60 px-2 py-0.5 text-xs text-red-600 hover:bg-red-100 disabled:opacity-40 dark:border-red-900 dark:bg-red-950 dark:text-red-400"
+                        >
+                          {deletingId === b.id ? "..." : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </Fragment>
             ))}
             {groups.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-500">No discounts found.</td></tr>
+              <tr>
+                <td colSpan={3} className="px-5 py-8 text-center text-slate-600 dark:text-zinc-300">
+                  No discounts found. Add your first vendor discount above.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

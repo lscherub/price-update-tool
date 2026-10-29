@@ -2,32 +2,148 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-subtle: #eef2ff;
+  --accent-border: #c7d2fe;
+  --accent-text: #4338ca;
+  --table-py: 0.5rem;
+  --table-px: 0.75rem;
+  --table-text-size: 0.8125rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Accent Color Variations */
+[data-ui-accent="indigo"] {
+  --accent-primary: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-subtle: #eef2ff;
+  --accent-border: #c7d2fe;
+  --accent-text: #4338ca;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-ui-accent="blue"] {
+  --accent-primary: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-subtle: #eff6ff;
+  --accent-border: #bfdbfe;
+  --accent-text: #1d4ed8;
+}
+
+[data-ui-accent="emerald"] {
+  --accent-primary: #059669;
+  --accent-hover: #047857;
+  --accent-subtle: #ecfdf5;
+  --accent-border: #a7f3d0;
+  --accent-text: #047857;
+}
+
+[data-ui-accent="violet"] {
+  --accent-primary: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-subtle: #f5f3ff;
+  --accent-border: #ddd6fe;
+  --accent-text: #6d28d9;
+}
+
+[data-ui-accent="slate"] {
+  --accent-primary: #334155;
+  --accent-hover: #1e293b;
+  --accent-subtle: #f1f5f9;
+  --accent-border: #cbd5e1;
+  --accent-text: #0f172a;
+}
+
+/* Density Settings */
+[data-ui-density="compact"] {
+  --table-py: 0.25rem;
+  --table-px: 0.5rem;
+  --table-text-size: 0.75rem;
+}
+
+[data-ui-density="comfortable"] {
+  --table-py: 0.5rem;
+  --table-px: 0.75rem;
+  --table-text-size: 0.8125rem;
+}
+
+[data-ui-density="spacious"] {
+  --table-py: 0.75rem;
+  --table-px: 1rem;
+  --table-text-size: 0.875rem;
+}
+
+/* Dark Mode Tokens for New UI */
+html.dark[data-ui-mode="new"] {
+  --background: #090d16;
+  --foreground: #f1f5f9;
+}
+
+html.dark[data-ui-mode="new"] [data-ui-accent="indigo"] {
+  --accent-primary: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-subtle: rgba(99, 102, 241, 0.15);
+  --accent-border: rgba(99, 102, 241, 0.35);
+  --accent-text: #a5b4fc;
+}
+
+html.dark[data-ui-mode="new"] [data-ui-accent="blue"] {
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-subtle: rgba(59, 130, 246, 0.15);
+  --accent-border: rgba(59, 130, 246, 0.35);
+  --accent-text: #93c5fd;
+}
+
+html.dark[data-ui-mode="new"] [data-ui-accent="emerald"] {
+  --accent-primary: #10b981;
+  --accent-hover: #059669;
+  --accent-subtle: rgba(16, 185, 129, 0.15);
+  --accent-border: rgba(16, 185, 129, 0.35);
+  --accent-text: #6ee7b7;
+}
+
+html.dark[data-ui-mode="new"] [data-ui-accent="violet"] {
+  --accent-primary: #8b5cf6;
+  --accent-hover: #7c3aed;
+  --accent-subtle: rgba(139, 92, 246, 0.15);
+  --accent-border: rgba(139, 92, 246, 0.35);
+  --accent-text: #c4b5fd;
+}
+
+html.dark[data-ui-mode="new"] [data-ui-accent="slate"] {
+  --accent-primary: #94a3b8;
+  --accent-hover: #cbd5e1;
+  --accent-subtle: rgba(148, 163, 184, 0.15);
+  --accent-border: rgba(148, 163, 184, 0.35);
+  --accent-text: #e2e8f0;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.6);
 }
 
 /* Rendered Markdown (product Notes cells, preview pane, Price Sheet Notes).
  * Scoped under .md-doc so table/global styles are untouched. */
-.md-doc { font-size: 12px; line-height: 1.45; color: #0f172a; overflow-wrap: anywhere; }
+.md-doc { font-size: 12px; line-height: 1.45; color: inherit; overflow-wrap: anywhere; }
 .md-doc p { margin: 0 0 4px; }
 .md-doc p:last-child { margin-bottom: 0; }
 .md-doc h1, .md-doc h2, .md-doc h3, .md-doc h4, .md-doc h5, .md-doc h6 {
@@ -40,13 +156,13 @@ body {
 .md-doc ul { list-style: disc; }
 .md-doc ol { list-style: decimal; }
 .md-doc li { margin: 1px 0; }
-.md-doc a { color: #1d4ed8; text-decoration: underline; }
+.md-doc a { color: var(--accent-primary, #1d4ed8); text-decoration: underline; }
 .md-doc code {
   font-family: ui-monospace, monospace; font-size: 11px;
-  background: #f1f5f9; border-radius: 3px; padding: 0 4px;
+  background: rgba(148, 163, 184, 0.15); border-radius: 3px; padding: 0 4px;
 }
 .md-doc pre {
-  background: #f1f5f9; border-radius: 6px; padding: 6px 8px;
+  background: rgba(148, 163, 184, 0.15); border-radius: 6px; padding: 6px 8px;
   overflow: auto; margin: 4px 0;
 }
 .md-doc pre code { background: none; padding: 0; }

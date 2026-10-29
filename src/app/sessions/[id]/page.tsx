@@ -12,6 +12,7 @@ import { getItemFlags, parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
+import { useUiMode } from "@/contexts/UiModeContext";
 import {
   canRedo, canUndo, EMPTY_HISTORY, pushHistory, redoLabel, takeRedo, takeUndo, undoLabel,
   type HistoryState,
@@ -70,6 +71,7 @@ function lowerCandidates(rows: Item[]): Item[] {
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const toast = useToast();
+  const { mode, density, registerUnsavedChecker } = useUiMode();
   const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
   const [vendor, setVendor] = useState("");
@@ -123,6 +125,10 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   // current guard without stale state from their own render closure.
   const savingCellRef = useRef<string | null>(null);
   useEffect(() => { savingCellRef.current = savingCell; }, [savingCell]);
+
+  useEffect(() => {
+    return registerUnsavedChecker(() => Boolean(savingCell || noteBusy || sheetNotesBusy));
+  }, [registerUnsavedChecker, savingCell, noteBusy, sheetNotesBusy]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -1063,28 +1069,28 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   return (
     <div className="flex flex-col gap-3.5">
       {/* 1. Header & Actions Toolbar */}
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3 shadow-xs">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">{name || "Price Update"}</h1>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">{name || "Price Update"}</h1>
             {isFullVendor && (
-              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
                 Full Vendor
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
               {items.length.toLocaleString()} product{items.length === 1 ? "" : "s"}
             </span>
             {filtered.length !== items.length && (
-              <span className="text-slate-500 font-medium">
+              <span className="text-slate-500 dark:text-zinc-400 font-medium">
                 ({filtered.length.toLocaleString()} matching filter)
               </span>
             )}
             {vendor && (
-              <span className="text-slate-500">
-                • Vendor: <span className="font-semibold text-slate-700">{vendor}</span>
+              <span className="text-slate-500 dark:text-zinc-400">
+                • Vendor: <span className="font-semibold text-slate-700 dark:text-zinc-200">{vendor}</span>
               </span>
             )}
           </div>
@@ -1156,7 +1162,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       </header>
 
       {/* 2. Compact Workspace Controls Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 bg-white p-2 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 bg-white p-2 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
         {/* Left: Row addition & History group */}
         <div className="flex items-center gap-1.5">
           <div className="flex items-center gap-1">

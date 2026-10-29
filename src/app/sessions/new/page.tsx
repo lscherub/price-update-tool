@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { apiErrorText } from "@/lib/apiError";
@@ -6,15 +7,18 @@ import { formatUpdateName } from "@/lib/pricing";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { VendorCombobox } from "@/components/VendorCombobox";
+import { useUiMode } from "@/contexts/UiModeContext";
 
 export default function NewSessionPage() {
   const router = useRouter();
   const toast = useToast();
+  const { mode } = useUiMode();
   const [vendor, setVendor] = useState("");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [msg, setMsg] = useState("");
   const [stage, setStage] = useState<"idle" | "creating" | "importing" | "redirecting">("idle");
+  const [inputTab, setInputTab] = useState<"file" | "paste">("file");
   const busy = stage !== "idle";
 
   // The update name is generated from the vendor + today's date, and shown as
@@ -97,46 +101,198 @@ export default function NewSessionPage() {
     : stage === "importing" ? "Importing vendor prices..."
     : "Opening price update...";
 
-  return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-      <h1 className="text-2xl font-bold">New Price Update</h1>
-      <div className="flex flex-col gap-3 rounded-xl border bg-white p-4">
-        <label className="flex flex-col gap-1 text-sm" htmlFor="vendor-input">
-          Vendor
-          <VendorCombobox id="vendor-input" value={vendor} onChange={(v) => { setVendor(v); setMsg(""); }} disabled={busy} />
-        </label>
+  // ==========================================
+  // CLASSIC UI MODE (Preserved pixel-perfect)
+  // ==========================================
+  if (mode === "classic") {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <h1 className="text-2xl font-bold">New Price Update</h1>
+        <div className="flex flex-col gap-3 rounded-xl border bg-white p-4">
+          <label className="flex flex-col gap-1 text-sm" htmlFor="vendor-input">
+            Vendor
+            <VendorCombobox id="vendor-input" value={vendor} onChange={(v) => { setVendor(v); setMsg(""); }} disabled={busy} />
+          </label>
 
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-slate-500">Update name (generated automatically)</span>
-          <div className="rounded border border-dashed bg-slate-50 px-3 py-2 font-medium text-slate-700">
-            {vendor.trim() ? updateName : <span className="font-normal text-slate-400">Select a vendor to generate the name</span>}
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-slate-500">Update name (generated automatically)</span>
+            <div className="rounded border border-dashed bg-slate-50 px-3 py-2 font-medium text-slate-700">
+              {vendor.trim() ? updateName : <span className="font-normal text-slate-400">Select a vendor to generate the name</span>}
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-1 text-sm">
+            Import Vendor Prices — upload Excel/CSV (optional)
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              disabled={busy}
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setMsg(""); }}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm" htmlFor="paste-area">
+            or Paste Vendor Data (SKU + price per line)
+            <textarea
+              id="paste-area"
+              className="min-h-40 rounded border px-3 py-2 font-mono text-xs disabled:opacity-60"
+              value={text}
+              disabled={busy}
+              onChange={(e) => { setText(e.target.value); setMsg(""); }}
+              placeholder={"0 58854 04522 7\t19.99\n624-917-74008-0, 24.50"}
+            />
+          </label>
+          <LoadingButton busy={busy} busyLabel={busyLabel} stableWidth onClick={submit}>
+            Process Price Update
+          </LoadingButton>
+          {msg && <div className="text-sm text-slate-600" role="status">{msg}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // NEW UI MODE (Modern stepped layout)
+  // ==========================================
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+          Create New Price Update
+        </h1>
+        <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+          Match incoming vendor cost changes against your master inventory and generate a working price sheet.
+        </p>
+      </div>
+
+      {/* Alternative Full Vendor Callout */}
+      <div className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50/50 p-3.5 text-xs text-violet-900 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-300">
+        <div className="flex items-center gap-2">
+          <span>🏢</span>
+          <span>Need to update all catalog products for a specific vendor?</span>
+        </div>
+        <Link
+          href="/fullvendor/new"
+          className="font-bold underline hover:text-violet-950 dark:hover:text-white"
+        >
+          Use Full Vendor Price Update →
+        </Link>
+      </div>
+
+      {/* Main Workflow Form Card */}
+      <div className="flex flex-col gap-5 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Step 1: Choose Vendor */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400" htmlFor="vendor-input">
+            1. Select Vendor
+          </label>
+          <VendorCombobox
+            id="vendor-input"
+            value={vendor}
+            onChange={(v) => { setVendor(v); setMsg(""); }}
+            disabled={busy}
+          />
+
+          <div className="mt-1 flex items-center justify-between rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-800/50">
+            <span className="text-slate-500 dark:text-zinc-400">Generated Worksheet Name:</span>
+            <span className="font-bold text-slate-800 dark:text-zinc-200">
+              {vendor.trim() ? updateName : "Select vendor above"}
+            </span>
           </div>
         </div>
 
-        <label className="flex flex-col gap-1 text-sm">
-          Import Vendor Prices — upload Excel/CSV (optional)
-          <input
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            disabled={busy}
-            onChange={(e) => { setFile(e.target.files?.[0] ?? null); setMsg(""); }}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm" htmlFor="paste-area">
-          or Paste Vendor Data (SKU + price per line)
-          <textarea
-            id="paste-area"
-            className="min-h-40 rounded border px-3 py-2 font-mono text-xs disabled:opacity-60"
-            value={text}
-            disabled={busy}
-            onChange={(e) => { setText(e.target.value); setMsg(""); }}
-            placeholder={"0 58854 04522 7\t19.99\n624-917-74008-0, 24.50"}
-          />
-        </label>
-        <LoadingButton busy={busy} busyLabel={busyLabel} stableWidth onClick={submit}>
-          Process Price Update
-        </LoadingButton>
-        {msg && <div className="text-sm text-slate-600" role="status">{msg}</div>}
+        {/* Step 2: Choose Data Source (File vs Paste) */}
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 dark:border-zinc-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
+              2. Vendor Price Data
+            </span>
+
+            {/* Source Segmented Control */}
+            <div className="flex rounded-lg border border-slate-200 bg-slate-100/70 p-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+              <button
+                type="button"
+                onClick={() => setInputTab("file")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  inputTab === "file"
+                    ? "bg-white text-slate-900 shadow-2xs dark:bg-zinc-700 dark:text-white"
+                    : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
+                }`}
+              >
+                Upload Spreadsheet
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputTab("paste")}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  inputTab === "paste"
+                    ? "bg-white text-slate-900 shadow-2xs dark:bg-zinc-700 dark:text-white"
+                    : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
+                }`}
+              >
+                Paste Text
+              </button>
+            </div>
+          </div>
+
+          {inputTab === "file" ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/20">
+              <span className="text-2xl">📄</span>
+              <span className="mt-2 text-xs font-bold text-slate-800 dark:text-zinc-200">
+                Choose vendor price spreadsheet (Excel or CSV)
+              </span>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Supports .xlsx, .xls, and .csv files with SKU and new cost/price columns
+              </p>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                disabled={busy}
+                onChange={(e) => { setFile(e.target.files?.[0] ?? null); setMsg(""); }}
+                className="mt-3 block text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800 dark:file:bg-white dark:file:text-slate-900"
+              />
+              {file && (
+                <div className="mt-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  ✓ Selected: {file.name}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="paste-area-new" className="text-xs text-slate-500">
+                Paste tab-separated or comma-separated vendor SKU and price (one per line):
+              </label>
+              <textarea
+                id="paste-area-new"
+                className="h-44 w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 font-mono text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                value={text}
+                disabled={busy}
+                onChange={(e) => { setText(e.target.value); setMsg(""); }}
+                placeholder={"0 58854 04522 7\t19.99\n624-917-74008-0, 24.50"}
+              />
+            </div>
+          )}
+        </div>
+
+        {msg && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            {msg}
+          </div>
+        )}
+
+        {/* Submit Button */}
+        <div className="border-t border-slate-100 pt-4 dark:border-zinc-800">
+          <LoadingButton
+            busy={busy}
+            busyLabel={busyLabel}
+            stableWidth
+            onClick={submit}
+            className="w-full rounded-xl py-2.5 text-xs font-bold text-white shadow-xs hover:opacity-95"
+            style={{ background: "var(--accent-primary, #4f46e5)" }}
+          >
+            Process Price Update & Open Worksheet →
+          </LoadingButton>
+        </div>
       </div>
     </div>
   );

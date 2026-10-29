@@ -50,19 +50,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="mx-auto mt-16 w-full max-w-sm rounded-xl border bg-white p-6">
-      <h1 className="text-xl font-bold">Price Update Tool</h1>
-      <p className="mb-4 text-sm text-slate-500">
-        {mode === "login" ? "Sign in to continue." : "Create the first admin account."}
+    <div className="mx-auto mt-16 w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <h1 className="text-xl font-bold text-slate-900 dark:text-white">Price Update Tool</h1>
+      <p className="mb-4 text-xs text-slate-500 dark:text-zinc-400">
+        {mode === "login" ? "Sign in to your enterprise account." : "Create the first admin account."}
       </p>
       {error && (
-        <div role="alert" className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </div>
       )}
       <form className="flex flex-col gap-3" onSubmit={submit} aria-busy={busy || undefined}>
         <input
-          className="rounded border px-3 py-2 disabled:opacity-60"
+          className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
           placeholder="Email"
           type="email"
           autoComplete="email"
@@ -72,7 +72,7 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="rounded border px-3 py-2 disabled:opacity-60"
+          className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
           placeholder={mode === "login" ? "Password" : "Password (min 8 characters)"}
           type="password"
           autoComplete={mode === "login" ? "current-password" : "new-password"}
@@ -87,13 +87,13 @@ export default function LoginPage() {
           busy={busy}
           busyLabel={mode === "login" ? "Signing in..." : "Creating account..."}
           stableWidth
-          className="w-full rounded bg-slate-900 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          className="w-full rounded-lg bg-slate-900 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-900"
         >
           {mode === "login" ? "Sign In" : "Create Admin Account"}
         </LoadingButton>
       </form>
       {busy && (
-        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-500">
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
           <Spinner /> Please wait...
         </div>
       )}

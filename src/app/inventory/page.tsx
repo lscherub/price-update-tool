@@ -6,6 +6,7 @@ import { parseInventoryArrayBuffer } from "@/lib/importers";
 import { LoadingButton, Spinner } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { AddProductDialog, type AddProductInput } from "@/components/AddProductDialog";
+import { useUiMode } from "@/contexts/UiModeContext";
 
 /** Rows per server request. Mirrors the server's MAX_BATCH_ROWS. */
 const BATCH_SIZE = 1000;
@@ -225,6 +226,9 @@ export default function InventoryPage() {
   const inactiveRef = useRef<HTMLInputElement>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [addProductBusy, setAddProductBusy] = useState(false);
+  const { mode } = useUiMode();
+  const [showImportCard, setShowImportCard] = useState(false);
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
 
   type Filters = {
     q: string; sku: string; num: string; desc: string;
@@ -670,7 +674,11 @@ for (let i = 0; i < batches.length; i++) {
   };
   const clearSort = () => changeSort(sortKey ?? "", null);
 
-  return (
+  // ==========================================
+  // CLASSIC UI MODE (Preserved pixel-perfect)
+  // ==========================================
+  if (mode === "classic") {
+    return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-bold">Inventory</h1>
 
@@ -971,6 +979,554 @@ for (let i = 0; i < batches.length; i++) {
           onClose={() => { if (!addProductBusy) setShowAddProduct(false); }}
           onSubmit={addProduct}
         />
+      )}
+    </div>
+  );
+}
+
+  // ==========================================
+  // NEW UI MODE (Modernized layout)
+  // ==========================================
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Page Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+              All Inventory
+            </h1>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
+              {total.toLocaleString()} products
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+            Master retail catalog database used for SKU matching, pricing rules, and digital store counts.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowImportCard((v) => !v)}
+            className={`rounded-lg border px-3.5 py-2 text-xs font-semibold shadow-2xs transition-colors ${
+              showImportCard
+                ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-200"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            }`}
+          >
+            {showImportCard ? "✕ Close Import Panel" : "📥 Import POS Inventory"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAddProduct(true)}
+            className="rounded-lg px-4 py-2 text-xs font-bold text-white shadow-xs hover:opacity-95"
+            style={{ background: "var(--accent-primary, #4f46e5)" }}
+          >
+            + Add Product
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowConfirmClear(true)}
+            className="rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400"
+            title="Safely clear inventory catalog"
+          >
+            Clear Catalog...
+          </button>
+        </div>
+      </div>
+
+      {/* Sync Metadata Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-3 text-xs shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-wrap items-center gap-4 text-slate-600 dark:text-zinc-300">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span>
+              Last POS Import: <strong className="text-slate-800 dark:text-white">{formatLastImported(lastImportedAt)}</strong>
+            </span>
+          </div>
+          {lastUpdatedAt && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">•</span>
+              <span>
+                Last Modified: <strong className="text-slate-800 dark:text-white">{formatLastImported(lastUpdatedAt)}</strong>
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+          Database: <span className="font-semibold text-slate-700 dark:text-zinc-300">PostgreSQL (1,000-row upsert batches)</span>
+        </div>
+      </div>
+
+      {/* Import & Inactive SKU Panel (when expanded) */}
+      {showImportCard && (
+        <div className="flex flex-col gap-4 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-5 dark:border-indigo-900/60 dark:bg-indigo-950/20 shadow-xs">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">POS Catalog Importer & Inactive SKU Tools</h2>
+            <button
+              type="button"
+              onClick={() => setShowImportCard(false)}
+              className="text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            {/* Box 1: Full POS Inventory */}
+            <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <div>
+                <span className="font-bold text-xs text-slate-900 dark:text-white">1. POS Full Inventory File (Excel or CSV)</span>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">
+                  Upload catalog export containing SKU, Description, Vendor, Brand, Cost, and Retail Price.
+                </p>
+                <div className="mt-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    disabled={importing}
+                    onChange={(e) => { setFile(e.target.files?.[0] ?? null); setReport(null); }}
+                    className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-700 hover:file:bg-slate-200 dark:file:bg-zinc-800 dark:file:text-zinc-200"
+                  />
+                </div>
+                <label className="mt-3 flex items-start gap-2 text-[11px] text-slate-600 dark:text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={markMissingInactive}
+                    disabled={importing}
+                    onChange={(e) => setMarkMissingInactive(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Mark catalog products missing from this file as inactive (preserves historical price updates).</span>
+                </label>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-zinc-800">
+                <span className="text-[11px] text-slate-500">
+                  {file ? `Ready: ${file.name}` : "Choose spreadsheet above"}
+                </span>
+                <LoadingButton
+                  busy={importing}
+                  busyLabel="Importing..."
+                  stableWidth
+                  onClick={runImport}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+                >
+                  Import Inventory
+                </LoadingButton>
+              </div>
+            </div>
+
+            {/* Box 2: Inactive SKU Upload */}
+            <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <div>
+                <span className="font-bold text-xs text-slate-900 dark:text-white">2. Inactive SKU List (Excel or CSV)</span>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">
+                  Bulk mark products as inactive by uploading a list of discontinued SKUs. Inactive products are automatically excluded from store counts.
+                </p>
+                <div className="mt-3">
+                  <input
+                    ref={inactiveRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    disabled={importing}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInactive(f); }}
+                    className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-amber-800 hover:file:bg-amber-200 dark:file:bg-amber-950 dark:file:text-amber-300"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 text-[11px] text-slate-500 border-t border-slate-100 pt-3 dark:border-zinc-800">
+                Uploaded SKUs immediately update without re-importing the full inventory catalog.
+              </div>
+            </div>
+          </div>
+
+          {msg && <div className="text-xs font-semibold text-slate-700 dark:text-zinc-300">{msg}</div>}
+        </div>
+      )}
+
+      {/* Progress Bar during active import */}
+      {progress && (
+        <div className="rounded-xl border border-indigo-200 bg-white p-4 shadow-sm dark:border-indigo-900/50 dark:bg-zinc-900" role="status" aria-live="polite">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+            <span className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
+              <Spinner /> Processing Inventory Batches...
+            </span>
+            <span className="font-mono text-slate-700 dark:text-zinc-300">
+              {progress.processed.toLocaleString()} / {progress.total.toLocaleString()} rows ({pct}%)
+            </span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-indigo-600 transition-all duration-200"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600 dark:text-zinc-400">
+            <span>Inserted: <strong className="text-emerald-600">{progress.inserted.toLocaleString()}</strong></span>
+            <span>Updated: <strong className="text-blue-600">{progress.updated.toLocaleString()}</strong></span>
+            <span>Skipped: <strong>{progress.skipped.toLocaleString()}</strong></span>
+            <span>Failed: <strong className="text-red-600">{progress.failed.length.toLocaleString()}</strong></span>
+            <span>Batch: {progress.batchIndex} of {progress.batchCount}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Completion Report */}
+      {report && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`text-base ${report.status === "complete" ? "text-emerald-600" : "text-red-600"}`}>
+                {report.status === "complete" ? "✓" : "⚠️"}
+              </span>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {report.status === "complete" ? "Inventory Import Complete" : "Import Stopped with Errors"}
+              </h2>
+            </div>
+            <button className="text-xs text-indigo-600 hover:underline dark:text-indigo-400" onClick={() => setReport(null)}>
+              Dismiss Report
+            </button>
+          </div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+            {report.processed.toLocaleString()} of {report.total.toLocaleString()} rows processed
+            {report.finishedAt && report.startedAt ? ` in ${((report.finishedAt - report.startedAt) / 1000).toFixed(1)}s` : ""}
+          </div>
+          {report.error && <div className="mt-2 rounded bg-red-50 p-2.5 text-xs text-red-700">{report.error}</div>}
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-800/50">
+              <div className="text-[11px] text-slate-500">File Total</div>
+              <div className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">{report.total.toLocaleString()}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-emerald-50/40 p-3 dark:border-zinc-800 dark:bg-emerald-950/20">
+              <div className="text-[11px] text-emerald-800 dark:text-emerald-300">Inserted</div>
+              <div className="mt-0.5 text-base font-bold text-emerald-700 dark:text-emerald-400">{report.inserted.toLocaleString()}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-blue-50/40 p-3 dark:border-zinc-800 dark:bg-blue-950/20">
+              <div className="text-[11px] text-blue-800 dark:text-blue-300">Updated</div>
+              <div className="mt-0.5 text-base font-bold text-blue-700 dark:text-blue-400">{report.updated.toLocaleString()}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-800/50">
+              <div className="text-[11px] text-slate-500">Skipped (no SKU)</div>
+              <div className="mt-0.5 text-base font-bold text-slate-700 dark:text-zinc-300">{report.skipped.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search and Filter Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex min-w-64 flex-1 items-center gap-2 max-w-lg">
+          <input
+            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            placeholder="Search SKU, product #, description, vendor, brand..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && search()}
+          />
+          <button
+            type="button"
+            className="h-9 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white shadow-xs hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+            onClick={search}
+          >
+            Search
+          </button>
+        </div>
+
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1 text-xs">
+          {(
+            [
+              ["", "All Products"],
+              ["false", "Active Only"],
+              ["true", "Inactive Only"],
+            ] as const
+          ).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => {
+                setFInactive(val);
+                applyNow({ inactive: val });
+              }}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                fInactive === val
+                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Active Filter Chips */}
+      {hasActiveFilters && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="font-semibold text-slate-600 dark:text-zinc-400">Active filters:</span>
+          {fSku && <FilterChip label={`SKU: ${fSku}`} onClear={() => setFSku("")} onApply={() => applyNow({ sku: "" })} />}
+          {fNum && <FilterChip label={`Product #: ${fNum}`} onClear={() => setFNum("")} onApply={() => applyNow({ num: "" })} />}
+          {fDesc && <FilterChip label={`Desc: ${fDesc}`} onClear={() => setFDesc("")} onApply={() => applyNow({ desc: "" })} />}
+          {fVendorContains && <FilterChip label={`Vendor: ${fVendorContains}`} onClear={() => setFVendorContains("")} onApply={() => applyNow({ vendorContains: "" })} />}
+          {fBrandContains && <FilterChip label={`Brand: ${fBrandContains}`} onClear={() => setFBrandContains("")} onApply={() => applyNow({ brandContains: "" })} />}
+          {fVendorExact && <FilterChip label={`Vendor = "${fVendorExact}"`} onClear={() => setFVendorExact("")} onApply={() => applyNow({ vendorExact: "" })} />}
+          {fBrandExact && <FilterChip label={`Brand = "${fBrandExact}"`} onClear={() => setFBrandExact("")} onApply={() => applyNow({ brandExact: "" })} />}
+          <button
+            className="text-[11px] text-slate-500 hover:underline"
+            onClick={() => {
+              setFSku(""); setFNum(""); setFDesc("");
+              setFVendorContains(""); setFBrandContains("");
+              setFVendorExact(""); setFBrandExact(""); setFInactive("");
+              applyNow({ sku: "", num: "", desc: "", vendorContains: "", brandContains: "", vendorExact: "", brandExact: "", inactive: "" });
+            }}
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+
+      {/* Inventory Products Table */}
+      <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
+                <InvHeader
+                  label="SKU" colKey="sku"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fSku}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("sku", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort SKU A to Z" sortDescLabel="Sort SKU Z to A"
+                  menuRef={menuRef}
+                >
+                  <ColumnSearchBox label="Filter SKU" placeholder="e.g. 12345" value={fSku} onChange={setFSku} onApply={() => { setOpenMenu(null); applyNow({ sku: fSku }); }} onClear={() => { setFSku(""); applyNow({ sku: "" }); }} />
+                </InvHeader>
+                <InvHeader
+                  label="Product Number" colKey="productNumber"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fNum}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("productNumber", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort Product # A to Z" sortDescLabel="Sort Product # Z to A"
+                  menuRef={menuRef}
+                >
+                  <ColumnSearchBox label="Filter Product #" placeholder="e.g. PR-100" value={fNum} onChange={setFNum} onApply={() => { setOpenMenu(null); applyNow({ num: fNum }); }} onClear={() => { setFNum(""); applyNow({ num: "" }); }} />
+                </InvHeader>
+                <InvHeader
+                  label="Description" colKey="description"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fDesc}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("description", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort Description A to Z" sortDescLabel="Sort Description Z to A"
+                  menuRef={menuRef}
+                >
+                  <ColumnSearchBox label="Filter Description" placeholder="e.g. Vitamin C" value={fDesc} onChange={setFDesc} onApply={() => { setOpenMenu(null); applyNow({ desc: fDesc }); }} onClear={() => { setFDesc(""); applyNow({ desc: "" }); }} />
+                </InvHeader>
+                <InvHeader
+                  label="Vendor" colKey="vendor"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fVendorContains || !!fVendorExact}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("vendor", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort Vendor A to Z" sortDescLabel="Sort Vendor Z to A"
+                  menuRef={menuRef}
+                >
+                  <ColumnSearchBox label="Contains text" placeholder="e.g. Ecotrend" value={fVendorContains} onChange={setFVendorContains} onApply={() => { setOpenMenu(null); applyNow({ vendorContains: fVendorContains }); }} onClear={() => { setFVendorContains(""); applyNow({ vendorContains: "" }); }} />
+                  <FacetList title="Match exact vendor" loading={facetLoading} rows={facetRows} search={facetQ} selected={fVendorExact} onSearch={(v) => { setFacetQ(v); void loadFacets("vendor", v); }} onPick={(v) => { const next = fVendorExact === v ? "" : v; setFVendorExact(next); setOpenMenu(null); applyNow({ vendorExact: next }); }} />
+                </InvHeader>
+                <InvHeader
+                  label="Brand" colKey="brand"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fBrandContains || !!fBrandExact}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("brand", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort Brand A to Z" sortDescLabel="Sort Brand Z to A"
+                  menuRef={menuRef}
+                >
+                  <ColumnSearchBox label="Contains text" placeholder="e.g. Provita" value={fBrandContains} onChange={setFBrandContains} onApply={() => { setOpenMenu(null); applyNow({ brandContains: fBrandContains }); }} onClear={() => { setFBrandContains(""); applyNow({ brandContains: "" }); }} />
+                  <FacetList title="Match exact brand" loading={facetLoading} rows={facetRows} search={facetQ} selected={fBrandExact} onSearch={(v) => { setFacetQ(v); void loadFacets("brand", v); }} onPick={(v) => { const next = fBrandExact === v ? "" : v; setFBrandExact(next); setOpenMenu(null); applyNow({ brandExact: next }); }} />
+                </InvHeader>
+                <InvHeader
+                  label="List Cost" colKey="listCost"
+                  sortKey={sortKey} sortDir={sortDir} filtered={false}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("listCost", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort Low to High" sortDescLabel="Sort High to Low"
+                  menuRef={menuRef}
+                />
+                <InvHeader
+                  label="Price" colKey="price"
+                  sortKey={sortKey} sortDir={sortDir} filtered={false}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("price", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort Low to High" sortDescLabel="Sort High to Low"
+                  menuRef={menuRef}
+                />
+                <InvHeader
+                  label="Size Desc" colKey="sizeDesc"
+                  sortKey={sortKey} sortDir={sortDir} filtered={false}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("sizeDesc", dir)} onClearSort={clearSort}
+                  sortAscLabel="Sort A to Z" sortDescLabel="Sort Z to A"
+                  menuRef={menuRef}
+                />
+                <InvHeader
+                  label="Status" colKey="status"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fInactive}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("status", dir)} onClearSort={clearSort}
+                  sortAscLabel="Active first" sortDescLabel="Inactive first"
+                  menuRef={menuRef}
+                >
+                  <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
+                    <div className="mb-1 font-semibold text-slate-700 dark:text-zinc-300">Filter Status</div>
+                    {(
+                      [
+                        ["", "All products"],
+                        ["false", "Active only"],
+                        ["true", "Inactive only"],
+                      ] as const
+                    ).map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        className={`block w-full px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${fInactive === val ? "font-bold text-indigo-600 dark:text-indigo-400" : "text-slate-600 dark:text-zinc-300"}`}
+                        onClick={() => {
+                          setFInactive(val);
+                          setOpenMenu(null);
+                          applyNow({ inactive: val });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </InvHeader>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
+              {(rows as ProductRow[]).map((r, i) => (
+                <tr key={r.id || i} className="transition-colors hover:bg-slate-50/60 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2 font-mono text-xs font-bold text-slate-900 dark:text-white">{r.sku}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-slate-600 dark:text-zinc-400">{r.productNumber || "—"}</td>
+                  <td className="px-3 py-2 font-medium text-slate-800 dark:text-zinc-200">{r.description}</td>
+                  <td className="px-3 py-2 text-slate-700 dark:text-zinc-300">
+                    <span className="inline-block rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
+                      {r.vendor}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-zinc-300">{r.brand}</td>
+                  <td className="px-3 py-2 text-right font-mono text-slate-900 dark:text-white">${r.listCost}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold text-slate-900 dark:text-white">${r.price}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-zinc-400">{r.sizeDesc || "—"}</td>
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      <select
+                        aria-label={`Status for ${r.sku}`}
+                        value={r.isInactive ? "inactive" : "active"}
+                        disabled={savingId === r.id}
+                        onChange={(e) => void updateStatus(r, e.target.value === "inactive")}
+                        className={`rounded-full border px-2 py-0.5 text-[11px] font-bold shadow-2xs focus:outline-none disabled:opacity-60 ${
+                          r.isInactive
+                            ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            : "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                        }`}
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                      {savingId === r.id && <Spinner />}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-5 py-10 text-center text-slate-500 dark:text-zinc-400">
+                    No products found matching current criteria.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Bar */}
+        <div className="flex items-center justify-between border-t border-slate-100 p-3.5 dark:border-zinc-800">
+          <span className="text-xs text-slate-500 dark:text-zinc-400">
+            Showing Page <strong className="text-slate-800 dark:text-white">{page}</strong> (up to 100 per page)
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={page <= 1}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              onClick={() => setPage(page - 1)}
+            >
+              ← Previous
+            </button>
+            <button
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              onClick={() => setPage(page + 1)}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Product Modal */}
+      {showAddProduct && (
+        <AddProductDialog
+          busy={addProductBusy}
+          onClose={() => { if (!addProductBusy) setShowAddProduct(false); }}
+          onSubmit={addProduct}
+        />
+      )}
+
+      {/* Clear All Confirmation Modal */}
+      {showConfirmClear && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-2xs p-4" role="dialog" aria-modal="true" aria-label="Confirm clear inventory">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:border dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950/80 dark:text-red-400 text-lg">
+                ⚠️
+              </span>
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">Clear All Master Inventory?</h2>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  {total.toLocaleString()} catalog products will be deleted.
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-slate-600 dark:text-zinc-300 leading-relaxed">
+              This action removes all products from the main inventory. Historical price update sheets, saved notes, vendor discounts, and referral exports will remain intact. You will need to re-import a POS inventory file to match SKUs.
+            </p>
+
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                disabled={clearing}
+                onClick={() => setShowConfirmClear(false)}
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                busy={clearing}
+                busyLabel="Clearing catalog..."
+                onClick={async () => {
+                  await clearInventory();
+                  setShowConfirmClear(false);
+                }}
+                className="rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-red-700"
+              >
+                Clear Inventory
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
