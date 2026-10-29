@@ -120,21 +120,21 @@ describe("planFullVendorRows matching logic", () => {
     expect(plan.rows).toHaveLength(3);
 
     // Prod-1: matched and priced
-    const r1 = plan.rows.find((r) => r.product.id === "prod-1")!;
+    const r1 = plan.rows.find((r) => r.product?.id === "prod-1")!;
     expect(r1.status).toBe("priced");
     expect(r1.vendorListPriceNew).toBe("12.50");
 
     // Prod-2: missing from vendor list, retained with null price
-    const r2 = plan.rows.find((r) => r.product.id === "prod-2")!;
+    const r2 = plan.rows.find((r) => r.product?.id === "prod-2")!;
     expect(r2.status).toBe("missing");
     expect(r2.vendorListPriceNew).toBeNull();
     expect(r2.note).toContain("not in vendor price list");
 
     // Prod-3: inactive product matched and retained with inactive flag
-    const r3 = plan.rows.find((r) => r.product.id === "prod-3")!;
+    const r3 = plan.rows.find((r) => r.product?.id === "prod-3")!;
     expect(r3.status).toBe("priced");
     expect(r3.vendorListPriceNew).toBe("9.50");
-    expect(r3.product.isInactive).toBe(true);
+    expect(r3.product?.isInactive).toBe(true);
 
     expect(plan.counts.total).toBe(3);
     expect(plan.counts.priced).toBe(2);
@@ -145,7 +145,7 @@ describe("planFullVendorRows matching logic", () => {
   it("handles leading-zero SKUs properly", () => {
     const pasted = [{ raw: "0012345", price: "18.00", line: 1 }];
     const plan = planFullVendorRows(mockProducts, pasted);
-    const r2 = plan.rows.find((r) => r.product.id === "prod-2")!;
+    const r2 = plan.rows.find((r) => r.product?.id === "prod-2")!;
     expect(r2.status).toBe("priced");
     expect(r2.vendorListPriceNew).toBe("18.00");
   });
@@ -209,10 +209,69 @@ describe("planFullVendorRows matching logic", () => {
       { raw: "058854045227", price: "14.00", line: 2 },
     ];
     const plan = planFullVendorRows(mockProducts, pasted);
-    const r1 = plan.rows.find((r) => r.product.id === "prod-1")!;
+    const r1 = plan.rows.find((r) => r.product?.id === "prod-1")!;
     expect(r1.status).toBe("conflict");
     expect(r1.vendorListPriceNew).toBeNull();
     expect(r1.note).toContain("conflicting vendor prices");
+  });
+
+  it("sets cleanedOverridden to false on all automatically loaded inventory rows", () => {
+    const pasted = [{ raw: "058854045227", price: "12.00", line: 1 }];
+    const plan = planFullVendorRows(mockProducts, pasted);
+    for (const r of plan.rows) {
+      if (r.product) {
+        expect(r.cleanedOverridden).toBe(false);
+      }
+    }
+  });
+
+  it("keeps unmatched vendor products as worksheet rows with product=null and status=not-found", () => {
+    const pasted = [
+      { raw: "058854045227", price: "12.00", line: 1 }, // matched to prod-1
+      { raw: "UNKNOWN-SKU-999", price: "45.00", line: 2 }, // not in inventory
+      { raw: "000888777", price: "19.95", line: 3 }, // not in inventory
+    ];
+    const plan = planFullVendorRows(mockProducts, pasted);
+
+    // 3 inventory products + 2 unmatched vendor rows = 5 rows
+    expect(plan.rows).toHaveLength(5);
+    expect(plan.counts.total).toBe(5);
+    expect(plan.counts.notFound).toBe(2);
+
+    const unmatched1 = plan.rows.find((r) => r.rawVendorSku === "UNKNOWN-SKU-999")!;
+    expect(unmatched1).toBeDefined();
+    expect(unmatched1.product).toBeNull();
+    expect(unmatched1.status).toBe("not-found");
+    expect(unmatched1.vendorListPriceNew).toBe("45.00");
+    expect(unmatched1.cleanedOverridden).toBe(false);
+    expect(unmatched1.note).toContain("Review: not found in inventory.");
+
+    const unmatched2 = plan.rows.find((r) => r.rawVendorSku === "000888777")!;
+    expect(unmatched2).toBeDefined();
+    expect(unmatched2.product).toBeNull();
+    expect(unmatched2.status).toBe("not-found");
+    expect(unmatched2.vendorListPriceNew).toBe("19.95");
+    expect(unmatched2.cleanedSku).toBe("00088877");
+  });
+
+  it("deduplicates unmatched vendor rows and flags conflicting prices", () => {
+    const pasted = [
+      { raw: "UNMATCHED-1", price: "10.00", line: 1 },
+      { raw: "UNMATCHED-1", price: "12.00", line: 2 }, // conflict!
+      { raw: "UNMATCHED-2", price: "25.00", line: 3 },
+      { raw: "UNMATCHED-2", price: "25.00", line: 4 }, // duplicate identical price
+    ];
+    const plan = planFullVendorRows(mockProducts, pasted);
+
+    const c1 = plan.rows.find((r) => r.rawVendorSku === "UNMATCHED-1")!;
+    expect(c1.status).toBe("conflict");
+    expect(c1.vendorListPriceNew).toBeNull();
+    expect(c1.note).toContain("Conflicting vendor prices");
+
+    const c2 = plan.rows.filter((r) => r.rawVendorSku === "UNMATCHED-2");
+    expect(c2).toHaveLength(1);
+    expect(c2[0].status).toBe("not-found");
+    expect(c2[0].vendorListPriceNew).toBe("25.00");
   });
 
   it("generates markdown summary with counts and notes", () => {

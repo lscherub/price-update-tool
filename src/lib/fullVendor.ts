@@ -37,10 +37,10 @@ export type FvProduct = {
 
 export type FvPasted = { raw: string; price: string | null; line: number };
 
-export type FvStatus = "priced" | "missing" | "ambiguous" | "conflict" | "no-price";
+export type FvStatus = "priced" | "missing" | "ambiguous" | "conflict" | "no-price" | "not-found";
 
 export type FvRowPlan = {
-  product: FvProduct;
+  product: FvProduct | null;
   rawVendorSku: string;
   cleanedSku: string;
   /** true = row is pinned to its inventory SKU (recalc looks it up by that SKU). */
@@ -58,7 +58,16 @@ export type FvPlan = {
   ambiguousPasted: { raw: string; line: number; skus: string[] }[];
   /** Pasted lines skipped because the price cell was not a valid number. */
   invalidPrice: FvPasted[];
-  counts: { total: number; priced: number; missing: number; ambiguous: number; conflict: number; noPrice: number; inactive: number };
+  counts: {
+    total: number;
+    priced: number;
+    missing: number;
+    ambiguous: number;
+    conflict: number;
+    noPrice: number;
+    inactive: number;
+    notFound: number;
+  };
 };
 
 const stripZeros = (v: string) => v.replace(/^0+/, "") || "0";
@@ -190,8 +199,13 @@ function cleanedPointsAt(cleaned: string, p: FvProduct): boolean {
   return s === stripZeros(p.normalizedSku) || s === stripZeros(p.sku);
 }
 
-export function planFullVendorRows(products: FvProduct[], pasted: FvPasted[]): FvPlan {
+export function planFullVendorRows(
+  products: FvProduct[],
+  pasted: FvPasted[],
+  allVendorProducts?: FvProduct[],
+): FvPlan {
   const idx = buildIndex(products);
+  const allIdx = allVendorProducts ? buildIndex(allVendorProducts) : null;
   type Hit = { raw: string; line: number; price: string | null };
   const hitsByProduct = new Map<string, Hit[]>();
   const ambiguousByProduct = new Map<string, { raw: string; skus: string[] }>();
@@ -215,8 +229,8 @@ export function planFullVendorRows(products: FvProduct[], pasted: FvPasted[]): F
     hitsByProduct.set(matches[0].id, list);
   }
 
-  const counts = { total: products.length, priced: 0, missing: 0, ambiguous: 0, conflict: 0, noPrice: 0, inactive: 0 };
-  const pinned = (p: FvProduct) => ({ cleanedSku: p.sku, cleanedOverridden: true });
+  const counts = { total: products.length, priced: 0, missing: 0, ambiguous: 0, conflict: 0, noPrice: 0, inactive: 0, notFound: 0 };
+  const pinned = (p: FvProduct) => ({ cleanedSku: p.sku, cleanedOverridden: false });
 
   const rows: FvRowPlan[] = products.map((p) => {
     if (p.isInactive) counts.inactive++;
@@ -262,22 +276,84 @@ export function planFullVendorRows(products: FvProduct[], pasted: FvPasted[]): F
     return { product: p, rawVendorSku: first.raw, ...keys, vendorListPriceNew: distinct[0], status: "priced", note: "" };
   });
 
-  return { rows, unmatchedPasted, ambiguousPasted, invalidPrice, counts };
+  // Keep every valid vendor item from the pasted batch in the worksheet, even
+  // when its SKU cannot be matched to inventory. Group unmatched pasted rows by
+  // normalized SKU to avoid duplicates in the current batch.
+  const unmatchedBySku = new Map<string, FvPasted[]>();
+  for (const row of unmatchedPasted) {
+    if (allIdx && resolvePastedSku(row.raw, allIdx).length > 0) {
+      // Matches an excluded inventory product of this vendor — respect user's deselection
+      continue;
+    }
+    const key = spaceless(row.raw);
+    const list = unmatchedBySku.get(key) ?? [];
+    list.push(row);
+    unmatchedBySku.set(key, list);
+  }
+
+  const unmatchedRows: FvRowPlan[] = [];
+  for (const [, list] of unmatchedBySku) {
+    const first = list[0];
+    const cleaned = normalizeSku(first.raw);
+    const validPrices = list.map((h) => cleanPrice(h.price));
+    const priced = validPrices
+      .filter((p) => p.ok && p.value !== null)
+      .map((p) => (p as { ok: true; value: string }).value);
+    const distinct = [...new Set(priced)];
+
+    let priceValue: string | null = null;
+    let status: FvStatus = "not-found";
+    let note = "Review: not found in inventory.";
+
+    if (distinct.length > 1) {
+      status = "conflict";
+      priceValue = null;
+      note = `Review: not found in inventory. Conflicting vendor prices (${distinct.join("; ")}). No price applied.`;
+      counts.conflict++;
+    } else if (distinct.length === 1) {
+      priceValue = distinct[0];
+      status = "not-found";
+      note = "Review: not found in inventory.";
+      counts.notFound++;
+    } else {
+      priceValue = null;
+      status = "not-found";
+      note = "Review: not found in inventory.";
+      counts.notFound++;
+    }
+
+    unmatchedRows.push({
+      product: null,
+      rawVendorSku: first.raw,
+      cleanedSku: cleaned,
+      cleanedOverridden: false,
+      vendorListPriceNew: priceValue,
+      status,
+      note,
+    });
+  }
+
+  const allRows = [...rows, ...unmatchedRows];
+  counts.total = allRows.length;
+
+  return { rows: allRows, unmatchedPasted, ambiguousPasted, invalidPrice, counts };
 }
 
 /** Markdown summary placed in the sheet's (editable) Price Sheet Notes. */
 export function planSummaryMarkdown(vendor: string, plan: FvPlan): string {
   const c = plan.counts;
+  const inventoryCount = c.total - (c.notFound ?? 0);
   const lines = [
     `**Full Vendor Price Update — ${vendor}**`,
     "",
-    `- Inventory products: ${c.total} (${c.inactive} inactive)`,
+    `- Inventory products: ${inventoryCount} (${c.inactive} inactive)`,
     `- With new vendor price: ${c.priced}`,
     `- Not in vendor list (no price): ${c.missing}`,
   ];
   if (c.noPrice) lines.push(`- Found but blank/invalid price: ${c.noPrice}`);
   if (c.ambiguous) lines.push(`- Ambiguous matches (no price applied): ${c.ambiguous}`);
   if (c.conflict) lines.push(`- Conflicting prices (no price applied): ${c.conflict}`);
+  if (c.notFound) lines.push(`- Vendor SKUs not found in inventory (added to worksheet): ${c.notFound}`);
   if (plan.unmatchedPasted.length) {
     const sample = plan.unmatchedPasted.slice(0, 50).map((r) => `${r.raw}${r.price ? ` (${r.price})` : ""}`).join(", ");
     lines.push(`- Vendor SKUs not found in this vendor's inventory: ${plan.unmatchedPasted.length}`);

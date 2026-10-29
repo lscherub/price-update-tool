@@ -123,7 +123,9 @@ function decOrZero(v: string | number | null | undefined): Decimal {
 /** Full server-side row calculation (pure, decimal-safe). */
 export function calculateRow(input: PriceRowInput): PriceRowResult {
   const cleaned =
-    input.cleanedOverridden && input.cleanedSku ? input.cleanedSku.trim() : normalizeSku(input.rawVendorSku ?? "");
+    input.cleanedOverridden && input.cleanedSku
+      ? input.cleanedSku.trim()
+      : (input.rawVendorSku ? normalizeSku(input.rawVendorSku) : (input.cleanedSku ? input.cleanedSku.trim() : ""));
   const p = input.product ?? null;
   const matched = !!p;
   const discount =

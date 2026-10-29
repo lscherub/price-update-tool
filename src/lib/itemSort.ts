@@ -27,8 +27,8 @@ export type ItemLike = {
   [k: string]: unknown;
 };
 
-/** Text shown in the Flags column, mirrored for sorting by flags. */
-export function flagsText(r: ItemLike): string {
+/** Distinct flags present on a row. */
+export function getItemFlags(r: ItemLike): string[] {
   const parts: string[] = [];
   if (!r.matched) parts.push("Not Found");
   if (r.isInactive) parts.push("Inactive");
@@ -38,7 +38,12 @@ export function flagsText(r: ItemLike): string {
   const n9 = r.nearest9 === null || r.nearest9 === undefined ? "" : String(r.nearest9);
   const old = r.oldRetailPrice === null || r.oldRetailPrice === undefined ? "" : String(r.oldRetailPrice);
   if (r.matched && n9 && old) parts.push(n9 !== old ? "Changed" : "No change");
-  return parts.join(", ");
+  return parts;
+}
+
+/** Text shown in the Flags column, mirrored for sorting by flags. */
+export function flagsText(r: ItemLike): string {
+  return getItemFlags(r).join(", ");
 }
 
 function numVal(v: unknown): number | null {

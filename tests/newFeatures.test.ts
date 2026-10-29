@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { POST as addProductPost } from "@/app/api/inventory/product/route";
 import { POST as fullVendorSessionPost } from "@/app/api/fullvendor/sessions/route";
 import { POST as fullVendorStorecountPost } from "@/app/api/fullvendor/sessions/[id]/storecount/excel/route";
+import { recalcRow } from "@/lib/recalc";
 import * as storeModule from "@/lib/store";
 import * as authModule from "@/lib/auth";
 import * as XLSX from "xlsx";
@@ -285,6 +286,93 @@ describe("POST /api/fullvendor/sessions (Feature 2)", () => {
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toContain("No products selected");
+  });
+
+  it("keeps unmatched vendor rows as Not Found in the worksheet and never assigns Manual SKU to inventory products", async () => {
+    const pasted = "058854045227\t11.50\nUNKNOWN-SKU-999\t25.00";
+    const req = new Request("http://localhost/api/fullvendor/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vendor: "A.O.R. INC.",
+        pastedData: pasted,
+      }),
+    });
+    const res = await fullVendorSessionPost(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+
+    const sid = data.sessionId;
+    const sessionItems = fakeStore.items.filter((i) => i.sessionId === sid);
+
+    // 2 inventory products (p1, p2) + 1 unmatched row = 3 items total
+    expect(sessionItems).toHaveLength(3);
+
+    // 1. Verify inventory products do NOT have cleanedOverridden = true ("Manual SKU")
+    const item1 = sessionItems.find((i) => i.productId === "p1")!;
+    expect(item1.cleanedOverridden).toBe(false);
+    expect(item1.matched).toBe(true);
+
+    const item2 = sessionItems.find((i) => i.productId === "p2")!;
+    expect(item2.cleanedOverridden).toBe(false);
+    expect(item2.matched).toBe(true);
+
+    // 2. Verify unmatched vendor row is retained with Not Found flag
+    const unmatched = sessionItems.find((i) => i.rawVendorSku === "UNKNOWN-SKU-999")!;
+    expect(unmatched).toBeDefined();
+    expect(unmatched.productId).toBeNull();
+    expect(unmatched.matched).toBe(false);
+    expect(unmatched.productNumber).toBe("");
+    expect(unmatched.productName).toBe("");
+    expect(unmatched.brand).toBe("");
+    expect(unmatched.vendor).toBe("");
+    expect(unmatched.vendorListPriceNew).toBe("25.00");
+    expect(unmatched.ourNewListPrice).toBeDefined();
+    expect(unmatched.ourNewRetailPrice).toBeDefined();
+    expect(unmatched.nearest9).toBeDefined();
+    expect(unmatched.cleanedOverridden).toBe(false);
+    expect(unmatched.notes).toContain("Review: not found in inventory.");
+  });
+
+  it("resolves an unmatched row when a matching SKU is entered later without creating duplicates", async () => {
+    const curUnmatched = {
+      rawVendorSku: "UNKNOWN-SKU-999",
+      cleanedSku: "UNKNOWN-SKU-99",
+      cleanedOverridden: false,
+      discount: "0",
+      vendorListPriceNew: "25.00",
+      marginDivisor: "0.55",
+      notes: "Review: not found in inventory.",
+    };
+
+    // Resolving by updating cleanedSku to p1's SKU ("058854045227")
+    const resolved = await recalcRow(curUnmatched, { cleanedSku: "058854045227" });
+    expect(resolved.matched).toBe(true);
+    expect(resolved.productId).toBe("p1");
+    expect(resolved.productName).toBe("Zinc Lozenge");
+    expect(resolved.vendor).toBe("A.O.R. INC.");
+  });
+
+  it("recalculates an inventory product without losing its match when rawVendorSku is blank and cleanedOverridden is false", async () => {
+    const curItem = {
+      rawVendorSku: "", // not matched in paste, but loaded from inventory
+      cleanedSku: "058854045227", // p1's sku
+      cleanedOverridden: false,
+      discount: "0",
+      vendorListPriceNew: null,
+      marginDivisor: "0.55",
+      notes: "Review: not in vendor price list",
+      vendor: "A.O.R. INC.",
+      brand: "AOR",
+    };
+
+    // User updates notes or marginDivisor
+    const recalced = await recalcRow(curItem, { notes: "Checked with buyer." });
+    expect(recalced.matched).toBe(true);
+    expect(recalced.productId).toBe("p1");
+    expect(recalced.productName).toBe("Zinc Lozenge");
+    expect(recalced.cleanedSku).toBe("058854045227");
   });
 });
 

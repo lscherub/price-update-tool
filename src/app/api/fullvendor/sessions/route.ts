@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `No inventory products found for vendor "${vendor}".` }, { status: 404 });
   }
 
+  const allVendorProducts = products;
   // Filter to selected products if selectedProductIds was provided
   if (Array.isArray(body.selectedProductIds)) {
     const selSet = new Set(body.selectedProductIds.map(String));
@@ -62,34 +63,56 @@ export async function POST(req: Request) {
     }
   }
 
-  const plan = planFullVendorRows(products, pasted);
+  const plan = planFullVendorRows(products, pasted, allVendorProducts);
 
   // Pricing: the unchanged calculateRow pipeline with the Vendor/Brand default
   // discount. A row without a vendor price yields null prices (no fabrication).
   type NewItem = Omit<ItemRow, "id" | "sessionId" | "updatedAt">;
+  const defaultVendorDisc = resolveDefaultDiscount(discMaps, vendor, "");
   const items: NewItem[] = plan.rows.map((r) => {
     const p = r.product;
-    const calc = calculateRow({
-      rawVendorSku: r.rawVendorSku,
-      cleanedSku: r.cleanedSku,
-      cleanedOverridden: true, // keep the planned cleaned SKU verbatim
-      vendorListPriceNew: r.vendorListPriceNew,
-      product: {
-        productNumber: p.productNumber, description: p.description, brand: p.brand,
-        vendor: p.vendor, listCost: p.listCost, price: p.price, isInactive: p.isInactive,
-      },
-      defaultDiscount: resolveDefaultDiscount(discMaps, p.vendor, p.brand),
-    });
-    return {
-      rawVendorSku: r.rawVendorSku, cleanedSku: r.cleanedSku, cleanedOverridden: r.cleanedOverridden,
-      productId: p.id, productNumber: calc.productNumber, productName: calc.productName,
-      brand: calc.brand, vendor: calc.vendor, discount: calc.discount,
-      currentListPrice: calc.currentListPrice, vendorListPriceNew: r.vendorListPriceNew,
-      ourNewListPrice: calc.ourNewListPrice, marginDivisor: calc.marginDivisor,
-      ourNewRetailPrice: calc.ourNewRetailPrice, oldRetailPrice: calc.oldRetailPrice,
-      nearest9: calc.nearest9, nearest9Custom: null, notes: r.note,
-      isInactive: p.isInactive, matched: true,
-    };
+    if (p) {
+      const calc = calculateRow({
+        rawVendorSku: r.rawVendorSku,
+        cleanedSku: r.cleanedSku,
+        cleanedOverridden: r.cleanedOverridden,
+        vendorListPriceNew: r.vendorListPriceNew,
+        product: {
+          productNumber: p.productNumber, description: p.description, brand: p.brand,
+          vendor: p.vendor, listCost: p.listCost, price: p.price, isInactive: p.isInactive,
+        },
+        defaultDiscount: resolveDefaultDiscount(discMaps, p.vendor, p.brand),
+      });
+      return {
+        rawVendorSku: r.rawVendorSku, cleanedSku: r.cleanedSku, cleanedOverridden: r.cleanedOverridden,
+        productId: p.id, productNumber: calc.productNumber, productName: calc.productName,
+        brand: calc.brand, vendor: calc.vendor, discount: calc.discount,
+        currentListPrice: calc.currentListPrice, vendorListPriceNew: r.vendorListPriceNew,
+        ourNewListPrice: calc.ourNewListPrice, marginDivisor: calc.marginDivisor,
+        ourNewRetailPrice: calc.ourNewRetailPrice, oldRetailPrice: calc.oldRetailPrice,
+        nearest9: calc.nearest9, nearest9Custom: null, notes: r.note,
+        isInactive: p.isInactive, matched: true,
+      };
+    } else {
+      const calc = calculateRow({
+        rawVendorSku: r.rawVendorSku,
+        cleanedSku: r.cleanedSku,
+        cleanedOverridden: r.cleanedOverridden,
+        vendorListPriceNew: r.vendorListPriceNew,
+        product: null,
+        defaultDiscount: defaultVendorDisc,
+      });
+      return {
+        rawVendorSku: r.rawVendorSku, cleanedSku: r.cleanedSku, cleanedOverridden: r.cleanedOverridden,
+        productId: null, productNumber: "", productName: "",
+        brand: "", vendor: "", discount: calc.discount,
+        currentListPrice: null, vendorListPriceNew: r.vendorListPriceNew,
+        ourNewListPrice: calc.ourNewListPrice, marginDivisor: calc.marginDivisor,
+        ourNewRetailPrice: calc.ourNewRetailPrice, oldRetailPrice: null,
+        nearest9: calc.nearest9, nearest9Custom: null, notes: r.note,
+        isInactive: false, matched: false,
+      };
+    }
   });
 
   const name = formatUpdateName(vendor);
@@ -97,7 +120,7 @@ export async function POST(req: Request) {
   const summary = {
     total: plan.counts.total, priced: plan.counts.priced, missing: plan.counts.missing,
     ambiguous: plan.counts.ambiguous, conflict: plan.counts.conflict, noPrice: plan.counts.noPrice,
-    inactive: plan.counts.inactive, unmatchedPasted: plan.unmatchedPasted.length, pastedRows: pasted.length,
+    inactive: plan.counts.inactive, notFound: plan.counts.notFound, unmatchedPasted: plan.unmatchedPasted.length, pastedRows: pasted.length,
   };
 
   if (!prisma) {

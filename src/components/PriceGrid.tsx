@@ -80,7 +80,7 @@ export function Flags({ r }: { r: Item }) {
   );
 }
 
-export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll, sortKey, sortDir, onSort, onFillDown, onOpenNotes, layoutKey, onRestoreDiscount }: {
+export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, onToggle, onToggleAll, sortKey, sortDir, onSort, onFillDown, onOpenNotes, layoutKey, onRestoreDiscount, availableFlags, selectedFlags, onToggleFlag, onClearFlags }: {
   rows: Item[]; page: number; pageSize: number;
   onEdit: (item: Item, key: string, value: string) => void;
   onDelete: (item: Item) => void;
@@ -95,12 +95,12 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   onOpenNotes?: (item: Item) => void;
   /** Restore the configured Vendor/Brand default discount (discount cells only). */
   onRestoreDiscount?: (item: Item) => void;
-  /**
-   * Session-only layout memory key (e.g. the price-update id). When provided,
-   * column widths, row heights, Wrap Text, and frozen columns are remembered
-   * in sessionStorage for the current session. Business data is untouched.
-   */
+  /** Session-only layout memory key */
   layoutKey?: string;
+  availableFlags?: string[];
+  selectedFlags?: Set<string>;
+  onToggleFlag?: (flag: string) => void;
+  onClearFlags?: () => void;
 }) {
   const slice = rows.slice((page - 1) * pageSize, page * pageSize);
   const sliceSelected = slice.filter((r) => selected.has(r.id)).length;
@@ -595,6 +595,38 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     Clear sort
                   </button>
                   {freezeMenu(FLAGS_COL_KEY)}
+                  {availableFlags && availableFlags.length > 0 && (
+                    <div className="border-t pt-1 mt-1">
+                      <div className="px-3 py-1 font-semibold text-slate-700">Filter by Flag:</div>
+                      {availableFlags.map((flag) => {
+                        const checked = selectedFlags?.has(flag) ?? false;
+                        return (
+                          <label
+                            key={flag}
+                            className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-slate-100"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => onToggleFlag?.(flag)}
+                              className="rounded border-slate-300 text-indigo-600"
+                            />
+                            <span>{flag}</span>
+                          </label>
+                        );
+                      })}
+                      {selectedFlags && selectedFlags.size > 0 && (
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-1 text-left text-blue-600 hover:bg-slate-100"
+                          onClick={() => onClearFlags?.()}
+                        >
+                          Clear flag filter
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {/* Excel-style column resize handle: drag the divider. */}

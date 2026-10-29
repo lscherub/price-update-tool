@@ -8,7 +8,7 @@ import type { BulkAddInputRow } from "@/lib/bulkAdd";
 import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
 import { applyPinnedOrder } from "@/lib/markdown";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
-import { parseSortParam, sortItems } from "@/lib/itemSort";
+import { getItemFlags, parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
@@ -147,6 +147,58 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const pageSize = 200;
   const history: HistoryState = historyBox.sid === id ? historyBox.state : EMPTY_HISTORY;
 
+  const [selectedFlags, setSelectedFlags] = useState<Set<string>>(new Set());
+  const [showFlagMenu, setShowFlagMenu] = useState(false);
+  const flagMenuRef = useRef<HTMLDivElement | null>(null);
+  const gridContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showFlagMenu) return;
+    const clickOutside = (e: MouseEvent) => {
+      if (flagMenuRef.current && !flagMenuRef.current.contains(e.target as Node)) {
+        setShowFlagMenu(false);
+      }
+    };
+    window.addEventListener("mousedown", clickOutside);
+    return () => window.removeEventListener("mousedown", clickOutside);
+  }, [showFlagMenu]);
+
+  const availableFlags = useMemo(() => {
+    const present = new Set<string>();
+    for (const it of items) {
+      for (const f of getItemFlags(it)) present.add(f);
+    }
+    const order = ["Not Found", "Inactive", "Manual SKU", "Custom", "Changed", "No change"];
+    return order.filter((f) => present.has(f));
+  }, [items]);
+
+  const flagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      for (const f of getItemFlags(it)) {
+        counts.set(f, (counts.get(f) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [items]);
+
+  const toggleFlagFilter = useCallback((flag: string) => {
+    setSelectedFlags((prev) => {
+      const next = new Set(prev);
+      if (next.has(flag)) next.delete(flag);
+      else next.add(flag);
+      return next;
+    });
+    setPage(1);
+    setPinnedOrder(null);
+  }, []);
+
+  const clearFlagFilter = useCallback(() => {
+    setSelectedFlags(new Set());
+    setPage(1);
+    setPinnedOrder(null);
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const r = await fetch(`/api/sessions/${id}`);
@@ -187,6 +239,12 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const s = q.toLowerCase();
       rows = rows.filter((r) => [r.rawVendorSku, r.cleanedSku, r.productNumber, r.productName, r.brand, r.vendor].join(" ").toLowerCase().includes(s));
     }
+    if (selectedFlags.size > 0) {
+      rows = rows.filter((r) => {
+        const flags = getItemFlags(r);
+        return flags.some((f) => selectedFlags.has(f));
+      });
+    }
     if (filter === "unmatched") rows = rows.filter((r) => !r.matched);
     if (filter === "notfound") rows = rows.filter((r) => !r.matched);
     if (filter === "changed") rows = rows.filter((r) => r.matched && r.nearest9 && r.oldRetailPrice && r.nearest9 !== r.oldRetailPrice);
@@ -199,12 +257,29 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     // visual order instead — it never changes the sort itself.
     const sorted = sortItems(rows, sortKey, sortDir);
     return pinnedOrder && pinnedOrder.length ? applyPinnedOrder(sorted, pinnedOrder) : sorted;
-  }, [items, q, filter, sortKey, sortDir, pinnedOrder]);
+  }, [items, q, selectedFlags, filter, sortKey, sortDir, pinnedOrder]);
+
+  const totalCount = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+
+  // Auto-adjust to valid page when row count changes after filtering/deleting
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const goToPage = useCallback((nextPage: number) => {
+    const clamped = Math.max(1, Math.min(nextPage, totalPages));
+    setPage(clamped);
+    gridContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [totalPages]);
+
   const lowerCount = useMemo(
     () => lowerCandidates(items.filter((r) => selected.has(r.id))).length,
     [items, selected],
   );
-  const visibleIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
 
   const changeSort = useCallback((key: SortableItemKey, dir: SortDir | null) => {
     if (!parseSortParam(key, dir ?? "asc") && dir !== null) return;
@@ -226,20 +301,24 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     });
   }, []);
 
-  const toggleAllVisible = useCallback(() => {
+  const sliceIds = useMemo(() => {
+    return filtered.slice((page - 1) * pageSize, page * pageSize).map((r) => r.id);
+  }, [filtered, page, pageSize]);
+
+  // Maintain row selections across pages: toggling page visible operates on the current page slice
+  const togglePageVisible = useCallback(() => {
     setSelected((prev) => {
-      const visible = new Set(visibleIds);
-      const allOn = visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
-      if (allOn) {
-        const next = new Set(prev);
-        for (const id of visible) next.delete(id);
-        return next;
-      }
+      const sliceSet = new Set(sliceIds);
+      const allOn = sliceIds.length > 0 && sliceIds.every((id) => prev.has(id));
       const next = new Set(prev);
-      for (const id of visible) next.add(id);
+      if (allOn) {
+        for (const id of sliceSet) next.delete(id);
+      } else {
+        for (const id of sliceSet) next.add(id);
+      }
       return next;
     });
-  }, [visibleIds]);
+  }, [sliceIds]);
   /** Current history, but only when it belongs to this price update. */
   const readHistory = useCallback(
     (): HistoryState => (historyBoxRef.current.sid === id ? historyBoxRef.current.state : EMPTY_HISTORY),
@@ -1065,6 +1144,93 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           ↷ Redo
         </button>
         <input className="min-w-60 flex-1 rounded border px-3 py-1.5" placeholder="Search..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); setPinnedOrder(null); }} />
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowFlagMenu((v) => !v)}
+            className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-sm font-medium ${
+              selectedFlags.size > 0 ? "border-indigo-400 bg-indigo-50 text-indigo-900" : "bg-white text-slate-700"
+            }`}
+            aria-expanded={showFlagMenu}
+            aria-haspopup="dialog"
+          >
+            <span>Flags</span>
+            {selectedFlags.size > 0 && (
+              <span className="rounded-full bg-indigo-600 px-1.5 py-0.2 text-[10px] font-semibold text-white">
+                {selectedFlags.size}
+              </span>
+            )}
+            <span className="text-xs text-slate-500">▾</span>
+          </button>
+          {showFlagMenu && (
+            <div
+              ref={flagMenuRef}
+              className="absolute left-0 top-full z-40 mt-1 min-w-56 rounded-lg border bg-white p-2 shadow-xl text-xs"
+            >
+              <div className="flex items-center justify-between border-b pb-1.5 font-semibold text-slate-700">
+                <span>Filter by flag:</span>
+                {selectedFlags.size > 0 && (
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 hover:underline"
+                    onClick={clearFlagFilter}
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-1 py-1.5 max-h-60 overflow-y-auto">
+                {availableFlags.length === 0 ? (
+                  <span className="text-slate-400 px-1">No flags in worksheet</span>
+                ) : (
+                  availableFlags.map((flag) => {
+                    const count = flagCounts.get(flag) ?? 0;
+                    const isChecked = selectedFlags.has(flag);
+                    return (
+                      <label
+                        key={flag}
+                        className="flex cursor-pointer items-center justify-between rounded px-2 py-1 hover:bg-slate-100"
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleFlagFilter(flag)}
+                            className="rounded border-slate-300 text-indigo-600"
+                          />
+                          <span>{flag}</span>
+                        </div>
+                        <span className="text-slate-400 font-mono">({count})</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {availableFlags.length > 0 && (
+                <div className="flex justify-between border-t pt-1.5">
+                  <button
+                    type="button"
+                    className="text-xs text-slate-600 hover:underline"
+                    onClick={() => {
+                      setSelectedFlags(new Set(availableFlags));
+                      setPage(1);
+                      setPinnedOrder(null);
+                    }}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-slate-600 hover:underline"
+                    onClick={() => setShowFlagMenu(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <select className="rounded border px-2 py-1.5" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); setPinnedOrder(null); }}>
           <option value="all">All rows</option>
           <option value="unmatched">Unmatched</option>
@@ -1106,14 +1272,20 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       </div>
       {msg && <div className="text-sm text-slate-600">{msg}</div>}
       {fillBusy && <div className="text-sm text-slate-500">Copying value to selected rows...</div>}
-      <PriceGrid
-        rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
-        selected={selected} onToggle={toggleOne} onToggleAll={toggleAllVisible}
-        sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
-        onOpenNotes={(item) => setNoteRow(item)}
-        onRestoreDiscount={restoreDiscount}
-        layoutKey={id}
-      />
+      <div ref={gridContainerRef}>
+        <PriceGrid
+          rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
+          selected={selected} onToggle={toggleOne} onToggleAll={togglePageVisible}
+          sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
+          onOpenNotes={(item) => setNoteRow(item)}
+          onRestoreDiscount={restoreDiscount}
+          layoutKey={id}
+          availableFlags={availableFlags}
+          selectedFlags={selectedFlags}
+          onToggleFlag={toggleFlagFilter}
+          onClearFlags={clearFlagFilter}
+        />
+      </div>
       {showAdd && (
         <AddItemDialog
           busy={addBusy}
@@ -1197,10 +1369,24 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           </div>
         </div>
       )}
-      <div className="flex items-center gap-2 text-sm">
-        <button disabled={page <= 1} className="rounded border px-3 py-1 disabled:opacity-40" onClick={() => setPage(page - 1)}>Prev</button>
-        <span>Page {page} ({filtered.length} rows)</span>
-        <button className="rounded border px-3 py-1" onClick={() => setPage(page + 1)}>Next</button>
+      <div className="flex items-center gap-3 text-sm">
+        <button
+          disabled={page <= 1}
+          className="rounded border px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+          onClick={() => goToPage(page - 1)}
+        >
+          Prev
+        </button>
+        <span className="font-medium text-slate-700">
+          Page {page} of {totalPages} · {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} products
+        </span>
+        <button
+          disabled={page >= totalPages}
+          className="rounded border px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-40 hover:bg-slate-50"
+          onClick={() => goToPage(page + 1)}
+        >
+          Next
+        </button>
       </div>
       {noteRow && (
         <NotesModal

@@ -33,7 +33,7 @@ export async function recalcRow(cur: CurRow, patch: Record<string, unknown>) {
   const rawNext = patch.rawVendorSku !== undefined ? String(patch.rawVendorSku) : cur.rawVendorSku;
   const lookupKey = patch.cleanedSku !== undefined
     ? String(patch.cleanedSku).trim()
-    : (overridden ? cur.cleanedSku : normalizeSku(rawNext));
+    : (overridden || !rawNext.trim() ? cur.cleanedSku : normalizeSku(rawNext));
   const prod = await lookupProduct(lookupKey);
 
   // ---- Discount: automatic default vs manual override ----
