@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import {
   createPrice99BatchRecord,
+  deletePrice99Batches,
   listPrice99Batches,
 } from "@/lib/price99Server";
 import type { Price99Action, Price99Item } from "@/lib/price99";
@@ -74,6 +75,42 @@ export async function POST(req: Request) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     console.error("Failed to save 99 Price batch:", e);
     return NextResponse.json({ error: "Could not save history batch." }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const batchIds = Array.isArray(body?.batchIds)
+    ? (body.batchIds as string[]).filter((id) => typeof id === "string" && id.trim())
+    : [];
+
+  if (!batchIds.length) {
+    return NextResponse.json(
+      { error: "At least one batch ID is required for deletion." },
+      { status: 400 }
+    );
+  }
+
+  const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
+
+  try {
+    const { deletedCount } = await deletePrice99Batches(batchIds);
+    return NextResponse.json({ success: true, deletedCount });
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    console.error("Failed to delete 99 Price batches:", e);
+    return NextResponse.json({ error: "Could not delete history batches." }, { status: 500 });
   }
 }
 

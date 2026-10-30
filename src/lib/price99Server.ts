@@ -13,6 +13,7 @@ export type DbLike = Pick<PrismaClient, "$queryRawUnsafe" | "$executeRawUnsafe">
     create: (args: any) => Promise<any>;
     findMany: (args: any) => Promise<any[]>;
     findUnique: (args: any) => Promise<any | null>;
+    deleteMany: (args: any) => Promise<{ count: number }>;
   };
 };
 
@@ -341,5 +342,46 @@ export async function getPrice99Batch(
     createdBy: r.createdBy,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
   };
+}
+
+/**
+ * Deletes selected history batches by batchId.
+ * Never modifies or deletes inventory or other batches.
+ */
+export async function deletePrice99Batches(
+  batchIds: string[],
+  dbOverride?: DbLike | null
+): Promise<{ deletedCount: number }> {
+  if (!batchIds.length) return { deletedCount: 0 };
+  const db = dbOverride !== undefined ? dbOverride : getPrisma();
+
+  if (!db) {
+    const store = loadFileStore();
+    const prevCount = (store.price99Batches || []).length;
+    store.price99Batches = (store.price99Batches || []).filter(
+      (b) => !batchIds.includes(b.batchId)
+    );
+    const deletedCount = prevCount - (store.price99Batches || []).length;
+    saveFileStore(store);
+    return { deletedCount };
+  }
+
+  await ensurePrice99Table(db);
+
+  if (db.price99Batch) {
+    const res = await db.price99Batch.deleteMany({
+      where: {
+        batchId: { in: batchIds },
+      },
+    });
+    return { deletedCount: res.count };
+  }
+
+  // Fallback to raw query
+  const res = await db.$executeRawUnsafe(
+    `DELETE FROM "Price99Batch" WHERE "batchId" = ANY($1)`,
+    batchIds
+  );
+  return { deletedCount: typeof res === "number" ? res : batchIds.length };
 }
 

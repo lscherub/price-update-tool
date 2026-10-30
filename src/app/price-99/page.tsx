@@ -7,6 +7,7 @@ import { useToast } from "@/components/Toast";
 import {
   buildPrice99Workbook,
   generatePrice99Filename,
+  parsePastedSkus,
   type Price99Action,
   type Price99BatchRecord,
   type Price99Item,
@@ -27,6 +28,16 @@ export default function Price99ManagerPage() {
   const [searchFocused, setSearchFocused] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Bulk SKU Entry state
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkInputText, setBulkInputText] = useState("");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSummary, setBulkSummary] = useState<{
+    addedCount: number;
+    skippedDuplicates: number;
+    notFound: string[];
+  } | null>(null);
+
   // Export Preview Modal state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<Price99Action>("CHECK");
@@ -40,6 +51,11 @@ export default function Price99ManagerPage() {
   const [historyActionFilter, setHistoryActionFilter] = useState<string>("");
   const [selectedBatch, setSelectedBatch] = useState<Price99BatchRecord | null>(null);
 
+  // History deletion state
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   // Close search dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -51,7 +67,7 @@ export default function Price99ManagerPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Debounced search for products
+  // Debounced search for products (ranks exact match first, then partial, then other)
   useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) {
@@ -147,6 +163,71 @@ export default function Price99ManagerPage() {
     setSelectedItems([]);
   };
 
+  // Process Bulk SKU Entry
+  const handleBulkSubmit = async () => {
+    const parsed = parsePastedSkus(bulkInputText);
+    if (!parsed.length) {
+      toast.warning("No SKUs found", "Please paste or enter at least one valid SKU.");
+      return;
+    }
+
+    setBulkLoading(true);
+    setBulkSummary(null);
+
+    try {
+      const res = await fetch("/api/price-99/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skus: parsed }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to look up SKUs in inventory.");
+      }
+
+      const data: { found: Price99Item[]; notFoundSkus: string[] } = await res.json();
+      const foundProducts = data.found || [];
+      const notFoundSkus = data.notFoundSkus || [];
+
+      // Filter out items already selected
+      const newItemsToAdd: Price99Item[] = [];
+      let skippedDuplicates = 0;
+
+      for (const item of foundProducts) {
+        if (selectedItems.some((existing) => existing.sku === item.sku)) {
+          skippedDuplicates++;
+        } else {
+          newItemsToAdd.push(item);
+        }
+      }
+
+      if (newItemsToAdd.length > 0) {
+        setSelectedItems((prev) => [...prev, ...newItemsToAdd]);
+      }
+
+      setBulkSummary({
+        addedCount: newItemsToAdd.length,
+        skippedDuplicates,
+        notFound: notFoundSkus,
+      });
+
+      if (newItemsToAdd.length > 0) {
+        toast.success(
+          "Bulk add completed",
+          `Added ${newItemsToAdd.length} product(s) to selection.`
+        );
+      } else if (skippedDuplicates > 0 && !notFoundSkus.length) {
+        toast.info("Duplicates skipped", "All matched products were already selected.");
+      } else if (notFoundSkus.length > 0 && !newItemsToAdd.length) {
+        toast.warning("Unmatched SKUs", "None of the entered SKUs were found in inventory.");
+      }
+    } catch (err: any) {
+      toast.error("Bulk Add Error", err?.message || "Failed to process bulk SKUs.");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   // Open export preview
   const openExportPreview = (action: Price99Action, items: Price99Item[] = selectedItems) => {
     if (!items.length) {
@@ -204,6 +285,54 @@ export default function Price99ManagerPage() {
     setSelectedBatch(null);
     setActiveTab("manager");
     toast.success("Loaded Batch", `Loaded ${batch.items.length} product(s) from batch ${batch.batchId}.`);
+  };
+
+  // Toggle batch selection for deletion
+  const toggleSelectBatch = (batchId: string) => {
+    setSelectedBatchIds((prev) =>
+      prev.includes(batchId) ? prev.filter((id) => id !== batchId) : [...prev, batchId]
+    );
+  };
+
+  // Toggle select all batches
+  const toggleSelectAllBatches = () => {
+    if (selectedBatchIds.length === historyBatches.length && historyBatches.length > 0) {
+      setSelectedBatchIds([]);
+    } else {
+      setSelectedBatchIds(historyBatches.map((b) => b.batchId));
+    }
+  };
+
+  // Execute deletion of selected batches
+  const confirmDeleteBatches = async () => {
+    if (!selectedBatchIds.length) return;
+    setDeleting(true);
+
+    try {
+      const res = await fetch("/api/price-99/history", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchIds: selectedBatchIds }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete selected batch history.");
+      }
+
+      const data = await res.json();
+      toast.success(
+        "Batches deleted",
+        `Permanently removed ${data.deletedCount || selectedBatchIds.length} batch record(s).`
+      );
+
+      setSelectedBatchIds([]);
+      setDeleteModalOpen(false);
+      loadHistory();
+    } catch (err: any) {
+      toast.error("Deletion error", err?.message || "Could not delete batches.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const isClassic = mode === "classic";
@@ -284,7 +413,7 @@ export default function Price99ManagerPage() {
       {/* ======================================================== */}
       {activeTab === "manager" && (
         <div className="flex flex-col gap-6">
-          {/* Search Bar & Auto-Suggest */}
+          {/* Search Bar & Bulk Add Option */}
           <div
             ref={searchContainerRef}
             className={`relative rounded-2xl border p-5 shadow-xs transition-all ${
@@ -293,9 +422,30 @@ export default function Price99ManagerPage() {
                 : "border-slate-200/90 bg-white dark:border-zinc-800 dark:bg-zinc-900"
             }`}
           >
-            <label className="block text-xs font-bold text-slate-900 dark:text-white mb-1.5">
-              Search All Inventory
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-900 dark:text-white">
+                Search All Inventory
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkModalOpen(true);
+                  setBulkSummary(null);
+                  setBulkInputText("");
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                  isClassic
+                    ? "bg-slate-100 text-slate-800 hover:bg-slate-200 border border-slate-300"
+                    : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800/80 dark:hover:bg-indigo-900/60"
+                }`}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Bulk Add SKUs</span>
+              </button>
+            </div>
+
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-zinc-500">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -354,8 +504,10 @@ export default function Price99ManagerPage() {
                     </div>
 
                     <ul className="divide-y divide-slate-100 dark:divide-zinc-700/60">
-                      {searchResults.map((item) => {
+                      {searchResults.map((item, idx) => {
                         const isAlreadySelected = selectedItems.some((s) => s.sku === item.sku);
+                        const isExactSku =
+                          item.sku.toLowerCase() === searchQuery.trim().toLowerCase();
 
                         return (
                           <li
@@ -369,6 +521,11 @@ export default function Price99ManagerPage() {
                                 <span className="font-mono font-bold text-slate-900 dark:text-white">
                                   {item.sku}
                                 </span>
+                                {isExactSku && (
+                                  <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                                    Exact Match
+                                  </span>
+                                )}
                                 {item.brand && (
                                   <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-zinc-700 dark:text-zinc-300">
                                     {item.brand}
@@ -449,7 +606,7 @@ export default function Price99ManagerPage() {
                   No products selected yet
                 </h3>
                 <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
-                  Search by SKU or description above to add products to your export list.
+                  Search by SKU or use Bulk Add SKUs above to add products to your export list.
                 </p>
               </div>
             ) : (
@@ -565,7 +722,7 @@ export default function Price99ManagerPage() {
       {/* ======================================================== */}
       {activeTab === "history" && (
         <div className="flex flex-col gap-5">
-          {/* History Search & Filters */}
+          {/* History Search & Filters & Delete Action */}
           <div
             className={`rounded-2xl border p-4 shadow-xs ${
               isClassic
@@ -611,6 +768,20 @@ export default function Price99ManagerPage() {
                   </button>
                 ))}
               </div>
+
+              {/* Delete Selected Trigger */}
+              {selectedBatchIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(true)}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span>Delete Selected ({selectedBatchIds.length})</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -623,9 +794,16 @@ export default function Price99ManagerPage() {
             }`}
           >
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-zinc-800">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                Export Batch History ({historyBatches.length})
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Export Batch History ({historyBatches.length})
+                </h2>
+                {selectedBatchIds.length > 0 && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {selectedBatchIds.length} selected
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={loadHistory}
@@ -648,6 +826,18 @@ export default function Price99ManagerPage() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-50 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300">
                     <tr>
+                      <th className="px-3.5 py-2.5 font-bold border-b border-slate-200 dark:border-zinc-700 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={
+                            historyBatches.length > 0 &&
+                            selectedBatchIds.length === historyBatches.length
+                          }
+                          onChange={toggleSelectAllBatches}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 cursor-pointer"
+                          aria-label="Select all batches"
+                        />
+                      </th>
                       <th className="px-4 py-2.5 font-bold border-b border-slate-200 dark:border-zinc-700">Batch ID</th>
                       <th className="px-4 py-2.5 font-bold border-b border-slate-200 dark:border-zinc-700">Date &amp; Time</th>
                       <th className="px-4 py-2.5 font-bold border-b border-slate-200 dark:border-zinc-700">Action</th>
@@ -657,59 +847,271 @@ export default function Price99ManagerPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-                    {historyBatches.map((batch) => (
-                      <tr
-                        key={batch.batchId}
-                        className="hover:bg-slate-50/70 dark:hover:bg-zinc-800/40 transition-colors"
-                      >
-                        <td className="px-4 py-2.5 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
-                          {batch.batchId}
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-600 dark:text-zinc-400 whitespace-nowrap">
-                          {new Date(batch.createdAt).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                              batch.action === "CHECK"
+                    {historyBatches.map((batch) => {
+                      const isSelected = selectedBatchIds.includes(batch.batchId);
+
+                      return (
+                        <tr
+                          key={batch.batchId}
+                          className={`transition-colors ${
+                            isSelected
+                              ? "bg-indigo-50/40 dark:bg-indigo-950/20"
+                              : "hover:bg-slate-50/70 dark:hover:bg-zinc-800/40"
+                          }`}
+                        >
+                          <td className="px-3.5 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectBatch(batch.batchId)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 cursor-pointer"
+                              aria-label={`Select batch ${batch.batchId}`}
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                            {batch.batchId}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-600 dark:text-zinc-400 whitespace-nowrap">
+                            {new Date(batch.createdAt).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                                batch.action === "CHECK"
                                 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300"
                                 : "bg-slate-200 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300"
-                            }`}
-                          >
-                            {batch.action === "CHECK" ? "✓ Check (Y)" : "— Uncheck (Blank)"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 font-semibold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
-                          {batch.productCount} item{batch.productCount === 1 ? "" : "s"}
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-500 dark:text-zinc-400 truncate max-w-[150px]">
-                          {batch.createdBy || "System"}
-                        </td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedBatch(batch)}
-                              className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                              }`}
                             >
-                              Open Details
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => loadBatchIntoSelection(batch)}
-                              className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:bg-zinc-800 dark:text-indigo-400 dark:hover:bg-zinc-700 transition-colors"
-                              title="Load products into current selector"
-                            >
-                              Load
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {batch.action === "CHECK" ? "✓ Check (Y)" : "— Uncheck (Blank)"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 font-semibold text-slate-800 dark:text-zinc-200 whitespace-nowrap">
+                            {batch.productCount} item{batch.productCount === 1 ? "" : "s"}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-500 dark:text-zinc-400 truncate max-w-[150px]">
+                            {batch.createdBy || "System"}
+                          </td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBatch(batch)}
+                                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                              >
+                                Open Details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => loadBatchIntoSelection(batch)}
+                                className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:bg-zinc-800 dark:text-indigo-400 dark:hover:bg-zinc-700 transition-colors"
+                                title="Load products into current selector"
+                              >
+                                Load
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* BULK SKU ENTRY MODAL                                     */}
+      {/* ======================================================== */}
+      {bulkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div
+            className={`w-full max-w-2xl rounded-2xl border p-6 shadow-xl max-h-[90vh] flex flex-col ${
+              isClassic
+                ? "border-slate-200 bg-white"
+                : "border-slate-200/90 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            }`}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-zinc-800">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
+                  Bulk Product Selection
+                </span>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Paste Multiple SKUs from Excel
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBulkModalOpen(false)}
+                className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 overflow-y-auto flex-1 pr-1">
+              <p className="text-xs text-slate-600 dark:text-zinc-300">
+                Paste SKUs copied directly from an Excel column or table (one SKU per line). Tab-separated columns will automatically extract the SKU.
+              </p>
+
+              <textarea
+                rows={7}
+                value={bulkInputText}
+                onChange={(e) => setBulkInputText(e.target.value)}
+                placeholder={"62363699339\n62491704071\n62491704304\n62491704331\n62491704343"}
+                className={`w-full rounded-xl border p-3 font-mono text-xs transition-all outline-none resize-y ${
+                  isClassic
+                    ? "border-slate-300 bg-white text-slate-900 focus:border-slate-600"
+                    : "border-slate-200 bg-slate-50/50 text-slate-900 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white dark:focus:border-indigo-500"
+                }`}
+              />
+
+              {/* Bulk Results Summary */}
+              {bulkSummary && (
+                <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 text-xs dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <span className="font-bold text-slate-800 dark:text-zinc-200">
+                    Lookup Results
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-lg bg-emerald-100 px-2.5 py-1 font-bold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                      ✓ {bulkSummary.addedCount} added to selection
+                    </span>
+                    {bulkSummary.skippedDuplicates > 0 && (
+                      <span className="rounded-lg bg-slate-200 px-2.5 py-1 font-bold text-slate-700 dark:bg-zinc-700 dark:text-zinc-300">
+                        ℹ {bulkSummary.skippedDuplicates} duplicate(s) skipped
+                      </span>
+                    )}
+                    {bulkSummary.notFound.length > 0 && (
+                      <span className="rounded-lg bg-red-100 px-2.5 py-1 font-bold text-red-800 dark:bg-red-950/80 dark:text-red-300">
+                        ✕ {bulkSummary.notFound.length} not found
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Review Unmatched SKUs */}
+                  {bulkSummary.notFound.length > 0 && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-zinc-400">
+                        <span className="font-semibold text-red-600 dark:text-red-400">
+                          Unmatched SKUs not in All Inventory:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(bulkSummary.notFound.join("\n"));
+                            toast.info("Copied to clipboard", "Unmatched SKUs copied.");
+                          }}
+                          className="font-bold text-indigo-600 hover:underline dark:text-indigo-400"
+                        >
+                          Copy Unmatched SKUs
+                        </button>
+                      </div>
+                      <div className="max-h-28 overflow-y-auto rounded-lg border border-red-200 bg-red-50/50 p-2 font-mono text-[11px] text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                        {bulkSummary.notFound.map((sku) => (
+                          <div key={sku}>{sku}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setBulkModalOpen(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={bulkLoading || !bulkInputText.trim()}
+                onClick={handleBulkSubmit}
+                className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                  isClassic
+                    ? "bg-slate-900 hover:bg-slate-800"
+                    : "bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+                }`}
+              >
+                {bulkLoading ? (
+                  <span>Looking up…</span>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Lookup &amp; Add Products</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* DELETE HISTORY CONFIRMATION MODAL                        */}
+      {/* ======================================================== */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div
+            className={`w-full max-w-md rounded-2xl border p-6 shadow-xl ${
+              isClassic
+                ? "border-slate-200 bg-white"
+                : "border-slate-200/90 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-950/80 dark:text-red-400">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Delete Batch History
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  Permanently remove selected export records
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-slate-600 dark:text-zinc-300">
+              Are you sure you want to permanently delete{" "}
+              <strong className="text-slate-900 dark:text-white">
+                {selectedBatchIds.length} history batch{selectedBatchIds.length === 1 ? "" : "es"}
+              </strong>
+              ? This action cannot be undone. Inventory and previously downloaded Excel files will not be affected.
+            </p>
+
+            <div className="mt-3 max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 font-mono text-[11px] text-slate-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              {selectedBatchIds.map((id) => (
+                <div key={id}>{id}</div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteModalOpen(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={confirmDeleteBatches}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleting ? "Deleting…" : `Delete ${selectedBatchIds.length} Batch(es)`}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -967,4 +1369,3 @@ export default function Price99ManagerPage() {
     </div>
   );
 }
-
