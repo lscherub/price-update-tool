@@ -29,6 +29,18 @@ export type StoreShape = {
   inventoryLastFullImportAt?: string | null;
   /** ISO timestamp of the last successful Export-for-POS price sync (null = never). Never set by imports. */
   inventoryLastPriceSyncAt?: string | null;
+  /** Dedicated 99 Price Manager batches */
+  price99Batches?: Price99BatchRow[];
+};
+
+export type Price99BatchRow = {
+  id: string;
+  batchId: string;
+  action: string;
+  productCount: number;
+  itemsJson: string;
+  createdBy: string;
+  createdAt: string;
 };
 
 export type SessionRow = {
@@ -56,7 +68,7 @@ export function cuid(): string {
 }
 
 export function emptyStore(): StoreShape {
-  return { products: [], vendorDiscounts: [], brandDiscounts: [], sessions: [], items: [], users: [], exports: [] };
+  return { products: [], vendorDiscounts: [], brandDiscounts: [], sessions: [], items: [], users: [], exports: [], price99Batches: [] };
 }
 
 export function loadFileStore(): StoreShape {

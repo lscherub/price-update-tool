@@ -129,3 +129,17 @@ model AppSetting {
   value     String   @default("")
   updatedAt DateTime @updatedAt
 }
+
+model Price99Batch {
+  id           String   @id @default(cuid())
+  batchId      String   @unique
+  action       String   // "CHECK" | "UNCHECK"
+  productCount Int
+  itemsJson    String   @db.Text
+  createdBy    String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
+

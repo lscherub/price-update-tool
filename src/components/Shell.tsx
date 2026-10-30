@@ -10,6 +10,8 @@ const NAV = [
   { href: "/sessions", label: "Price Updates" },
   { href: "/sessions/new", label: "New Price Update" },
   { href: "/calculator", label: "Calculator" },
+  { href: "/pos-cleaner", label: "POS Excel Cleaner" },
+  { href: "/price-99", label: "99 Price Manager" },
   { href: "/inventory", label: "Inventory" },
   { href: "/vendors", label: "Vendor Discounts" },
   { href: "/exports", label: "Exports" },
