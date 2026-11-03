@@ -6,6 +6,7 @@ import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { fullVendorSessionIds } from "@/lib/fullVendorServer";
 import { buildFullVendorCountWorkbook, fullVendorEffectivePrice, fullVendorNewPrice, type FullVendorCountRow } from "@/lib/fullVendorExcel";
 import { resolveLiveProducts } from "@/lib/lookup";
+import { buildContentDisposition, buildExportFilename } from "@/lib/exportFilename";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -51,6 +52,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (prodErr) return prodErr;
 
   let vendor = "";
+  let sessionName = "";
   let list: Lite[] = [];
   try {
     if (!(await fullVendorSessionIds(prisma, [id])).has(id)) {
@@ -58,7 +60,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     if (!prisma) {
       const store = loadFileStore();
-      vendor = store.sessions.find((s) => s.id === id)?.vendor ?? "";
+      const sessionRecord = store.sessions.find((s) => s.id === id);
+      vendor = sessionRecord?.vendor ?? "";
+      sessionName = sessionRecord?.name ?? "";
       const sessionItems = store.items.filter((i) => i.sessionId === id);
       const resolveProduct = await resolveLiveProducts(sessionItems, null);
       list = sessionItems.map((i) => {
@@ -73,6 +77,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const s = await prisma.priceUpdateSession.findUnique({ where: { id } });
       if (!s) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
       vendor = s.vendor;
+      sessionName = s.name;
       const items = await prisma.priceUpdateItem.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000 });
       const resolveProduct = await resolveLiveProducts(items, prisma);
       list = items.map((i) => {
@@ -146,11 +151,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     priceMode,
     productFilter,
   });
-  const safe = vendor.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "") || "vendor";
+  const filename = buildExportFilename(sessionName, "Digital Store Count", "xlsx");
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="store-count-${safe}-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+      "Content-Disposition": buildContentDisposition(filename),
     },
   });
 }

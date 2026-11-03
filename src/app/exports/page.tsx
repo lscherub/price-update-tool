@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { apiErrorText } from "@/lib/apiError";
+import { buildExportFilename, getFilenameFromContentDisposition } from "@/lib/exportFilename";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast, InlineSpinner } from "@/components/Toast";
 import { useUiMode } from "@/contexts/UiModeContext";
@@ -29,7 +30,7 @@ export default function ExportsPage() {
     return () => { active = false; };
   }, []);
 
-  const download = async (id: string, kind: "pos" | "storecount-excel", label: string) => {
+  const download = async (id: string, kind: "pos" | "storecount-excel", label: string, sessionName?: string) => {
     if (busy) return;
     setBusy(`${id}:${kind}`);
     try {
@@ -45,7 +46,12 @@ export default function ExportsPage() {
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = isExcel ? `storecount-${id}.xlsx` : `pos-export-${id}.csv`;
+      const fallbackName = buildExportFilename(
+        sessionName,
+        isExcel ? "Store Count" : "POS Export",
+        isExcel ? "xlsx" : "csv",
+      );
+      a.download = getFilenameFromContentDisposition(r.headers.get("content-disposition")) || fallbackName;
       a.click();
       URL.revokeObjectURL(a.href);
       toast.success(`${label} downloaded.`, label);
@@ -74,12 +80,12 @@ export default function ExportsPage() {
                 <tr key={s.id} className="border-t">
                   <td className="px-4 py-2">{s.vendor} — {s.name}</td>
                   <td className="px-4 py-2">
-                    <LoadingButton busy={busy === `${s.id}:pos`} busyLabel="Preparing..." onClick={() => download(s.id, "pos", "POS CSV")} className="px-0 text-blue-600 underline disabled:opacity-60">
+                    <LoadingButton busy={busy === `${s.id}:pos`} busyLabel="Preparing..." onClick={() => download(s.id, "pos", "POS CSV", s.name)} className="px-0 text-blue-600 underline disabled:opacity-60">
                       Download POS CSV
                     </LoadingButton>
                   </td>
                   <td className="px-4 py-2">
-                    <LoadingButton busy={busy === `${s.id}:storecount-excel`} busyLabel="Preparing..." onClick={() => download(s.id, "storecount-excel", "Store Count Excel")} className="px-0 text-blue-600 underline disabled:opacity-60">
+                    <LoadingButton busy={busy === `${s.id}:storecount-excel`} busyLabel="Preparing..." onClick={() => download(s.id, "storecount-excel", "Store Count Excel", s.name)} className="px-0 text-blue-600 underline disabled:opacity-60">
                       Download Store Count Excel
                     </LoadingButton>
                   </td>
@@ -191,7 +197,7 @@ export default function ExportsPage() {
                     <LoadingButton
                       busy={busy === `${s.id}:pos`}
                       busyLabel="Exporting..."
-                      onClick={() => download(s.id, "pos", "POS CSV")}
+                      onClick={() => download(s.id, "pos", "POS CSV", s.name)}
                       className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                     >
                       Download POS CSV
@@ -201,7 +207,7 @@ export default function ExportsPage() {
                     <LoadingButton
                       busy={busy === `${s.id}:storecount-excel`}
                       busyLabel="Exporting..."
-                      onClick={() => download(s.id, "storecount-excel", "Store Count Excel")}
+                      onClick={() => download(s.id, "storecount-excel", "Store Count Excel", s.name)}
                       className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-semibold text-emerald-800 shadow-2xs hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
                     >
                       Download Excel

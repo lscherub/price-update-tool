@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { resolveLiveProducts } from "@/lib/lookup";
+import { buildContentDisposition, buildExportFilename } from "@/lib/exportFilename";
 
 export const runtime = "nodejs";
 
@@ -105,8 +106,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const prodErr = productionDbGuard(prisma);
   if (prodErr) return prodErr;
   let rows: ExportRow[];
+  let sessionName = "";
   try {
-    rows = prisma ? await getItems(id, prisma) : await fileStoreItems(id);
+    if (prisma) {
+      const [s, loadedRows] = await Promise.all([
+        prisma.priceUpdateSession.findUnique({ where: { id }, select: { name: true } }).catch(() => null),
+        getItems(id, prisma),
+      ]);
+      sessionName = s?.name ?? "";
+      rows = loadedRows;
+    } else {
+      const s = loadFileStore().sessions.find((x) => x.id === id);
+      sessionName = s?.name ?? "";
+      rows = await fileStoreItems(id);
+    }
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not load rows for export." }, { status: 500 });
@@ -129,5 +142,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not record export." }, { status: 500 });
   }
-  return new NextResponse(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": `attachment; filename=\"pos-export-${id}.csv\"` } });
+  const filename = buildExportFilename(sessionName, "POS Export", "csv");
+  return new NextResponse(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": buildContentDisposition(filename) } });
 }

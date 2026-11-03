@@ -6,6 +6,7 @@ import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { storeCountNewPrice } from "@/lib/storeCountPricing";
 import { resolveLiveProducts } from "@/lib/lookup";
+import { buildContentDisposition, buildExportFilename } from "@/lib/exportFilename";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -48,7 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!prisma) {
     const store = loadFileStore();
     const s = store.sessions.find((x) => x.id === id);
-    sessionName = s?.name ?? id; sessionVendor = s?.vendor ?? "";
+    sessionName = s?.name ?? ""; sessionVendor = s?.vendor ?? "";
     const sessionItems = store.items.filter((i) => i.sessionId === id);
     const resolveProduct = await resolveLiveProducts(sessionItems, null);
     rows = orderRows(sessionItems
@@ -69,7 +70,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   } else {
     try {
       const s = await prisma.priceUpdateSession.findUnique({ where: { id } });
-      sessionName = s?.name ?? id; sessionVendor = s?.vendor ?? "";
+      sessionName = s?.name ?? ""; sessionVendor = s?.vendor ?? "";
       const items = await prisma.priceUpdateItem.findMany({
         where: { sessionId: id, ...(orderIds ? { id: { in: orderIds } } : {}) },
         orderBy: { createdAt: "asc" }, take: 50000,
@@ -168,7 +169,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   page.drawText(`Page ${pageNum} of ${totalPages()}`, { x: 700, y: 24, size: 8, font });
 
   const bytes = await pdf.save();
+  const filename = buildExportFilename(sessionName, "Store Count", "pdf");
   return new NextResponse(Buffer.from(bytes), {
-    headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename=\"storecount-${id}.pdf\"` },
+    headers: { "Content-Type": "application/pdf", "Content-Disposition": buildContentDisposition(filename) },
   });
 }

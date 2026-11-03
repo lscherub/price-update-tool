@@ -10,6 +10,7 @@ import { applyPinnedOrder } from "@/lib/markdown";
 import type { SortDir, SortableItemKey } from "@/lib/itemSort";
 import { getItemFlags, parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
+import { buildExportFilename, getFilenameFromContentDisposition } from "@/lib/exportFilename";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { useUiMode } from "@/contexts/UiModeContext";
@@ -933,7 +934,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `digital-storecount-${id}.xlsx`;
+      a.download = getFilenameFromContentDisposition(r.headers.get("content-disposition")) || buildExportFilename(name, "Digital Store Count", "xlsx");
       a.click();
       URL.revokeObjectURL(a.href);
       setShowFvExportModal(false);
@@ -961,7 +962,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `storecount-${id}.xlsx`;
+      a.download = getFilenameFromContentDisposition(r.headers.get("content-disposition")) || buildExportFilename(name, "Store Count", "xlsx");
       a.click();
       URL.revokeObjectURL(a.href);
       toast.success("Store Count Excel downloaded.");
@@ -986,7 +987,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       const blob = await r.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `pos-export-${id}.csv`;
+      a.download = getFilenameFromContentDisposition(r.headers.get("content-disposition")) || buildExportFilename(name, "POS Export", "csv");
       a.click();
       URL.revokeObjectURL(a.href);
       setSheetStatus("Exported");
@@ -1055,7 +1056,9 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         setMsg(t); toast.error("Store Count PDF failed.", t); return;
       }
       const blob = await r.blob();
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `storecount-${id}.pdf`; a.click();
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = getFilenameFromContentDisposition(r.headers.get("content-disposition")) || buildExportFilename(name, "Store Count", "pdf");
+      a.click();
       URL.revokeObjectURL(a.href);
       setMsg("PDF downloaded (inactive excluded).");
       toast.success("Store Count PDF downloaded.", "Inactive products are excluded.");

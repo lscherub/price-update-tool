@@ -5,6 +5,7 @@ import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { storeCountExcelPrice, buildStoreCountWorkbook, type StoreCountExcelRow } from "@/lib/storeCountPricing";
 import { resolveLiveProducts } from "@/lib/lookup";
+import { buildContentDisposition, buildExportFilename } from "@/lib/exportFilename";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -64,8 +65,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
 
   let rows: StoreCountExcelRow[];
+  let sessionName = "";
   if (!prisma) {
     const store = loadFileStore();
+    sessionName = store.sessions.find((s) => s.id === id)?.name ?? "";
     const sessionItems = store.items.filter((i) => i.sessionId === id);
     const resolveProduct = await resolveLiveProducts(sessionItems, null);
     const list: RowLite[] = sessionItems
@@ -85,9 +88,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     saveFileStore(store);
   } else {
     try {
-      const items = await prisma.priceUpdateItem.findMany({
-        where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000,
-      });
+      const [sessionRecord, items] = await Promise.all([
+        prisma.priceUpdateSession.findUnique({ where: { id }, select: { name: true } }),
+        prisma.priceUpdateItem.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000 }),
+      ]);
+      sessionName = sessionRecord?.name ?? "";
       const resolveProduct = await resolveLiveProducts(items, prisma);
       const list: RowLite[] = items
         .filter((i) => !(resolveProduct(i)?.isInactive ?? i.isInactive))
@@ -115,11 +120,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "No active rows to export. All rows are inactive or the session is empty." }, { status: 400 });
   }
 
+  const filename = buildExportFilename(sessionName, "Store Count", "xlsx");
   const buf = buildStoreCountWorkbook(rows);
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="storecount-${id}.xlsx"`,
+      "Content-Disposition": buildContentDisposition(filename),
     },
   });
 }
