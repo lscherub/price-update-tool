@@ -69,8 +69,6 @@ export function UnifiedPosImporterDialog({ isOpen, onClose, onSuccess }: Props) 
   } | null>(null);
   const [showFailedRows, setShowFailedRows] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleReset = () => {
     setStep("upload");
     setFileName("");
@@ -368,6 +366,8 @@ export function UnifiedPosImporterDialog({ isOpen, onClose, onSuccess }: Props) 
   };
 
   const importPct = progress && progress.total ? Math.floor((progress.processed / progress.total) * 100) : 0;
+
+  if (!isOpen) return null;
 
   return (
     <div

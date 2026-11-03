@@ -989,13 +989,15 @@ for (let i = 0; i < batches.length; i++) {
           onSubmit={addProduct}
         />
       )}
-      <UnifiedPosImporterDialog
-        isOpen={showUnifiedImporter}
-        onClose={() => setShowUnifiedImporter(false)}
-        onSuccess={async () => {
-          await refreshWithFilters();
-        }}
-      />
+      {showUnifiedImporter && (
+        <UnifiedPosImporterDialog
+          isOpen={showUnifiedImporter}
+          onClose={() => setShowUnifiedImporter(false)}
+          onSuccess={async () => {
+            await refreshWithFilters();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1603,13 +1605,15 @@ for (let i = 0; i < batches.length; i++) {
       )}
 
       {/* Unified POS Importer Modal */}
-      <UnifiedPosImporterDialog
-        isOpen={showUnifiedImporter}
-        onClose={() => setShowUnifiedImporter(false)}
-        onSuccess={async () => {
-          await refreshWithFilters();
-        }}
-      />
+      {showUnifiedImporter && (
+        <UnifiedPosImporterDialog
+          isOpen={showUnifiedImporter}
+          onClose={() => setShowUnifiedImporter(false)}
+          onSuccess={async () => {
+            await refreshWithFilters();
+          }}
+        />
+      )}
     </div>
   );
 }
