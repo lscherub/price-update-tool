@@ -4,6 +4,7 @@ import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuar
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { storeCountExcelPrice, buildStoreCountWorkbook, type StoreCountExcelRow } from "@/lib/storeCountPricing";
+import { resolveLiveProducts } from "@/lib/lookup";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -65,15 +66,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   let rows: StoreCountExcelRow[];
   if (!prisma) {
     const store = loadFileStore();
-    const pmap = new Map(store.products.map((p) => [p.id, p]));
-    const list: RowLite[] = store.items
+    const sessionItems = store.items.filter((i) => i.sessionId === id);
+    const resolveProduct = await resolveLiveProducts(sessionItems, null);
+    const list: RowLite[] = sessionItems
       .filter((i) => {
-        const live = i.productId ? pmap.get(i.productId)?.isInactive ?? i.isInactive : i.isInactive;
-        return i.sessionId === id && !live;
+        const live = resolveProduct(i)?.isInactive ?? i.isInactive;
+        return !live;
       })
       .map((i) => ({
         id: i.id, cleanedSku: i.cleanedSku, productName: i.productName,
-        sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
+        sizeDesc: resolveProduct(i)?.sizeDesc ?? "",
         nearest9: i.nearest9, oldRetailPrice: i.oldRetailPrice,
         brand: i.brand, vendor: i.vendor, notes: i.notes,
         matched: i.matched, isInactive: i.isInactive, cleanedOverridden: i.cleanedOverridden,
@@ -86,14 +88,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const items = await prisma.priceUpdateItem.findMany({
         where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000,
       });
-      const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
-      const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
-      const pmap = new Map(prods.map((p) => [p.id, p]));
+      const resolveProduct = await resolveLiveProducts(items, prisma);
       const list: RowLite[] = items
-        .filter((i) => !(i.productId ? pmap.get(i.productId)?.isInactive ?? i.isInactive : i.isInactive))
+        .filter((i) => !(resolveProduct(i)?.isInactive ?? i.isInactive))
         .map((i) => ({
           id: i.id, cleanedSku: i.cleanedSku, productName: i.productName,
-          sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
+          sizeDesc: resolveProduct(i)?.sizeDesc ?? "",
           nearest9: i.nearest9 ? String(i.nearest9) : null,
           oldRetailPrice: i.oldRetailPrice ? String(i.oldRetailPrice) : null,
           brand: i.brand, vendor: i.vendor, notes: i.notes,

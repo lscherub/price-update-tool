@@ -5,6 +5,7 @@ import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuar
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { storeCountNewPrice } from "@/lib/storeCountPricing";
+import { resolveLiveProducts } from "@/lib/lookup";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -48,17 +49,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const store = loadFileStore();
     const s = store.sessions.find((x) => x.id === id);
     sessionName = s?.name ?? id; sessionVendor = s?.vendor ?? "";
-    const pmap = new Map(store.products.map((p) => [p.id, p]));
-    const liveInactive = (productId: string | null, rowFlag: boolean) => {
-      if (!productId) return rowFlag;
-      return pmap.get(productId)?.isInactive ?? rowFlag;
-    };
-    rows = orderRows(store.items
-      .filter((i) => i.sessionId === id && !liveInactive(i.productId, i.isInactive) && (!orderIds || orderIds.includes(i.id)))
+    const sessionItems = store.items.filter((i) => i.sessionId === id);
+    const resolveProduct = await resolveLiveProducts(sessionItems, null);
+    rows = orderRows(sessionItems
+      .filter((i) => !(resolveProduct(i)?.isInactive ?? i.isInactive) && (!orderIds || orderIds.includes(i.id)))
       .map((i) => ({
         id: i.id,
         cleanedSku: i.cleanedSku, productName: i.productName,
-        sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
+        sizeDesc: resolveProduct(i)?.sizeDesc ?? "",
         newPrice: storeCountNewPrice(i.nearest9, i.oldRetailPrice),
         brand: i.brand, vendor: i.vendor, notes: i.notes,
         discount: i.discount, currentListPrice: i.currentListPrice, vendorListPriceNew: i.vendorListPriceNew,
@@ -76,15 +74,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         where: { sessionId: id, ...(orderIds ? { id: { in: orderIds } } : {}) },
         orderBy: { createdAt: "asc" }, take: 50000,
       });
-      const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
-      const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
-      const pmap = new Map(prods.map((p) => [p.id, p]));
+      const resolveProduct = await resolveLiveProducts(items, prisma);
       const mapped = items
-        .filter((i) => !(i.productId ? pmap.get(i.productId)?.isInactive ?? i.isInactive : i.isInactive))
+        .filter((i) => !(resolveProduct(i)?.isInactive ?? i.isInactive))
         .map((i) => ({
           id: i.id,
           cleanedSku: i.cleanedSku, productName: i.productName,
-          sizeDesc: i.productId ? pmap.get(i.productId)?.sizeDesc ?? "" : "",
+          sizeDesc: resolveProduct(i)?.sizeDesc ?? "",
           newPrice: storeCountNewPrice(i.nearest9 ? String(i.nearest9) : null, i.oldRetailPrice ? String(i.oldRetailPrice) : null),
           brand: i.brand, vendor: i.vendor, notes: i.notes,
           discount: String(i.discount ?? "0"), currentListPrice: i.currentListPrice ? String(i.currentListPrice) : null,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
+import { resolveLiveProducts } from "@/lib/lookup";
 
 export const runtime = "nodejs";
 
@@ -17,15 +18,14 @@ type ExportRow = {
 
 /** Dev-only fallback: re-check liveness so inactive products are excluded even
  *  if the flag was set after the row was calculated. */
-function fileStoreItems(sessionId: string): ExportRow[] {
+async function fileStoreItems(sessionId: string): Promise<ExportRow[]> {
   const store = loadFileStore();
-  const products = new Map(store.products.map((p) => [p.id, p]));
-  return store.items
-    .filter((i) => i.sessionId === sessionId)
-    .map((i) => {
-      const live = i.productId ? products.get(i.productId) : undefined;
-      return { ...i, isInactive: live ? live.isInactive : i.isInactive, sizeDesc: live?.sizeDesc ?? "" };
-    });
+  const sessionItems = store.items.filter((i) => i.sessionId === sessionId);
+  const resolveProduct = await resolveLiveProducts(sessionItems, null);
+  return sessionItems.map((i) => {
+    const live = resolveProduct(i);
+    return { ...i, isInactive: live ? live.isInactive : i.isInactive, sizeDesc: live?.sizeDesc ?? "" };
+  });
 }
 
 /** Record an export in ExportLog (Postgres) or the dev file store. Never
@@ -58,11 +58,9 @@ function recordFileStoreExport(sessionId: string, kind: string, createdBy: strin
 
 async function getItems(sessionId: string, prisma: NonNullable<ReturnType<typeof getPrisma>>): Promise<ExportRow[]> {
   const items = await prisma.priceUpdateItem.findMany({ where: { sessionId }, take: 50000, orderBy: { createdAt: "asc" } });
-  const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
-  const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
-  const pmap = new Map(prods.map((p) => [p.id, p]));
+  const resolveProduct = await resolveLiveProducts(items, prisma);
   return items.map((i) => {
-    const live = i.productId ? pmap.get(i.productId) : undefined;
+    const live = resolveProduct(i);
     return {
       id: i.id, rawVendorSku: i.rawVendorSku, cleanedSku: i.cleanedSku,
       productNumber: i.productNumber, productName: i.productName, brand: i.brand, vendor: i.vendor,
@@ -108,7 +106,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (prodErr) return prodErr;
   let rows: ExportRow[];
   try {
-    rows = prisma ? await getItems(id, prisma) : fileStoreItems(id);
+    rows = prisma ? await getItems(id, prisma) : await fileStoreItems(id);
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not load rows for export." }, { status: 500 });

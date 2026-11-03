@@ -5,6 +5,7 @@ import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { parseSortParam, sortItems } from "@/lib/itemSort";
 import { fullVendorSessionIds } from "@/lib/fullVendorServer";
 import { buildFullVendorCountWorkbook, fullVendorEffectivePrice, fullVendorNewPrice, type FullVendorCountRow } from "@/lib/fullVendorExcel";
+import { resolveLiveProducts } from "@/lib/lookup";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -58,9 +59,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!prisma) {
       const store = loadFileStore();
       vendor = store.sessions.find((s) => s.id === id)?.vendor ?? "";
-      const pmap = new Map(store.products.map((p) => [p.id, p]));
-      list = store.items.filter((i) => i.sessionId === id).map((i) => {
-        const p = i.productId ? pmap.get(i.productId) : undefined;
+      const sessionItems = store.items.filter((i) => i.sessionId === id);
+      const resolveProduct = await resolveLiveProducts(sessionItems, null);
+      list = sessionItems.map((i) => {
+        const p = resolveProduct(i);
         return {
           ...i, nearest9: i.nearest9 ?? null, oldRetailPrice: i.oldRetailPrice ?? null,
           isInactive: p ? p.isInactive : i.isInactive,
@@ -72,11 +74,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       if (!s) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
       vendor = s.vendor;
       const items = await prisma.priceUpdateItem.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000 });
-      const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
-      const prods = pids.length ? await prisma.product.findMany({ where: { id: { in: pids } } }) : [];
-      const pmap = new Map(prods.map((p) => [p.id, p]));
+      const resolveProduct = await resolveLiveProducts(items, prisma);
       list = items.map((i) => {
-        const p = i.productId ? pmap.get(i.productId) : undefined;
+        const p = resolveProduct(i);
         return {
           id: i.id, cleanedSku: i.cleanedSku, rawVendorSku: i.rawVendorSku, productNumber: i.productNumber,
           productName: i.productName, brand: i.brand, vendor: i.vendor, notes: i.notes, matched: i.matched,

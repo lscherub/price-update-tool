@@ -82,6 +82,152 @@ export async function findProductsByRawSkus(rawSkus: string[]): Promise<Map<stri
   return out;
 }
 
+export type ItemLike = {
+  productId?: string | null;
+  cleanedSku?: string | null;
+  rawVendorSku?: string | null;
+};
+
+/**
+ * Bulk live-product resolver for exports.
+ *
+ * Looks up the live Product record for each worksheet item:
+ * 1. Matches by item.cleanedSku against Product.sku if exact match exists.
+ * 2. Matches by item.productId if present and valid.
+ * 3. Falls back to normalized SKU / candidate SKUs of item.cleanedSku and item.rawVendorSku.
+ *
+ * This ensures Size Desc. (and live inactive status) are dynamically resolved
+ * at export time from current inventory, even if productId was detached after
+ * a full inventory reimport or clear.
+ */
+export async function resolveLiveProducts<T extends ItemLike>(
+  items: T[],
+  prismaClient?: ReturnType<typeof getPrisma>,
+): Promise<(item: T) => ProductRow | undefined> {
+  if (!items.length) return () => undefined;
+  const prisma = prismaClient !== undefined ? prismaClient : getPrisma();
+  const stripped = (v: string) => v.replace(/^0+/, "") || "0";
+
+  if (!prisma) {
+    const store = loadFileStore();
+    const byId = new Map<string, ProductRow>();
+    const bySku = new Map<string, ProductRow>();
+    const byNorm = new Map<string, ProductRow>();
+    const byStripped = new Map<string, ProductRow>();
+
+    for (const p of store.products) {
+      byId.set(p.id, p);
+      if (!bySku.has(p.sku)) bySku.set(p.sku, p);
+      if (!byNorm.has(p.normalizedSku)) byNorm.set(p.normalizedSku, p);
+      const sn = stripped(p.normalizedSku);
+      const ss = stripped(p.sku);
+      if (!byStripped.has(sn)) byStripped.set(sn, p);
+      if (!byStripped.has(ss)) byStripped.set(ss, p);
+    }
+
+    return (item: T): ProductRow | undefined => {
+      if (item.cleanedSku && bySku.has(item.cleanedSku)) {
+        return bySku.get(item.cleanedSku);
+      }
+      if (item.productId && byId.has(item.productId)) {
+        return byId.get(item.productId);
+      }
+      if (item.cleanedSku) {
+        const hit = byNorm.get(item.cleanedSku) ?? byStripped.get(stripped(item.cleanedSku));
+        if (hit) return hit;
+        for (const c of skuCandidates(item.cleanedSku)) {
+          const h = bySku.get(c) ?? byNorm.get(c) ?? byStripped.get(stripped(c));
+          if (h) return h;
+        }
+      }
+      if (item.rawVendorSku) {
+        for (const c of skuCandidates(item.rawVendorSku)) {
+          const h = bySku.get(c) ?? byNorm.get(c) ?? byStripped.get(stripped(c));
+          if (h) return h;
+        }
+      }
+      return undefined;
+    };
+  }
+
+  const pids = [...new Set(items.map((i) => i.productId).filter(Boolean))] as string[];
+  const allCandidates = new Set<string>();
+
+  for (const item of items) {
+    if (item.cleanedSku) {
+      allCandidates.add(item.cleanedSku);
+      skuCandidates(item.cleanedSku).forEach((c) => allCandidates.add(c));
+    }
+    if (item.rawVendorSku) {
+      allCandidates.add(item.rawVendorSku);
+      skuCandidates(item.rawVendorSku).forEach((c) => allCandidates.add(c));
+    }
+  }
+
+  const candList = [...allCandidates];
+  candList.forEach((c) => allCandidates.add(stripped(c)));
+  const finalCandList = [...allCandidates];
+
+  const found: ProductRow[] = [];
+
+  for (let i = 0; i < pids.length; i += 2000) {
+    const chunk = pids.slice(i, i + 2000);
+    const rows = await prisma.product.findMany({
+      where: { id: { in: chunk } },
+      take: 50000,
+    });
+    for (const r of rows) found.push(toProductRow(r as never));
+  }
+
+  for (let i = 0; i < finalCandList.length; i += 2000) {
+    const chunk = finalCandList.slice(i, i + 2000);
+    const rows = await prisma.product.findMany({
+      where: { OR: [{ sku: { in: chunk } }, { normalizedSku: { in: chunk } }] },
+      take: 50000,
+    });
+    for (const r of rows) found.push(toProductRow(r as never));
+  }
+
+  const byId = new Map<string, ProductRow>();
+  const bySku = new Map<string, ProductRow>();
+  const byNorm = new Map<string, ProductRow>();
+  const byStripped = new Map<string, ProductRow>();
+
+  for (const p of found) {
+    byId.set(p.id, p);
+    if (!bySku.has(p.sku)) bySku.set(p.sku, p);
+    if (!byNorm.has(p.normalizedSku)) byNorm.set(p.normalizedSku, p);
+    const sn = stripped(p.normalizedSku);
+    const ss = stripped(p.sku);
+    if (!byStripped.has(sn)) byStripped.set(sn, p);
+    if (!byStripped.has(ss)) byStripped.set(ss, p);
+  }
+
+  return (item: T): ProductRow | undefined => {
+    if (item.cleanedSku && bySku.has(item.cleanedSku)) {
+      return bySku.get(item.cleanedSku);
+    }
+    if (item.productId && byId.has(item.productId)) {
+      return byId.get(item.productId);
+    }
+    if (item.cleanedSku) {
+      const hit = byNorm.get(item.cleanedSku) ?? byStripped.get(stripped(item.cleanedSku));
+      if (hit) return hit;
+      for (const c of skuCandidates(item.cleanedSku)) {
+        const h = bySku.get(c) ?? byNorm.get(c) ?? byStripped.get(stripped(c));
+        if (h) return h;
+      }
+    }
+    if (item.rawVendorSku) {
+      for (const c of skuCandidates(item.rawVendorSku)) {
+        const h = bySku.get(c) ?? byNorm.get(c) ?? byStripped.get(stripped(c));
+        if (h) return h;
+      }
+    }
+    return undefined;
+  };
+}
+
 // Discount lookup tables: vendor defaults keyed by normalized vendor, plus
 // brand-specific overrides keyed by "normalizedVendor|normalizedBrand".
 export type DiscountMaps = { vendors: Map<string, string>; brands: Map<string, string> };
