@@ -6,12 +6,15 @@ import {
 } from "./posPriceSync";
 import {
   buildExactSkuFlagSql,
+  buildUnifiedUpsertSql,
   buildUpsertSql,
   exactSkuList,
   normalizeSkuList,
   prepareBatch,
+  prepareUnifiedBatch,
   REACTIVATE_ALL_SQL,
   type PreparedRow,
+  type PreparedUnifiedRow,
   type RowFailure,
 } from "./inventoryImport";
 
@@ -106,6 +109,62 @@ export async function importInventoryBatch(
     updated: applied.updated,
     // Duplicate SKUs inside one batch collapse to a single upsert, so they are
     // reported as skipped rather than silently counted twice.
+    skipped: prepared.duplicates,
+    failed: [...prepared.failures, ...applied.failed],
+  };
+}
+
+async function applyUnifiedRows(
+  db: DbLike,
+  rows: PreparedUnifiedRow[],
+  startRow: number,
+  depth: number,
+): Promise<BatchOutcome> {
+  if (!rows.length) return { processed: 0, inserted: 0, updated: 0, skipped: 0, failed: [] };
+  const { sql, params } = buildUnifiedUpsertSql(rows);
+  try {
+    const returning = await db.$queryRawUnsafe<ReturningRow[]>(sql, ...params);
+    const { inserted, updated } = tallyReturning(returning);
+    return { processed: rows.length, inserted, updated, skipped: 0, failed: [] };
+  } catch (e) {
+    if (rows.length > 1 && depth < MAX_SPLIT_DEPTH) {
+      const mid = Math.ceil(rows.length / 2);
+      const left = await applyUnifiedRows(db, rows.slice(0, mid), startRow, depth + 1);
+      const right = await applyUnifiedRows(db, rows.slice(mid), startRow + mid, depth + 1);
+      return {
+        processed: left.processed + right.processed,
+        inserted: left.inserted + right.inserted,
+        updated: left.updated + right.updated,
+        skipped: left.skipped + right.skipped,
+        failed: [...left.failed, ...right.failed],
+      };
+    }
+    const reason = firstLine(e);
+    return {
+      processed: 0,
+      inserted: 0,
+      updated: 0,
+      skipped: 0,
+      failed: rows.map((r, i) => ({ row: startRow + i, sku: r.sku, reason })),
+    };
+  }
+}
+
+/**
+ * Import one client batch of unified POS inventory rows, preserving Active/Inactive status.
+ * Binds 13 parameters per row and updates isInactive on conflict.
+ */
+export async function importUnifiedInventoryBatch(
+  db: DbLike,
+  rawRows: unknown[],
+  startRow = 2,
+): Promise<BatchOutcome> {
+  const prepared = prepareUnifiedBatch(rawRows, { startRow, makeId: () => cuid() });
+  const applied = await applyUnifiedRows(db, prepared.rows, startRow, 0);
+  return {
+    processed: applied.processed,
+    inserted: applied.inserted,
+    updated: applied.updated,
     skipped: prepared.duplicates,
     failed: [...prepared.failures, ...applied.failed],
   };

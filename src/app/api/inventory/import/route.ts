@@ -3,9 +3,10 @@ import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { cuid, loadFileStore, saveFileStore } from "@/lib/store";
 import { parseInactiveFile, parseInventoryFile } from "@/lib/importers";
-import { applyInactiveSkuList, importInventoryBatch, markMissingProductsInactive } from "@/lib/inventoryDb";
+import { applyInactiveSkuList, importInventoryBatch, importUnifiedInventoryBatch, markMissingProductsInactive } from "@/lib/inventoryDb";
 import { getLastFullImportAt, setLastFullImportNow } from "@/lib/inventoryMeta";
 import { exactSkuList, MAX_BATCH_ROWS, chunk as chunkRows } from "@/lib/inventoryImport";
+import { parseAndCleanUnifiedPosFile } from "@/lib/unifiedPosCleaner";
 
 export const runtime = "nodejs";
 // Each request handles ONE bounded batch, so this stays far below the limit
@@ -31,14 +32,74 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     if (Array.isArray(body.rows)) {
       const startRow = Number.isFinite(body.startRow) ? Number(body.startRow) : 2;
+      const isUnified = body.unified === true;
       if (!prisma) {
-        return NextResponse.json(
-          { error: "DatabaseUnavailable", message: "DATABASE_URL is not configured." },
-          { status: 503 },
-        );
+        try {
+          const store = loadFileStore();
+          const bySku = new Map(store.products.map((p) => [p.sku, p]));
+          let inserted = 0;
+          let updated = 0;
+          for (const raw of body.rows) {
+            const r = (raw ?? {}) as Record<string, unknown>;
+            const sku = String(r.sku ?? "").trim();
+            if (!sku) continue;
+            const normKey = sku.replace(/[\s-]+/g, "");
+            const isInactive =
+              typeof r.isInactive === "boolean"
+                ? r.isInactive
+                : String(r.status ?? "").toLowerCase() === "inactive" ||
+                  String(r.inactive ?? "").trim().toUpperCase() === "Y";
+
+            const ex = bySku.get(sku);
+            if (ex) {
+              ex.productNumber = String(r.productNumber ?? "").trim();
+              ex.description = String(r.description ?? "").trim();
+              ex.vendor = String(r.vendor ?? "").trim();
+              ex.brand = String(r.brand ?? "").trim();
+              ex.listCost = String(r.listCost ?? "0").trim();
+              ex.price = String(r.price ?? "0").trim();
+              ex.sizeDesc = String(r.sizeDesc ?? "").trim();
+              ex.normalizedSku = normKey;
+              ex.isInactive = isUnified ? isInactive : false;
+              updated++;
+            } else {
+              const row = {
+                id: cuid(),
+                sku,
+                normalizedSku: normKey,
+                productNumber: String(r.productNumber ?? "").trim(),
+                description: String(r.description ?? "").trim(),
+                vendor: String(r.vendor ?? "").trim(),
+                brand: String(r.brand ?? "").trim(),
+                listCost: String(r.listCost ?? "0").trim(),
+                price: String(r.price ?? "0").trim(),
+                sizeDesc: String(r.sizeDesc ?? "").trim(),
+                isInactive: isUnified ? isInactive : false,
+              };
+              store.products.push(row);
+              bySku.set(sku, row);
+              inserted++;
+            }
+          }
+          saveFileStore(store);
+          return NextResponse.json({
+            ok: true,
+            processed: body.rows.length,
+            inserted,
+            updated,
+            skipped: 0,
+            failed: [],
+            total: store.products.length,
+          });
+        } catch (e) {
+          if (isDbConnectionError(e)) return dbUnreachableResponse();
+          return NextResponse.json({ error: "Inventory import batch failed." }, { status: 500 });
+        }
       }
       try {
-        const outcome = await importInventoryBatch(prisma, body.rows, startRow);
+        const outcome = isUnified
+          ? await importUnifiedInventoryBatch(prisma, body.rows, startRow)
+          : await importInventoryBatch(prisma, body.rows, startRow);
         const total = await prisma.product.count();
         return NextResponse.json({ ok: true, ...outcome, total });
       } catch (e) {
@@ -128,6 +189,69 @@ export async function POST(req: Request) {
     } catch (e) {
       if (isDbConnectionError(e)) return dbUnreachableResponse();
       return NextResponse.json({ error: "Inactive import failed. Check the database connection and try again." }, { status: 500 });
+    }
+  }
+
+  if (mode === "unified") {
+    const cleanResult = parseAndCleanUnifiedPosFile(buf);
+    if (!cleanResult.success) {
+      return NextResponse.json({ error: cleanResult.error }, { status: 400 });
+    }
+    const products = cleanResult.records;
+    if (!prisma) {
+      const store = loadFileStore();
+      const bySku = new Map(store.products.map((p) => [p.sku, p]));
+      let created = 0, updated = 0;
+      for (const p of products) {
+        const normKey = String(p.sku).trim().replace(/[\s-]+/g, "");
+        const ex = bySku.get(p.sku);
+        if (ex) {
+          ex.productNumber = p.productNumber; ex.description = p.description;
+          ex.vendor = p.vendor; ex.brand = p.brand;
+          ex.listCost = p.listCost || "0"; ex.price = p.price || "0";
+          ex.sizeDesc = p.sizeDesc; ex.normalizedSku = normKey;
+          ex.isInactive = p.isInactive;
+          updated++;
+        } else {
+          const row = {
+            id: cuid(), sku: p.sku, normalizedSku: normKey,
+            productNumber: p.productNumber, description: p.description, vendor: p.vendor,
+            brand: p.brand, listCost: p.listCost || "0", price: p.price || "0",
+            sizeDesc: p.sizeDesc, isInactive: p.isInactive,
+          };
+          store.products.push(row); bySku.set(p.sku, row); created++;
+        }
+      }
+      store.inventoryLastFullImportAt = new Date().toISOString();
+      saveFileStore(store);
+      return NextResponse.json({
+        ok: true, detected: products.length, created, updated,
+        total: store.products.length, lastImportedAt: store.inventoryLastFullImportAt,
+      });
+    }
+
+    try {
+      let inserted = 0, updated = 0, processed = 0, skipped = 0;
+      const failed: { row: number; sku: string; reason: string }[] = [];
+      for (const [i, batch] of chunkRows(products, MAX_BATCH_ROWS).entries()) {
+        const outcome = await importUnifiedInventoryBatch(prisma, batch, 2 + i * MAX_BATCH_ROWS);
+        inserted += outcome.inserted;
+        updated += outcome.updated;
+        processed += outcome.processed;
+        skipped += outcome.skipped;
+        failed.push(...outcome.failed);
+      }
+      const total = await prisma.product.count();
+      let lastImportedAt: string | null = null;
+      if (!failed.length) lastImportedAt = await setLastFullImportNow(prisma);
+      else lastImportedAt = await getLastFullImportAt(prisma);
+      return NextResponse.json({
+        ok: true, detected: products.length, created: inserted, inserted, updated,
+        processed, skipped, failed, total, lastImportedAt,
+      });
+    } catch (e) {
+      if (isDbConnectionError(e)) return dbUnreachableResponse();
+      return NextResponse.json({ error: "Unified inventory import failed." }, { status: 500 });
     }
   }
 

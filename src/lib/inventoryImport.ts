@@ -176,6 +176,108 @@ export function buildUpsertSql(rows: PreparedRow[]): { sql: string; params: unkn
   return { sql, params };
 }
 
+export type UnifiedInventoryRow = InventoryRow & {
+  isInactive?: boolean;
+  status?: string;
+  inactive?: string;
+};
+
+export type PreparedUnifiedRow = PreparedRow & {
+  isInactive: boolean;
+};
+
+/**
+ * Validate + normalize rows for the unified POS import, which includes Active/Inactive status.
+ */
+export function prepareUnifiedBatch(
+  raw: unknown[],
+  opts: { startRow?: number; makeId: () => string; now?: Date },
+): { rows: PreparedUnifiedRow[]; failures: RowFailure[]; duplicates: number } {
+  const startRow = opts.startRow ?? 2;
+  const stamp = (opts.now ?? new Date()).toISOString();
+  const bySku = new Map<string, PreparedUnifiedRow>();
+  const order: string[] = [];
+  const failures: RowFailure[] = [];
+  let duplicates = 0;
+
+  (raw ?? []).forEach((entry, idx) => {
+    const sheetRow = startRow + idx;
+    const r = (entry ?? {}) as Record<string, unknown>;
+    const sku = String(r.sku ?? "").trim();
+    if (!sku) {
+      failures.push({ row: sheetRow, sku: "", reason: "Missing SKU" });
+      return;
+    }
+    const cost = parseAmount(r.listCost, "List Cost");
+    if (!cost.ok) { failures.push({ row: sheetRow, sku, reason: cost.reason }); return; }
+    const price = parseAmount(r.price, "Price");
+    if (!price.ok) { failures.push({ row: sheetRow, sku, reason: price.reason }); return; }
+
+    let isInactive = false;
+    if (r.inactive !== undefined && r.inactive !== null && r.inactive !== "") {
+      isInactive = String(r.inactive).trim().toUpperCase() === "Y";
+    } else if (r.status !== undefined && r.status !== null && r.status !== "") {
+      isInactive = String(r.status).trim().toLowerCase() === "inactive";
+    } else if (typeof r.isInactive === "boolean") {
+      isInactive = r.isInactive;
+    }
+
+    const prepared: PreparedUnifiedRow = {
+      sku,
+      normalizedSku: normalizeSku(sku) || sku.replace(/[\s-]+/g, ""),
+      productNumber: String(r.productNumber ?? "").trim(),
+      description: String(r.description ?? "").trim(),
+      vendor: String(r.vendor ?? "").trim(),
+      brand: String(r.brand ?? "").trim(),
+      listCost: cost.value,
+      price: price.value,
+      sizeDesc: String(r.sizeDesc ?? "").trim(),
+      isInactive,
+      id: opts.makeId(),
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    if (bySku.has(sku)) duplicates++;
+    else order.push(sku);
+    bySku.set(sku, prepared);
+  });
+
+  return { rows: order.map((s) => bySku.get(s) as PreparedUnifiedRow), failures, duplicates };
+}
+
+/**
+ * Build upsert SQL for the unified POS import.
+ * Unlike the legacy upsert which forces isInactive=false, this binds isInactive
+ * directly from the cleaned POS data and updates it on conflict via EXCLUDED.isInactive.
+ */
+export function buildUnifiedUpsertSql(rows: PreparedUnifiedRow[]): { sql: string; params: unknown[] } {
+  const params: unknown[] = [];
+  const tuples: string[] = [];
+  for (const r of rows) {
+    const i = params.length;
+    params.push(
+      r.sku, r.normalizedSku, r.productNumber, r.description, r.vendor, r.brand,
+      r.listCost, r.price, r.sizeDesc, r.isInactive, r.id, r.createdAt, r.updatedAt,
+    );
+    tuples.push(
+      `($${i + 1}, $${i + 2}, $${i + 3}, $${i + 4}, $${i + 5}, $${i + 6},` +
+      ` $${i + 7}::numeric, $${i + 8}::numeric, $${i + 9}, $${i + 10}::boolean, $${i + 11},` +
+      ` $${i + 12}::timestamptz, $${i + 13}::timestamptz)`,
+    );
+  }
+  const sql =
+    `INSERT INTO "Product" ("sku","normalizedSku","productNumber","description","vendor","brand",` +
+    `"listCost","price","sizeDesc","isInactive","id","createdAt","updatedAt") VALUES ${tuples.join(",")} ` +
+    `ON CONFLICT ("sku") DO UPDATE SET ` +
+    `"normalizedSku"=EXCLUDED."normalizedSku","productNumber"=EXCLUDED."productNumber",` +
+    `"description"=EXCLUDED."description","vendor"=EXCLUDED."vendor","brand"=EXCLUDED."brand",` +
+    `"listCost"=EXCLUDED."listCost","price"=EXCLUDED."price","sizeDesc"=EXCLUDED."sizeDesc",` +
+    `"isInactive"=EXCLUDED."isInactive",` +
+    `"updatedAt"=EXCLUDED."updatedAt" ` +
+    `RETURNING "sku", (xmax = 0) AS "inserted"`;
+  return { sql, params };
+}
+
 /** Distinct SKUs from an export, for the optional "missing -> inactive" pass. */
 export function normalizeSkuList(skus: unknown[]): string[] {
   const out = new Set<string>();

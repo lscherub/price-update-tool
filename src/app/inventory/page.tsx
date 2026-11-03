@@ -6,6 +6,7 @@ import { parseInventoryArrayBuffer } from "@/lib/importers";
 import { LoadingButton, Spinner } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { AddProductDialog, type AddProductInput } from "@/components/AddProductDialog";
+import { UnifiedPosImporterDialog } from "@/components/UnifiedPosImporterDialog";
 import { useUiMode } from "@/contexts/UiModeContext";
 
 /** Rows per server request. Mirrors the server's MAX_BATCH_ROWS. */
@@ -228,6 +229,7 @@ export default function InventoryPage() {
   const [addProductBusy, setAddProductBusy] = useState(false);
   const { mode } = useUiMode();
   const [showImportCard, setShowImportCard] = useState(false);
+  const [showUnifiedImporter, setShowUnifiedImporter] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
 
   type Filters = {
@@ -684,6 +686,13 @@ for (let i = 0; i < batches.length; i++) {
 
       <div className="flex flex-col gap-3 rounded-xl border bg-white p-4">
         <div className="flex flex-wrap items-end gap-3">
+          <button
+            type="button"
+            onClick={() => setShowUnifiedImporter(true)}
+            className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-700"
+          >
+            Import POS Inventory (New)
+          </button>
           <label className="flex flex-col gap-1 text-sm">
             POS inventory file (Excel/CSV)
             <input
@@ -980,6 +989,13 @@ for (let i = 0; i < batches.length; i++) {
           onSubmit={addProduct}
         />
       )}
+      <UnifiedPosImporterDialog
+        isOpen={showUnifiedImporter}
+        onClose={() => setShowUnifiedImporter(false)}
+        onSuccess={async () => {
+          await refreshWithFilters();
+        }}
+      />
     </div>
   );
 }
@@ -1008,10 +1024,20 @@ for (let i = 0; i < batches.length; i++) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => setShowUnifiedImporter(true)}
+            className="rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition-colors inline-flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Import POS Inventory (New)
+          </button>
+          <button
+            type="button"
             onClick={() => setShowImportCard((v) => !v)}
             className={`rounded-lg border px-3.5 py-2 text-xs font-semibold shadow-2xs transition-colors ${
               showImportCard
-                ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-200"
+                ? "border-slate-400 bg-slate-100 text-slate-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
             }`}
           >
@@ -1020,14 +1046,14 @@ for (let i = 0; i < batches.length; i++) {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                Close Import Panel
+                Close Legacy Tools
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                 </svg>
-                Import POS Inventory
+                Legacy Import Tools
               </span>
             )}
           </button>
@@ -1077,13 +1103,36 @@ for (let i = 0; i < batches.length; i++) {
       {showImportCard && (
         <div className="flex flex-col gap-4 rounded-xl border border-indigo-200/80 bg-indigo-50/30 p-5 dark:border-indigo-900/60 dark:bg-indigo-950/20 shadow-xs">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">POS Catalog Importer & Inactive SKU Tools</h2>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white">POS Catalog Importer &amp; Inactive SKU Tools</h2>
             <button
               type="button"
               onClick={() => setShowImportCard(false)}
               className="text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400"
             >
               Close
+            </button>
+          </div>
+
+          {/* Unified Importer Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-200 bg-white p-3.5 shadow-2xs dark:border-indigo-900/60 dark:bg-zinc-900">
+            <div>
+              <span className="inline-flex items-center gap-1.5 font-bold text-xs text-indigo-900 dark:text-indigo-200">
+                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-extrabold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">NEW</span>
+                Unified Cleaner &amp; Import Workflow
+              </span>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-400">
+                Skip separate cleaning and inactive files. Clean raw Amber POS exports and import with Active/Inactive status directly.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowImportCard(false);
+                setShowUnifiedImporter(true);
+              }}
+              className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition-colors"
+            >
+              Open Import POS Inventory (New) →
             </button>
           </div>
 
@@ -1552,6 +1601,15 @@ for (let i = 0; i < batches.length; i++) {
           </div>
         </div>
       )}
+
+      {/* Unified POS Importer Modal */}
+      <UnifiedPosImporterDialog
+        isOpen={showUnifiedImporter}
+        onClose={() => setShowUnifiedImporter(false)}
+        onSuccess={async () => {
+          await refreshWithFilters();
+        }}
+      />
     </div>
   );
 }
