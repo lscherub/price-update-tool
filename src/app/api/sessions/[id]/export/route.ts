@@ -4,6 +4,8 @@ import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuar
 import { loadFileStore, saveFileStore, cuid } from "@/lib/store";
 import { resolveLiveProducts } from "@/lib/lookup";
 import { buildContentDisposition, buildExportFilename } from "@/lib/exportFilename";
+import { fullVendorSessionIds } from "@/lib/fullVendorServer";
+import { filterAndMapPosRows, type PosExportMode } from "@/lib/fullVendorPosExport";
 
 export const runtime = "nodejs";
 
@@ -144,4 +146,97 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
   const filename = buildExportFilename(sessionName, "POS Export", "csv");
   return new NextResponse(csv, { headers: { "Content-Type": "text/csv", "Content-Disposition": buildContentDisposition(filename) } });
+}
+
+/**
+ * POST /api/sessions/[id]/export
+ *
+ * POS CSV export with selection and price options for Full Vendor Price Updates ONLY.
+ * Options supported in request body:
+ * - mode: "all" | "all-populate" | "changed" | "selected"
+ * - selectedIds?: string[]
+ */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await ctx.params;
+  const raw = await req.json().catch(() => ({}));
+  const body = (raw && typeof raw === "object" ? raw : {}) as {
+    kind?: string;
+    mode?: unknown;
+    selectedIds?: unknown;
+  };
+
+  const prisma = getPrisma();
+  const prodErr = productionDbGuard(prisma);
+  if (prodErr) return prodErr;
+
+  const rawMode = String(body.mode ?? "all").trim();
+  const mode: PosExportMode =
+    rawMode === "all-populate" || rawMode === "changed" || rawMode === "selected"
+      ? rawMode
+      : "all";
+
+  const selectedIds = Array.isArray(body.selectedIds)
+    ? body.selectedIds.map((v) => String(v ?? "")).filter(Boolean)
+    : [];
+
+  if (mode === "selected" && selectedIds.length === 0) {
+    return NextResponse.json({ error: "No products selected for export." }, { status: 400 });
+  }
+
+  let rows: ExportRow[];
+  let sessionName = "";
+  try {
+    const isFv = (await fullVendorSessionIds(prisma, [id])).has(id);
+    if (!isFv) {
+      return NextResponse.json(
+        { error: "POS export options are only available for Full Vendor Price Updates." },
+        { status: 400 },
+      );
+    }
+
+    if (prisma) {
+      const [s, loadedRows] = await Promise.all([
+        prisma.priceUpdateSession.findUnique({ where: { id }, select: { name: true } }).catch(() => null),
+        getItems(id, prisma),
+      ]);
+      sessionName = s?.name ?? "";
+      rows = loadedRows;
+    } else {
+      const s = loadFileStore().sessions.find((x) => x.id === id);
+      sessionName = s?.name ?? "";
+      rows = await fileStoreItems(id);
+    }
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not load rows for export." }, { status: 500 });
+  }
+
+  const exportRows = filterAndMapPosRows(rows, { mode, selectedIds });
+  if (!exportRows.length) {
+    return NextResponse.json({ error: "No products match the selected export options." }, { status: 400 });
+  }
+
+  const csv = toPosCsv(exportRows);
+  const kind = "pos";
+  try {
+    if (prisma) {
+      await recordExport(prisma, id, kind, session.email, exportRows.length);
+      await prisma.priceUpdateSession.update({ where: { id }, data: { status: "Exported" } }).catch(() => null);
+    } else {
+      recordFileStoreExport(id, kind, session.email, exportRows.length, true);
+    }
+  } catch (e) {
+    if (isDbConnectionError(e)) return dbUnreachableResponse();
+    return NextResponse.json({ error: "Could not record export." }, { status: 500 });
+  }
+
+  const filename = buildExportFilename(sessionName, "POS Export", "csv");
+  return new NextResponse(csv, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": buildContentDisposition(filename),
+    },
+  });
 }

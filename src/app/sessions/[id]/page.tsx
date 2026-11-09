@@ -4,6 +4,7 @@ import { COLS, PriceGrid, type Item } from "@/components/PriceGrid";
 import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
 import { BulkAddDialog } from "@/components/BulkAddDialog";
 import { DigitalStoreCountExportDialog, type DigitalStoreCountExportOptions } from "@/components/DigitalStoreCountExportDialog";
+import { PosExportOptionsDialog, type PosExportOptions } from "@/components/PosExportOptionsDialog";
 import type { BulkAddInputRow } from "@/lib/bulkAdd";
 import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
 import { applyPinnedOrder } from "@/lib/markdown";
@@ -143,6 +144,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkAddBusy, setBulkAddBusy] = useState(false);
   const [showFvExportModal, setShowFvExportModal] = useState(false);
+  const [showPosExportModal, setShowPosExportModal] = useState(false);
   // Undo/Redo of table actions (cell edits, fills, add/delete rows). The ref is
   // the synchronous source of truth; state only drives the buttons/shortcuts.
   // History is tagged with the price update it belongs to, so switching price
@@ -973,6 +975,45 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Fetch the POS CSV export with Full Vendor selection options. */
+  const downloadFullVendorPos = async (options: PosExportOptions) => {
+    if (exportBusy) return;
+    setExportBusy("pos");
+    try {
+      const body = {
+        kind: "pos",
+        mode: options.mode,
+        selectedIds: options.selectedIds,
+      };
+      const r = await fetch(`/api/sessions/${id}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        const t = apiErrorText(d, "export failed.");
+        setMsg(t); toast.error("Export failed.", t); return;
+      }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = getFilenameFromContentDisposition(r.headers.get("content-disposition")) || buildExportFilename(name, "POS Export", "csv");
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setShowPosExportModal(false);
+      setSheetStatus("Exported");
+      toast.success("POS CSV downloaded.");
+      setSyncResult(null);
+      setSyncError("");
+      setAskSync(true);
+    } catch {
+      toast.error("Export failed.", "Could not reach the server while exporting.");
+    } finally {
+      setExportBusy(null);
+    }
+  };
+
   /** Fetch the POS CSV export, save it to disk, and report success/failure. */
   const download = async (kind: "pos") => {
     if (exportBusy) return;
@@ -1124,7 +1165,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             <LoadingButton
               busy={exportBusy === "pos"}
               busyLabel="Exporting..."
-              onClick={() => download("pos")}
+              onClick={() => (isFullVendor ? setShowPosExportModal(true) : download("pos"))}
               className="rounded-md bg-white dark:bg-zinc-800 border border-slate-200/80 dark:border-zinc-700 px-2.5 py-1 font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 hover:text-slate-900 dark:hover:text-white shadow-2xs transition-colors disabled:opacity-60"
               title="Export CSV for Point of Sale system"
             >
@@ -1455,6 +1496,17 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         onClose={() => { if (!exportBusy) setShowFvExportModal(false); }}
         onExport={(opts) => downloadFullVendorExcel(opts)}
       />
+      {isFullVendor && (
+        <PosExportOptionsDialog
+          isOpen={showPosExportModal}
+          busy={exportBusy === "pos"}
+          vendorName={vendor}
+          rows={items}
+          selected={selected}
+          onClose={() => { if (!exportBusy) setShowPosExportModal(false); }}
+          onExport={(opts) => downloadFullVendorPos(opts)}
+        />
+      )}
       {confirmBulk && selected.size > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selection">
           <div className="w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-5 shadow-xl text-slate-900 dark:text-zinc-100">
