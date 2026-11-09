@@ -583,7 +583,7 @@ export default function VendorsPage() {
           </button>
         </div>
 
-        <div className="p-4">
+        <div className="p-4" style={{ minHeight: "200px" }}>
           {activeFormTab === "vendor" ? (
             <form
               className="flex flex-wrap items-end gap-3"
