@@ -108,6 +108,15 @@ const NAV_GROUPS: NavGroup[] = [
           </svg>
         ),
       },
+      {
+        href: "/adhoc-counts",
+        label: "Ad Hoc Count Sheets",
+        icon: ({ className }) => (
+          <svg className={className || "h-4 w-4"} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        ),
+      },
     ],
   },
   {
@@ -177,6 +186,8 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     if (path === "/vendors") return "Vendor Discounts";
     if (path === "/exports") return "Data Exports";
     if (path === "/settings") return "Appearance & Layout";
+    if (path === "/adhoc-counts") return "Ad Hoc Inventory Count Sheets";
+    if (path.startsWith("/adhoc-counts/")) return "Count Sheet Worksheet";
     return "Operations";
   };
 

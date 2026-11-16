@@ -143,3 +143,39 @@ model Price99Batch {
   @@index([action])
 }
 
+model AdHocCountSheet {
+  id        String   @id @default(cuid())
+  name      String
+  status    String   @default("In Progress")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items     AdHocCountItem[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AdHocCountItem {
+  id          String   @id @default(cuid())
+  sheetId     String
+  sheet       AdHocCountSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  orderIndex  Int      @default(0)
+  sku         String   @default("")
+  brand       String   @default("")
+  description String   @default("")
+  sizeDesc    String   @default("")
+  matched     Boolean  @default(false)
+  qqh         String   @default("")
+  layway      String   @default("")
+  prepaid     String   @default("")
+  expiry      String   @default("")
+  onTransfer  String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sheetId])
+  @@index([orderIndex])
+}
+
+

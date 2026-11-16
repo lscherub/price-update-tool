@@ -31,6 +31,35 @@ export type StoreShape = {
   inventoryLastPriceSyncAt?: string | null;
   /** Dedicated 99 Price Manager batches */
   price99Batches?: Price99BatchRow[];
+  /** Ad Hoc Count Sheets */
+  adHocSheets?: AdHocCountSheetRow[];
+  adHocItems?: AdHocCountItemRow[];
+};
+
+export type AdHocCountSheetRow = {
+  id: string;
+  name: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdHocCountItemRow = {
+  id: string;
+  sheetId: string;
+  orderIndex: number;
+  sku: string;
+  brand: string;
+  description: string;
+  sizeDesc: string;
+  matched: boolean;
+  qqh: string;
+  layway: string;
+  prepaid: string;
+  expiry: string;
+  onTransfer: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type Price99BatchRow = {
@@ -68,7 +97,7 @@ export function cuid(): string {
 }
 
 export function emptyStore(): StoreShape {
-  return { products: [], vendorDiscounts: [], brandDiscounts: [], sessions: [], items: [], users: [], exports: [], price99Batches: [] };
+  return { products: [], vendorDiscounts: [], brandDiscounts: [], sessions: [], items: [], users: [], exports: [], price99Batches: [], adHocSheets: [], adHocItems: [] };
 }
 
 export function loadFileStore(): StoreShape {

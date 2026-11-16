@@ -12,6 +12,7 @@ const NAV = [
   { href: "/calculator", label: "Calculator" },
   { href: "/pos-cleaner", label: "POS Excel Cleaner" },
   { href: "/price-99", label: "99 Price Manager" },
+  { href: "/adhoc-counts", label: "Ad Hoc Count Sheets" },
   { href: "/inventory", label: "Inventory" },
   { href: "/vendors", label: "Vendor Discounts" },
   { href: "/exports", label: "Exports" },

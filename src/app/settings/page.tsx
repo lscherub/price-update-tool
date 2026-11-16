@@ -410,6 +410,7 @@ export default function SettingsPage() {
                 { href: "/calculator", label: "Pricing Calculator" },
                 { href: "/pos-cleaner", label: "POS Excel Cleaner" },
                 { href: "/price-99", label: "99 Price Manager" },
+                { href: "/adhoc-counts", label: "Ad Hoc Count Sheets" },
                 { href: "/exports", label: "Data Exports" },
               ].map((item) => {
                 const isHidden = navigation.hiddenNavItems.includes(item.href);
