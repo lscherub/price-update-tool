@@ -77,26 +77,26 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
 <cellXfs count="10">
-<!-- 0: default -->
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<!-- 0: default (locked by default) -->
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyProtection="1"><protection locked="1"/></xf>
 <!-- 1: title -->
-<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyProtection="1" applyAlignment="1"><alignment vertical="center"/><protection locked="1"/></xf>
 <!-- 2: label -->
-<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyProtection="1" applyAlignment="1"><alignment vertical="center"/><protection locked="1"/></xf>
 <!-- 3: staffInput (unlocked with bottom border) -->
 <xf numFmtId="0" fontId="0" fillId="4" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyProtection="1"><alignment vertical="center"/><protection locked="0"/></xf>
 <!-- 4: info -->
-<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
-<!-- 5: header (bold with fill and border) -->
-<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<!-- 6: lockedText (inventory columns: A-D) -->
-<xf numFmtId="49" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="1"/></xf>
-<!-- 7: lockedTextAlt (alternating row) -->
-<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="1"/></xf>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyProtection="1" applyAlignment="1"><alignment vertical="center"/><protection locked="1"/></xf>
+<!-- 5: header (bold with fill and border, locked) -->
+<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/><protection locked="1"/></xf>
+<!-- 6: lockedText (inventory columns: A-D, locked) -->
+<xf numFmtId="49" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="1"/></xf>
+<!-- 7: lockedTextAlt (alternating row, locked) -->
+<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="1"/></xf>
 <!-- 8: editable (staff count columns: E-I, unlocked) -->
-<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="0"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="0"/></xf>
 <!-- 9: editableAlt (alternating editable, unlocked) -->
-<xf numFmtId="49" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="0"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyProtection="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/><protection locked="0"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -184,7 +184,7 @@ function buildSheetXml(items: AdHocCountItemData[], opts: AdHocWorkbookOptions):
 <sheetFormatPr defaultRowHeight="18" customHeight="1"/>
 <cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>
 <sheetData>${rowsXml.join("")}</sheetData>
-<sheetProtection sheet="1" objects="1" scenarios="1" formatColumns="0" formatRows="0" autoFilter="0" sort="0" selectLockedCells="1" selectUnlockedCells="1"/>
+<sheetProtection sheet="1" objects="1" scenarios="1" formatColumns="0" formatRows="0" autoFilter="0" sort="0" selectLockedCells="0" selectUnlockedCells="0"/>
 <autoFilter ref="A${H}:I${lastRow}"/>
 <mergeCells count="3">
   <mergeCell ref="A1:I1"/>

@@ -469,15 +469,100 @@ describe("Ad Hoc Count Sheets - Excel Workbook Generation", () => {
     expect(sheetXml).toContain('topLeftCell="E6"');
     expect(sheetXml).toContain('state="frozen"');
 
-    // Verify worksheet protection: sheet="1", selectLockedCells="1", selectUnlockedCells="1"
+    // Verify worksheet protection: sheet="1", selectLockedCells="0", selectUnlockedCells="0"
     expect(sheetXml).toContain('sheetProtection sheet="1"');
-    expect(sheetXml).toContain('selectLockedCells="1"');
-    expect(sheetXml).toContain('selectUnlockedCells="1"');
+    expect(sheetXml).toContain('selectLockedCells="0"');
+    expect(sheetXml).toContain('selectUnlockedCells="0"');
 
     // Verify style XML: locked="0" exists for editable cells (QQH..On Transfer and Staff)
+    // and locked="1" exists for product identification columns
     const styleEntry = zip.FileIndex.find((f: any) => f.name.includes("styles.xml"));
     expect(styleEntry).toBeDefined();
     const stylesXml = Buffer.from(styleEntry.content).toString("utf8");
     expect(stylesXml).toContain('<protection locked="0"/>');
+    expect(stylesXml).toContain('<protection locked="1"/>');
+    expect(stylesXml).toContain('applyProtection="1"');
+  });
+
+  it("strictly locks columns A-D and strictly unlocks columns E-I across both even and odd rows", () => {
+    const items: AdHocCountItemData[] = [
+      {
+        id: "item-1",
+        sheetId: "sheet-1",
+        orderIndex: 0,
+        sku: "11111111111",
+        brand: "Brand 1",
+        description: "Desc 1",
+        sizeDesc: "Size 1",
+        matched: true,
+        qqh: "10",
+        layway: "0",
+        prepaid: "0",
+        expiry: "01/27",
+        onTransfer: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: "item-2",
+        sheetId: "sheet-1",
+        orderIndex: 1,
+        sku: "22222222222",
+        brand: "Brand 2",
+        description: "Desc 2",
+        sizeDesc: "Size 2",
+        matched: true,
+        qqh: "20",
+        layway: "2",
+        prepaid: "1",
+        expiry: "02/27",
+        onTransfer: "Hold",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    const buffer = buildAdHocCountWorkbook(items);
+    const CFB = XLSX.CFB as any;
+    const zip = CFB.read(buffer, { type: "buffer" });
+    const sheetEntry = zip.FileIndex.find((f: any) => f.name.includes("sheet1.xml"));
+    const styleEntry = zip.FileIndex.find((f: any) => f.name.includes("styles.xml"));
+
+    const sheetXml = Buffer.from(sheetEntry.content).toString("utf8");
+    const stylesXml = Buffer.from(styleEntry.content).toString("utf8");
+
+    // Parse cellXfs from stylesXml to map style index to locked state
+    const xfMatches = [...stylesXml.matchAll(/<xf ([^>]+)>(.*?)<\/xf>/g)];
+    const styleProtectionMap = new Map<number, boolean>(); // true = locked, false = unlocked
+
+    xfMatches.forEach((m, idx) => {
+      const inner = m[2];
+      const protMatch = inner.match(/<protection locked="([01])"\/>/);
+      if (protMatch) {
+        styleProtectionMap.set(idx, protMatch[1] === "1");
+      } else {
+        // default in Excel is locked
+        styleProtectionMap.set(idx, true);
+      }
+    });
+
+    // Check row 6 (item 1, even index) and row 7 (item 2, odd index)
+    for (const r of [6, 7]) {
+      // Columns A, B, C, D must be locked
+      for (const col of ["A", "B", "C", "D"]) {
+        const cellMatch = sheetXml.match(new RegExp(`<c r="${col}${r}" s="(\\d+)"`));
+        expect(cellMatch, `Cell ${col}${r} should exist in sheetData`).not.toBeNull();
+        const styleIdx = parseInt(cellMatch![1], 10);
+        expect(styleProtectionMap.get(styleIdx), `Cell ${col}${r} with style ${styleIdx} must be locked`).toBe(true);
+      }
+
+      // Columns E, F, G, H, I must be unlocked
+      for (const col of ["E", "F", "G", "H", "I"]) {
+        const cellMatch = sheetXml.match(new RegExp(`<c r="${col}${r}" s="(\\d+)"`));
+        expect(cellMatch, `Cell ${col}${r} should exist in sheetData`).not.toBeNull();
+        const styleIdx = parseInt(cellMatch![1], 10);
+        expect(styleProtectionMap.get(styleIdx), `Cell ${col}${r} with style ${styleIdx} must be unlocked`).toBe(false);
+      }
+    }
   });
 });
