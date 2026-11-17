@@ -1,7 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "./db";
 import { cuid, loadFileStore, saveFileStore, type AdHocCountSheetRow, type AdHocCountItemRow } from "./store";
-import { findProductsByRawSkus } from "./lookup";
 import {
   defaultAdHocSheetName,
   analyzeDuplicates,
@@ -13,6 +12,10 @@ import {
 } from "./adhocCount";
 
 export type DbLike = Pick<PrismaClient, "$queryRawUnsafe" | "$executeRawUnsafe"> & {
+  product?: {
+    findMany: (args: any) => Promise<any[]>;
+    findUnique?: (args: any) => Promise<any | null>;
+  };
   adHocCountSheet?: {
     create: (args: any) => Promise<any>;
     findMany: (args: any) => Promise<any[]>;
@@ -391,6 +394,138 @@ export async function deleteAdHocSheet(
   return (store.adHocSheets || []).length < initialLength;
 }
 
+export interface AdHocProductMatch {
+  sku: string;
+  brand: string;
+  description: string;
+  sizeDesc: string;
+}
+
+/**
+ * Exact SKU lookup specifically for Ad Hoc Inventory Count Sheets.
+ *
+ * Requirements:
+ * - Exact SKU matching against the All Inventory SKU field ONLY.
+ * - Treat the entered SKU/UPC as a complete identifier.
+ * - Preserve every character, including the final digit.
+ * - Preserve leading zeros.
+ * - Treat SKUs as strings, not numbers.
+ * - Do not remove the final character.
+ * - Do not truncate SKUs.
+ * - Do not remove hyphens or internal characters.
+ * - Do not use cleaned SKU matching.
+ * - Do not use approximate or fuzzy matching.
+ * - Do not fall back to Product Number or normalizedSku.
+ * - Do not use partial matching.
+ * - Do not return the first similar SKU found.
+ * - If the exact SKU does not exist in All Inventory, return Not Found.
+ * - Independent of pricing sheet SKU utilities (never calls normalizeSku or skuCandidates).
+ */
+export async function findProductsByExactSkus(
+  rawSkus: string[],
+  { dbOverride }: { dbOverride?: DbLike | null } = {},
+): Promise<Map<string, AdHocProductMatch>> {
+  const out = new Map<string, AdHocProductMatch>();
+  if (!rawSkus.length) return out;
+
+  // Collect unique exact trimmed string keys
+  const keys = Array.from(
+    new Set(rawSkus.map((r) => String(r ?? "").trim()).filter(Boolean)),
+  );
+  if (!keys.length) return out;
+
+  const db = dbOverride !== undefined ? dbOverride : getPrisma();
+
+  // 1. Try database if available
+  if (db) {
+    try {
+      const found: Array<{
+        sku: string;
+        brand: string | null;
+        description: string | null;
+        sizeDesc: string | null;
+      }> = [];
+
+      for (let i = 0; i < keys.length; i += 2000) {
+        const chunk = keys.slice(i, i + 2000);
+        if (db.product?.findMany) {
+          const rows = await db.product.findMany({
+            where: { sku: { in: chunk } },
+            select: {
+              sku: true,
+              brand: true,
+              description: true,
+              sizeDesc: true,
+            },
+            take: 50000,
+          });
+          found.push(...rows);
+        } else if (typeof db.$queryRawUnsafe === "function") {
+          const escapedList = chunk.map((c) => `'${c.replace(/'/g, "''")}'`).join(", ");
+          if (escapedList) {
+            const rows = (await db.$queryRawUnsafe(
+              `SELECT "sku", "brand", "description", "sizeDesc" FROM "Product" WHERE "sku" IN (${escapedList})`,
+            )) as any[];
+            found.push(...rows);
+          }
+        }
+      }
+
+      const exactMap = new Map<string, AdHocProductMatch>();
+      for (const p of found) {
+        if (!exactMap.has(p.sku)) {
+          exactMap.set(p.sku, {
+            sku: p.sku,
+            brand: p.brand ?? "",
+            description: p.description ?? "",
+            sizeDesc: p.sizeDesc ?? "",
+          });
+        }
+      }
+
+      for (const raw of rawSkus) {
+        const key = String(raw ?? "").trim();
+        const hit = exactMap.get(key);
+        if (hit) {
+          out.set(raw, hit);
+          out.set(key, hit);
+        }
+      }
+
+      return out;
+    } catch {
+      // Fallback to local file store if DB query fails or in local dev/test
+    }
+  }
+
+  // 2. Local file store fallback
+  const store = loadFileStore();
+  const products = store.products || [];
+  const exactStoreMap = new Map<string, AdHocProductMatch>();
+
+  for (const p of products) {
+    if (!exactStoreMap.has(p.sku)) {
+      exactStoreMap.set(p.sku, {
+        sku: p.sku,
+        brand: p.brand ?? "",
+        description: p.description ?? "",
+        sizeDesc: p.sizeDesc ?? "",
+      });
+    }
+  }
+
+  for (const raw of rawSkus) {
+    const key = String(raw ?? "").trim();
+    const hit = exactStoreMap.get(key);
+    if (hit) {
+      out.set(raw, hit);
+      out.set(key, hit);
+    }
+  }
+
+  return out;
+}
+
 /**
  * Look up SKUs against All Inventory database, analyzing matches, duplicates in list,
  * and whether they are already in the target sheet.
@@ -414,8 +549,8 @@ export async function lookupSkusForAdHoc(
   // 2. Analyze duplicates in pasted list & sheet
   const { normalizedEntries } = analyzeDuplicates(skus, existingSkus);
 
-  // 3. Query All Inventory using existing lookup utility
-  const productMatches = await findProductsByRawSkus(skus);
+  // 3. Query All Inventory using exact SKU lookup
+  const productMatches = await findProductsByExactSkus(skus, { dbOverride });
 
   // 4. Map into ParsedBulkItem array
   return normalizedEntries.map(({ raw, isDuplicateInList, isAlreadyInSheet }) => {
@@ -439,7 +574,7 @@ export async function lookupSkusForAdHoc(
 
 /**
  * Add items to a count sheet.
- * Automatically looks up missing product details from All Inventory.
+ * Automatically looks up missing product details from All Inventory using exact SKU matching.
  */
 export async function addAdHocItems(
   sheetId: string,
@@ -468,7 +603,9 @@ export async function addAdHocItems(
     .filter((it) => it.matched === undefined || (!it.brand && !it.description))
     .map((it) => it.sku);
 
-  const productMatches = skusToLookup.length ? await findProductsByRawSkus(skusToLookup) : new Map();
+  const productMatches = skusToLookup.length
+    ? await findProductsByExactSkus(skusToLookup, { dbOverride })
+    : new Map();
 
   let nextOrderIndex = currentSheet.items.length;
   const now = new Date();
@@ -595,7 +732,7 @@ export async function updateAdHocItem(
   const newSku = updates.sku !== undefined ? updates.sku.trim() : existingItem.sku;
 
   if (isSkuChanged) {
-    const matches = await findProductsByRawSkus([newSku]);
+    const matches = await findProductsByExactSkus([newSku], { dbOverride });
     const match = matches.get(newSku);
     if (match) {
       newBrand = match.brand || "";

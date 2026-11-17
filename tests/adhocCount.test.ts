@@ -32,6 +32,7 @@ import {
   syncAdHocItems,
   deleteAdHocItems,
   lookupSkusForAdHoc,
+  findProductsByExactSkus,
 } from "../src/lib/adhocCountServer";
 import { emptyStore, saveFileStore, type StoreShape } from "../src/lib/store";
 
@@ -128,6 +129,32 @@ describe("Ad Hoc Count Sheets - Server Operations & Persistence", () => {
           listCost: "5.20",
           price: "9.99",
           sizeDesc: "60 Lozenges",
+          isInactive: false,
+        },
+        {
+          id: "prod-3",
+          sku: "06795300286",
+          normalizedSku: "0679530028",
+          productNumber: "00286",
+          description: "RICE PROTEIN BRWN SPRTD ORGNC NTRL",
+          vendor: "PRAIRIE NATURALS",
+          brand: "PRAIRIE NATURALS",
+          listCost: "25.00",
+          price: "39.99",
+          sizeDesc: "1KG",
+          isInactive: false,
+        },
+        {
+          id: "prod-4",
+          sku: "06795300280",
+          normalizedSku: "0679530028",
+          productNumber: "00280",
+          description: "ENZYME FORCE",
+          vendor: "PRAIRIE NATURALS",
+          brand: "PRAIRIE NATURALS",
+          listCost: "18.00",
+          price: "29.99",
+          sizeDesc: "60CP",
           isInactive: false,
         },
       ],
@@ -272,7 +299,7 @@ describe("Ad Hoc Count Sheets - Server Operations & Persistence", () => {
     // Verify All Inventory product is completely intact
     const store = (await import("../src/lib/store")).loadFileStore();
     expect(store.products.find((p) => p.sku === "62773300207")).toBeDefined();
-    expect(store.products).toHaveLength(2);
+    expect(store.products).toHaveLength(4);
   });
 
   it("ensures Sheet A and Sheet B are completely independent", async () => {
@@ -564,5 +591,187 @@ describe("Ad Hoc Count Sheets - Excel Workbook Generation", () => {
         expect(styleProtectionMap.get(styleIdx), `Cell ${col}${r} with style ${styleIdx} must be unlocked`).toBe(false);
       }
     }
+  });
+});
+
+describe("Ad Hoc Count Sheets - Exact SKU Matching Only", () => {
+  it("enforces exact SKU matching in findProductsByExactSkus without truncation or cleaning", async () => {
+    const matches = await findProductsByExactSkus(
+      ["06795300286", "06795300280", "0679530028", "03367414961", "0336741496", "UNKNOWN-SKU"],
+      { dbOverride: null },
+    );
+
+    // 06795300286 -> RICE PROTEIN (exact match only, never ENZYME FORCE)
+    const p1 = matches.get("06795300286");
+    expect(p1).toBeDefined();
+    expect(p1?.sku).toBe("06795300286");
+    expect(p1?.brand).toBe("PRAIRIE NATURALS");
+    expect(p1?.description).toBe("RICE PROTEIN BRWN SPRTD ORGNC NTRL");
+    expect(p1?.sizeDesc).toBe("1KG");
+
+    // 06795300280 -> ENZYME FORCE (differs only by last digit from 06795300286)
+    const p2 = matches.get("06795300280");
+    expect(p2).toBeDefined();
+    expect(p2?.sku).toBe("06795300280");
+    expect(p2?.brand).toBe("PRAIRIE NATURALS");
+    expect(p2?.description).toBe("ENZYME FORCE");
+    expect(p2?.sizeDesc).toBe("60CP");
+
+    // 0679530028 -> Truncated version without last digit must NOT match either product
+    const p3 = matches.get("0679530028");
+    expect(p3).toBeUndefined();
+
+    // 03367414961 -> Nature's Way exact match
+    const p4 = matches.get("03367414961");
+    expect(p4).toBeDefined();
+    expect(p4?.sku).toBe("03367414961");
+    expect(p4?.description).toBe("Zinc Lozenges Berry");
+
+    // 0336741496 -> Truncated version must NOT match
+    const p5 = matches.get("0336741496");
+    expect(p5).toBeUndefined();
+
+    // UNKNOWN-SKU -> Not found
+    expect(matches.get("UNKNOWN-SKU")).toBeUndefined();
+  });
+
+  it("handles single SKU add with exact matching and preserves entered SKU with leading zeros", async () => {
+    const sheet = await createAdHocSheet({ name: "Single Add Exact Test", dbOverride: null });
+
+    // 1. Add valid SKU with leading zero and last digit 6
+    const res1 = await addAdHocItems(sheet.id, [{ sku: "06795300286" }], { dbOverride: null });
+    const item1 = res1[0];
+    expect(item1.sku).toBe("06795300286");
+    expect(item1.brand).toBe("PRAIRIE NATURALS");
+    expect(item1.description).toBe("RICE PROTEIN BRWN SPRTD ORGNC NTRL");
+    expect(item1.matched).toBe(true);
+
+    // 2. Add valid SKU differing only by last digit (0 instead of 6)
+    const res2 = await addAdHocItems(sheet.id, [{ sku: "06795300280" }], { dbOverride: null });
+    const item2 = res2[1];
+    expect(item2.sku).toBe("06795300280");
+    expect(item2.brand).toBe("PRAIRIE NATURALS");
+    expect(item2.description).toBe("ENZYME FORCE");
+    expect(item2.matched).toBe(true);
+
+    // 3. Add truncated SKU that does not exist exactly
+    const res3 = await addAdHocItems(sheet.id, [{ sku: "0679530028" }], { dbOverride: null });
+    const item3 = res3[2];
+    expect(item3.sku).toBe("0679530028");
+    expect(item3.brand).toBe("");
+    expect(item3.description).toBe("Not Found");
+    expect(item3.matched).toBe(false);
+  });
+
+  it("handles bulk paste preview with exact matching, displaying Not Found instead of incorrect products", async () => {
+    const results = await lookupSkusForAdHoc(
+      ["06795300286", "06795300280", "0679530028", "03367414961"],
+      undefined,
+      { dbOverride: null },
+    );
+
+    expect(results).toHaveLength(4);
+
+    expect(results[0].sku).toBe("06795300286");
+    expect(results[0].description).toBe("RICE PROTEIN BRWN SPRTD ORGNC NTRL");
+    expect(results[0].matched).toBe(true);
+
+    expect(results[1].sku).toBe("06795300280");
+    expect(results[1].description).toBe("ENZYME FORCE");
+    expect(results[1].matched).toBe(true);
+
+    // Must be Not Found - never substituted with similar product
+    expect(results[2].sku).toBe("0679530028");
+    expect(results[2].description).toBe("Not Found");
+    expect(results[2].brand).toBe("");
+    expect(results[2].matched).toBe(false);
+
+    expect(results[3].sku).toBe("03367414961");
+    expect(results[3].description).toBe("Zinc Lozenges Berry");
+    expect(results[3].matched).toBe(true);
+  });
+
+  it("editing an existing row to valid or invalid SKUs strictly uses exact matching", async () => {
+    const sheet = await createAdHocSheet({ name: "Edit Row Exact Test", dbOverride: null });
+
+    // Start with 06795300280 (ENZYME FORCE)
+    const [item] = await addAdHocItems(
+      sheet.id,
+      [{ sku: "06795300280", qqh: "8", expiry: "12/28" }],
+      { dbOverride: null },
+    );
+    expect(item.description).toBe("ENZYME FORCE");
+    expect(item.matched).toBe(true);
+
+    // Edit to 06795300286 (RICE PROTEIN)
+    const updated1 = await updateAdHocItem(
+      sheet.id,
+      item.id,
+      { sku: "06795300286" },
+      { dbOverride: null },
+    );
+    expect(updated1?.sku).toBe("06795300286");
+    expect(updated1?.description).toBe("RICE PROTEIN BRWN SPRTD ORGNC NTRL");
+    expect(updated1?.brand).toBe("PRAIRIE NATURALS");
+    expect(updated1?.matched).toBe(true);
+    expect(updated1?.qqh).toBe("8");
+    expect(updated1?.expiry).toBe("12/28");
+
+    // Edit to invalid / truncated SKU 0679530028
+    const updated2 = await updateAdHocItem(
+      sheet.id,
+      item.id,
+      { sku: "0679530028" },
+      { dbOverride: null },
+    );
+    expect(updated2?.sku).toBe("0679530028");
+    expect(updated2?.description).toBe("Not Found");
+    expect(updated2?.brand).toBe("");
+    expect(updated2?.matched).toBe(false);
+    expect(updated2?.qqh).toBe("8");
+    expect(updated2?.expiry).toBe("12/28");
+  });
+
+  it("verifies exact matching with Prisma dbOverride executes exact WHERE sku IN query", async () => {
+    let capturedWhere: any = null;
+    const mockDb: any = {
+      product: {
+        findMany: vi.fn(async ({ where }: any) => {
+          capturedWhere = where;
+          return [
+            {
+              sku: "06795300286",
+              brand: "PRAIRIE NATURALS",
+              description: "RICE PROTEIN BRWN SPRTD ORGNC NTRL",
+              sizeDesc: "1KG",
+            },
+          ];
+        }),
+      },
+    };
+
+    const matches = await findProductsByExactSkus(["06795300286", "06795300280"], { dbOverride: mockDb });
+
+    expect(mockDb.product.findMany).toHaveBeenCalled();
+    // Confirms query searched ONLY exact sku field
+    expect(capturedWhere).toEqual({
+      sku: { in: ["06795300286", "06795300280"] },
+    });
+
+    expect(matches.get("06795300286")?.description).toBe("RICE PROTEIN BRWN SPRTD ORGNC NTRL");
+    expect(matches.get("06795300280")).toBeUndefined(); // mock didn't return 06795300280, so Not Found
+  });
+
+  it("confirms shared pricing sheet SKU cleaning logic was NOT modified", async () => {
+    const { normalizeSku, skuCandidates } = await import("../src/lib/pricing");
+
+    // Pricing sheets intentionally strip the final digit for vendor SKU normalization
+    expect(normalizeSku("06795300286")).toBe("0679530028");
+    expect(normalizeSku("06795300280")).toBe("0679530028");
+
+    // Pricing candidates include cleaned and stripped variants for vendor matching
+    const cands = skuCandidates("06795300286");
+    expect(cands).toContain("0679530028");
+    expect(cands).toContain("06795300286");
   });
 });

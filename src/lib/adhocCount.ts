@@ -157,9 +157,7 @@ export function analyzeDuplicates(
     isAlreadyInSheet: boolean;
   }>;
 } {
-  const existingSet = existingSheetSkus instanceof Set
-    ? existingSheetSkus
-    : new Set(Array.from(existingSheetSkus).map((s) => s.trim().toLowerCase()));
+  const existingSet = new Set(Array.from(existingSheetSkus).map((s) => s.trim().toLowerCase()));
 
   const seenInList = new Set<string>();
   const normalizedEntries = pastedList.map((raw) => {
