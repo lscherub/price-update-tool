@@ -17,10 +17,17 @@ model Product {
   brand          String   @default("")
   listCost       Decimal  @db.Decimal(12, 2) @default(0)
   price          Decimal  @db.Decimal(12, 2) @default(0)
-  sizeDesc       String   @default("")
-  isInactive     Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  sizeDesc              String   @default("")
+  isInactive            Boolean  @default(false)
+  isOldSku              Boolean  @default(false)
+  supersededByProductId String?
+  supersededByProduct   Product?  @relation("ProductSupersededBy", fields: [supersededByProductId], references: [id], onDelete: SetNull)
+  supersededProducts    Product[] @relation("ProductSupersededBy")
+  previousSkuProductId  String?
+  previousSkuProduct    Product?  @relation("ProductPreviousSku", fields: [previousSkuProductId], references: [id], onDelete: SetNull)
+  nextSkuProducts       Product[] @relation("ProductPreviousSku")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   priceItems PriceUpdateItem[]
 
@@ -28,6 +35,9 @@ model Product {
   @@index([vendor])
   @@index([brand])
   @@index([isInactive])
+  @@index([isOldSku])
+  @@index([supersededByProductId])
+  @@index([previousSkuProductId])
 }
 
 model VendorDiscount {

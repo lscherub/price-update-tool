@@ -77,8 +77,9 @@ function lowerCandidates(rows: Item[]): Item[] {
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const toast = useToast();
-  const { priceEditor, setPriceEditor, userId, registerUnsavedChecker } = useUiMode();
+  const { priceEditor, setPriceEditor, userId, spreadsheetFullscreen, setSpreadsheetFullscreen, registerUnsavedChecker } = useUiMode();
   const isSpreadsheet = priceEditor === "spreadsheet";
+  const isSheetFs = isSpreadsheet && spreadsheetFullscreen;
   const [items, setItems] = useState<Item[]>([]);
   const [switchingEditor, setSwitchingEditor] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveQueueSnapshot>({
@@ -435,6 +436,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     try {
       const saved = await ensureSavedBeforeAction("switching editors");
       if (!saved) return;
+      if (next !== "spreadsheet") setSpreadsheetFullscreen(false);
       setPriceEditor(next);
       toast.success(
         `Switched to ${next === "spreadsheet" ? "Spreadsheet Editor" : "Legacy Editor"}.`,
@@ -1327,9 +1329,9 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className={isSheetFs ? "flex h-full w-full flex-col overflow-hidden" : "flex flex-col gap-3.5"}>
       {/* 1. Header & Actions Toolbar */}
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+      <header className={isSheetFs ? "hidden" : "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white px-4 py-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900"}>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">{name || "Price Update"}</h1>
@@ -1456,7 +1458,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       </header>
 
       {/* 2. Compact Workspace Controls Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-xs">
+      <div className={isSheetFs ? "hidden" : "flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2 shadow-xs"}>
         {/* Left: Row addition & History group */}
         <div className="flex items-center gap-1.5">
           <div className="flex items-center gap-1">
@@ -1686,7 +1688,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
 
       {/* 3. Worksheet Table Area (Legacy Editor vs Optional Spreadsheet Editor) */}
       {isSpreadsheet ? (
-        <div ref={gridContainerRef}>
+        <div ref={gridContainerRef} className={isSheetFs ? "flex flex-1 min-h-0 flex-col" : undefined}>
           <SpreadsheetEditor
             items={items}
             userId={userId}
@@ -1873,7 +1875,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       )}
 
       {/* 5. Collapsible Price Sheet Notes (Collapsed by default) */}
-      <section aria-label="Price Sheet Notes" className="rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs overflow-hidden">
+      <section aria-label="Price Sheet Notes" className={isSheetFs ? "hidden" : "rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs overflow-hidden"}>
         <div
           role="button"
           tabIndex={0}

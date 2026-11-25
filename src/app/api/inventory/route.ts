@@ -25,10 +25,18 @@ export async function GET(req: Request) {
   if (prodErr) return prodErr;
   if (!prisma) {
     const store = loadFileStore();
+    const byId = new Map(store.products.map((p) => [p.id, p]));
     const rows = sortInventoryRows(store.products.filter((p) => matchesInventoryFilters(p, iq)), iq.sort, iq.sortDir);
     return NextResponse.json({
       total: rows.length, page, pageSize,
-      rows: rows.slice((page - 1) * pageSize, page * pageSize),
+      rows: rows.slice((page - 1) * pageSize, page * pageSize).map((p) => ({
+        ...p,
+        isOldSku: Boolean(p.isOldSku),
+        supersededByProductId: p.supersededByProductId ?? null,
+        previousSkuProductId: p.previousSkuProductId ?? null,
+        supersededBySku: p.supersededByProductId ? (byId.get(p.supersededByProductId)?.sku ?? null) : null,
+        previousSku: p.previousSkuProductId ? (byId.get(p.previousSkuProductId)?.sku ?? null) : null,
+      })),
       lastImportedAt: store.inventoryLastFullImportAt ?? null,
       lastUpdatedAt: store.inventoryLastPriceSyncAt ?? null,
     });
@@ -38,7 +46,14 @@ export async function GET(req: Request) {
   try {
     const total = await prisma.product.count({ where: where as never });
     const rows = await prisma.product.findMany({
-      where: where as never, orderBy, skip: (page - 1) * pageSize, take: pageSize,
+      where: where as never,
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        supersededByProduct: { select: { id: true, sku: true } },
+        previousSkuProduct: { select: { id: true, sku: true } },
+      },
     });
     const [lastImportedAt, lastUpdatedAt] = await Promise.all([
       getLastFullImportAt(prisma),
@@ -49,7 +64,13 @@ export async function GET(req: Request) {
       rows: rows.map((p) => ({
         id: p.id, sku: p.sku, normalizedSku: p.normalizedSku, productNumber: p.productNumber,
         description: p.description, vendor: p.vendor, brand: p.brand,
-        listCost: String(p.listCost), price: String(p.price), sizeDesc: p.sizeDesc, isInactive: p.isInactive,
+        listCost: String(p.listCost), price: String(p.price), sizeDesc: p.sizeDesc,
+        isInactive: p.isInactive,
+        isOldSku: p.isOldSku,
+        supersededByProductId: p.supersededByProductId ?? null,
+        previousSkuProductId: p.previousSkuProductId ?? null,
+        supersededBySku: p.supersededByProduct?.sku ?? null,
+        previousSku: p.previousSkuProduct?.sku ?? null,
       })),
       lastImportedAt,
       lastUpdatedAt,

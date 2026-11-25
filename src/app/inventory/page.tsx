@@ -162,6 +162,11 @@ type ProductRow = {
   price: string;
   sizeDesc: string;
   isInactive: boolean;
+  isOldSku?: boolean;
+  supersededByProductId?: string | null;
+  previousSkuProductId?: string | null;
+  supersededBySku?: string | null;
+  previousSku?: string | null;
 };
 
 type Progress = {
@@ -210,6 +215,8 @@ export default function InventoryPage() {
   const [fBrandExact, setFBrandExact] = useState("");
   /** "" = All, "false" = Active only, "true" = Inactive only. */
   const [fInactive, setFInactive] = useState("");
+  /** "" = All, "true" = Old SKUs only, "false" = Current SKUs only. */
+  const [fOldSku, setFOldSku] = useState("");
   const [facetQ, setFacetQ] = useState("");
   const [facetRows, setFacetRows] = useState<{ value: string; count: number }[]>([]);
   const [facetLoading, setFacetLoading] = useState(false);
@@ -223,6 +230,12 @@ export default function InventoryPage() {
   const [clearing, setClearing] = useState(false);
   /** Id of the row currently being saved, so only that cell shows a spinner. */
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingOldSkuId, setSavingOldSkuId] = useState<string | null>(null);
+  /** Independent product selection for selective deletion (separate from Old SKU). */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [showConfirmDeleteSelected, setShowConfirmDeleteSelected] = useState(false);
+  const [deletingSelected, setDeletingSelected] = useState(false);
+  const [deleteSelectedError, setDeleteSelectedError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const inactiveRef = useRef<HTMLInputElement>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -235,7 +248,7 @@ export default function InventoryPage() {
   type Filters = {
     q: string; sku: string; num: string; desc: string;
     vendorContains: string; brandContains: string;
-    vendorExact: string; brandExact: string; inactive: string;
+    vendorExact: string; brandExact: string; inactive: string; oldSku: string;
     sortKey: string | null; sortDir: "asc" | "desc" | null;
   };
   const buildQuery = (f: Filters, p: number) => {
@@ -249,13 +262,14 @@ export default function InventoryPage() {
     if (f.vendorExact) sp.set("vendorExact", f.vendorExact);
     if (f.brandExact) sp.set("brandExact", f.brandExact);
     if (f.inactive) sp.set("inactive", f.inactive);
+    if (f.oldSku) sp.set("oldSku", f.oldSku);
     if (f.sortKey && f.sortDir) { sp.set("sort", f.sortKey); sp.set("sortDir", f.sortDir); }
     return sp.toString();
   };
   const snapshotFilters = (): Filters => ({
     q, sku: fSku, num: fNum, desc: fDesc,
     vendorContains: fVendorContains, brandContains: fBrandContains,
-    vendorExact: fVendorExact, brandExact: fBrandExact, inactive: fInactive,
+    vendorExact: fVendorExact, brandExact: fBrandExact, inactive: fInactive, oldSku: fOldSku,
     sortKey, sortDir,
   });
   const fetchPage = useCallback(async (query: string) => {
@@ -598,8 +612,126 @@ for (let i = 0; i < batches.length; i++) {
 
 
   /**
+   * Persistent Old SKU checkbox toggle for a single product.
+   * Optimistic UI update with automatic rollback on server error.
+   */
+  const updateOldSku = async (row: ProductRow, isOldSku: boolean) => {
+    if (savingOldSkuId) return;
+    if (Boolean(row.isOldSku) === isOldSku) return;
+    const previous = Boolean(row.isOldSku);
+    setSavingOldSkuId(row.id);
+    setRows((prev) =>
+      prev.map((r) => ((r as ProductRow).id === row.id ? { ...(r as ProductRow), isOldSku } : r)),
+    );
+    try {
+      const r = await fetch("/api/inventory/old-sku", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, isOldSku }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(apiErrorText(d, "Could not update the Old SKU flag."));
+      const saved = (d.product ?? {}) as { id?: string; isOldSku?: boolean };
+      setRows((prev) =>
+        prev.map((x) => {
+          const r2 = x as ProductRow;
+          if (r2.id !== row.id) return r2;
+          return { ...r2, isOldSku: typeof saved.isOldSku === "boolean" ? saved.isOldSku : isOldSku };
+        }),
+      );
+      toast.success(
+        isOldSku ? `${row.sku} marked as Old SKU.` : `${row.sku} unmarked as Old SKU.`,
+      );
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : "Could not update the Old SKU flag.";
+      setRows((prev) =>
+        prev.map((x) => ((x as ProductRow).id === row.id ? { ...(x as ProductRow), isOldSku: previous } : x)),
+      );
+      toast.error(`Could not update ${row.sku}.`, detail);
+    } finally {
+      setSavingOldSkuId(null);
+    }
+  };
+
+  /** Independent row selection helpers (never linked to Old SKU checkbox). */
+  const visibleRows = rows as ProductRow[];
+  const visibleSelectedCount = visibleRows.reduce((acc, r) => acc + (selectedIds.has(r.id) ? 1 : 0), 0);
+  const allVisibleSelected = visibleRows.length > 0 && visibleSelectedCount === visibleRows.length;
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const r of visibleRows) next.delete(r.id);
+      } else {
+        for (const r of visibleRows) if (r.id) next.add(r.id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setDeleteSelectedError("");
+  };
+
+  /** Safe selective deletion via DELETE /api/inventory/product (preserves price history, guards Old SKU links). */
+  const confirmDeleteSelected = async () => {
+    if (deletingSelected || selectedIds.size === 0) return;
+    setDeletingSelected(true);
+    setDeleteSelectedError("");
+    const ids = [...selectedIds];
+    try {
+      const r = await fetch("/api/inventory/product", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, confirm: true }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail = apiErrorText(d, "Could not delete selected products.");
+        setDeleteSelectedError(detail);
+        toast.error("Delete Selected blocked or failed.", detail);
+        return;
+      }
+      const deletedCount = Number(d.deletedCount ?? ids.length);
+      const deletedSet = new Set<string>(Array.isArray(d.deletedIds) ? d.deletedIds.map(String) : ids);
+      setRows((prev) => prev.filter((x) => !deletedSet.has((x as ProductRow).id)));
+      setTotal((t) => Math.max(0, t - deletedCount));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const did of deletedSet) next.delete(did);
+        return next;
+      });
+      setShowConfirmDeleteSelected(false);
+      setDeleteSelectedError("");
+      toast.success(
+        `Deleted ${deletedCount.toLocaleString()} product${deletedCount === 1 ? "" : "s"}.`,
+        "Historical price update sheets remain intact.",
+      );
+      await fetchPage(buildQuery(snapshotFilters(), page));
+    } catch {
+      const detail = "Could not reach the server while deleting selected products.";
+      setDeleteSelectedError(detail);
+      toast.error("Delete Selected failed.", detail);
+    } finally {
+      setDeletingSelected(false);
+    }
+  };
+
+  /**
    * Add a single product manually, without a full POS import.
-   * Sends to /api/inventory/product which validates SKU uniqueness.
+   * Sends to /api/inventory/product which validates SKU uniqueness and optionally
+   * links an Old SKU replacement atomically in a single transaction.
    */
   const addProduct = async (v: AddProductInput) => {
     if (addProductBusy) return;
@@ -618,6 +750,7 @@ for (let i = 0; i < batches.length; i++) {
           price: v.price || "0",
           sizeDesc: v.sizeDesc,
           status: v.status,
+          ...(v.previousSku ? { previousSku: v.previousSku } : {}),
         }),
       });
       const d = await r.json().catch(() => ({}));
@@ -626,7 +759,14 @@ for (let i = 0; i < batches.length; i++) {
         return;
       }
       setShowAddProduct(false);
-      toast.success(`Product "${v.sku}" added to inventory.`);
+      if (v.previousSku) {
+        toast.success(
+          `Product "${v.sku}" added and linked to Old SKU "${v.previousSku}".`,
+          `SKU ${v.previousSku} is now marked as Old SKU.`,
+        );
+      } else {
+        toast.success(`Product "${v.sku}" added to inventory.`);
+      }
       await refreshWithFilters();
     } catch {
       toast.error("Could not add product.", "Could not reach the server. Check your connection and try again.");
@@ -648,13 +788,13 @@ for (let i = 0; i < batches.length; i++) {
   };
   const hasActiveFilters = !!(
     fSku || fNum || fDesc || fVendorContains || fBrandContains ||
-    fVendorExact || fBrandExact || fInactive
+    fVendorExact || fBrandExact || fInactive || fOldSku
   );
   const headerLabel = (key: string): string => {
     const m: Record<string, string> = {
       sku: "Sku", productNumber: "Product Number", description: "Description",
       vendor: "Vendor", brand: "Brand", listCost: "List Cost", price: "Price",
-      sizeDesc: "Size Desc", status: "Status",
+      sizeDesc: "Size Desc", status: "Status", isOldSku: "Old SKU",
     };
     return m[key] ?? key;
   };
@@ -840,13 +980,14 @@ for (let i = 0; i < batches.length; i++) {
           {fVendorExact && <FilterChip label={`Vendor = ${fVendorExact}`} onClear={() => setFVendorExact("")} onApply={() => applyNow({ vendorExact: "" })} />}
           {fBrandExact && <FilterChip label={`Brand = ${fBrandExact}`} onClear={() => setFBrandExact("")} onApply={() => applyNow({ brandExact: "" })} />}
           {fInactive && <FilterChip label={`Status = ${fInactive === "true" ? "Inactive" : "Active"}`} onClear={() => setFInactive("")} onApply={() => applyNow({ inactive: "" })} />}
+          {fOldSku && <FilterChip label={`Old SKU = ${fOldSku === "true" ? "Yes" : "No"}`} onClear={() => setFOldSku("")} onApply={() => applyNow({ oldSku: "" })} />}
           {sortKey && sortDir && <FilterChip label={`Sorted: ${headerLabel(sortKey)} ${sortDir === "asc" ? "↑" : "↓"}`} onClear={() => { setSortKey(null); setSortDir(null); }} onApply={applyNow} />}
           <button
             className="rounded border px-2 py-0.5 font-medium text-slate-600 hover:bg-slate-100"
             onClick={() => {
               setFSku(""); setFNum(""); setFDesc("");
               setFVendorContains(""); setFBrandContains("");
-              setFVendorExact(""); setFBrandExact(""); setFInactive("");
+              setFVendorExact(""); setFBrandExact(""); setFInactive(""); setFOldSku("");
               setSortKey(null); setSortDir(null);
               setPage(1);
               const sp = new URLSearchParams();
@@ -858,10 +999,42 @@ for (let i = 0; i < batches.length; i++) {
           </button>
         </div>
       )}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs">
+          <span className="font-semibold text-indigo-900">
+            {selectedIds.size.toLocaleString()} product{selectedIds.size === 1 ? "" : "s"} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="rounded border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDeleteSelectedError(""); setShowConfirmDeleteSelected(true); }}
+              className="rounded bg-red-600 px-3 py-1 font-semibold text-white hover:bg-red-700"
+            >
+              Delete Selected ({selectedIds.size.toLocaleString()})
+            </button>
+          </div>
+        </div>
+      )}
       <div className="overflow-auto rounded-xl border bg-white">
-        <table className="w-full min-w-[900px] text-xs">
+        <table className="w-full min-w-[1020px] text-xs">
           <thead className="bg-slate-50">
             <tr className="text-left">
+              <th className="w-9 px-2 py-2 text-center">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible products"
+                  checked={allVisibleSelected}
+                  ref={(el) => { if (el) el.indeterminate = !allVisibleSelected && visibleSelectedCount > 0; }}
+                  onChange={toggleSelectAllVisible}
+                />
+              </th>
               <InvHeader label="Sku" colKey="sku" sortKey={sortKey} sortDir={sortDir} filtered={!!fSku}
                 openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Sort Smallest → Largest" sortDescLabel="Sort Largest → Smallest"
                 onSort={(d) => changeSort("sku", d)} onClearSort={clearSort} menuRef={menuRef}>
@@ -939,12 +1112,48 @@ for (let i = 0; i < batches.length; i++) {
                   ))}
                 </div>
               </InvHeader>
+              <InvHeader label="Old SKU" colKey="isOldSku" sortKey={sortKey} sortDir={sortDir} filtered={!!fOldSku}
+                openMenu={openMenu} onToggle={openColumnMenu} sortAscLabel="Current SKUs first" sortDescLabel="Old SKUs first"
+                onSort={(d) => changeSort("isOldSku", d)} onClearSort={clearSort} menuRef={menuRef}>
+                <div className="border-t px-3 py-2">
+                  <div className="mb-1 font-semibold text-slate-600">Filter Old SKU</div>
+                  {(["", "true", "false"] as const).map((v) => (
+                    <label key={v || "all-old"} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-slate-100">
+                      <input
+                        type="radio" name="inv-oldsku-filter" checked={fOldSku === v}
+                        onChange={() => { setFOldSku(v); setOpenMenu(null); applyNow({ oldSku: v }); }}
+                      />
+                      <span>{v === "" ? "All" : v === "true" ? "Old SKUs only" : "Current SKUs only"}</span>
+                    </label>
+                  ))}
+                </div>
+              </InvHeader>
             </tr>
           </thead>
           <tbody>
             {(rows as ProductRow[]).map((r, i) => (
-              <tr key={r.id || i} className="border-t">
-                <td className="px-2 py-1 font-mono">{String(r.sku)}</td>
+              <tr key={r.id || i} className={`border-t ${selectedIds.has(r.id) ? "bg-indigo-50/50" : ""}`}>
+                <td className="px-2 py-1 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select product ${r.sku}`}
+                    checked={selectedIds.has(r.id)}
+                    onChange={() => toggleSelectRow(r.id)}
+                  />
+                </td>
+                <td className="px-2 py-1 font-mono">
+                  <div>{String(r.sku)}</div>
+                  {r.supersededBySku && (
+                    <div className="text-[10px] text-amber-700" title={`Replaced by SKU ${r.supersededBySku}`}>
+                      → {r.supersededBySku}
+                    </div>
+                  )}
+                  {r.previousSku && (
+                    <div className="text-[10px] text-indigo-600" title={`Replaces Old SKU ${r.previousSku}`}>
+                      ← {r.previousSku}
+                    </div>
+                  )}
+                </td>
                 <td className="px-2 py-1">{String(r.productNumber)}</td>
                 <td className="px-2 py-1">{String(r.description)}</td>
                 <td className="px-2 py-1">{String(r.vendor)}</td>
@@ -972,6 +1181,23 @@ for (let i = 0; i < batches.length; i++) {
                     {savingId === r.id && <Spinner />}
                   </span>
                 </td>
+                <td className="px-2 py-1 text-center">
+                  <span className="inline-flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      aria-label={`Old SKU for ${r.sku}`}
+                      checked={Boolean(r.isOldSku)}
+                      disabled={savingOldSkuId === r.id || !r.id}
+                      onChange={(e) => void updateOldSku(r, e.target.checked)}
+                      title={
+                        r.supersededBySku
+                          ? `Old SKU replaced by ${r.supersededBySku}`
+                          : "Check if this SKU has been superseded by a newer SKU"
+                      }
+                    />
+                    {savingOldSkuId === r.id && <Spinner />}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -997,6 +1223,44 @@ for (let i = 0; i < batches.length; i++) {
             await refreshWithFilters();
           }}
         />
+      )}
+      {showConfirmDeleteSelected && selectedIds.size > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selected products">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl text-slate-900">
+            <h2 className="text-base font-bold">
+              Delete {selectedIds.size.toLocaleString()} Selected Product{selectedIds.size === 1 ? "" : "s"}?
+            </h2>
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+              This will permanently remove the selected product{selectedIds.size === 1 ? "" : "s"} from All Inventory (this is permanent deletion, not marking them Inactive). Historical price update sheets, notes, and exports remain preserved.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Products with active Old SKU / replacement links to remaining inventory products are protected and cannot be deleted unless both linked SKUs are selected together.
+            </p>
+            {deleteSelectedError && (
+              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {deleteSelectedError}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingSelected}
+                onClick={() => { setShowConfirmDeleteSelected(false); setDeleteSelectedError(""); }}
+                className="rounded border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                busy={deletingSelected}
+                busyLabel="Deleting..."
+                onClick={() => void confirmDeleteSelected()}
+                className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Delete Permanently
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1348,17 +1612,48 @@ for (let i = 0; i < batches.length; i++) {
           {fBrandContains && <FilterChip label={`Brand: ${fBrandContains}`} onClear={() => setFBrandContains("")} onApply={() => applyNow({ brandContains: "" })} />}
           {fVendorExact && <FilterChip label={`Vendor = "${fVendorExact}"`} onClear={() => setFVendorExact("")} onApply={() => applyNow({ vendorExact: "" })} />}
           {fBrandExact && <FilterChip label={`Brand = "${fBrandExact}"`} onClear={() => setFBrandExact("")} onApply={() => applyNow({ brandExact: "" })} />}
+          {fOldSku && <FilterChip label={`Old SKU = ${fOldSku === "true" ? "Yes" : "No"}`} onClear={() => setFOldSku("")} onApply={() => applyNow({ oldSku: "" })} />}
           <button
             className="text-[11px] text-slate-500 hover:underline"
             onClick={() => {
               setFSku(""); setFNum(""); setFDesc("");
               setFVendorContains(""); setFBrandContains("");
-              setFVendorExact(""); setFBrandExact(""); setFInactive("");
-              applyNow({ sku: "", num: "", desc: "", vendorContains: "", brandContains: "", vendorExact: "", brandExact: "", inactive: "" });
+              setFVendorExact(""); setFBrandExact(""); setFInactive(""); setFOldSku("");
+              applyNow({ sku: "", num: "", desc: "", vendorContains: "", brandContains: "", vendorExact: "", brandExact: "", inactive: "", oldSku: "" });
             }}
           >
             Clear all filters
           </button>
+        </div>
+      )}
+
+      {/* Selection Action Bar (shown when 1+ products are selected) */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/70 dark:bg-indigo-950/30 px-4 py-2.5 text-xs shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[11px] font-bold text-white">
+              {selectedIds.size.toLocaleString()}
+            </span>
+            <span className="font-semibold text-indigo-950 dark:text-indigo-200">
+              {selectedIds.size.toLocaleString()} product{selectedIds.size === 1 ? "" : "s"} selected
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700"
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              onClick={() => { setDeleteSelectedError(""); setShowConfirmDeleteSelected(true); }}
+              className="rounded-lg bg-red-600 px-3.5 py-1.5 font-bold text-white shadow-xs hover:bg-red-700"
+            >
+              Delete Selected ({selectedIds.size.toLocaleString()})
+            </button>
+          </div>
         </div>
       )}
 
@@ -1368,6 +1663,16 @@ for (let i = 0; i < batches.length; i++) {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
+                <th className="w-10 px-3 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible products"
+                    checked={allVisibleSelected}
+                    ref={(el) => { if (el) el.indeterminate = !allVisibleSelected && visibleSelectedCount > 0; }}
+                    onChange={toggleSelectAllVisible}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                  />
+                </th>
                 <InvHeader
                   label="SKU" colKey="sku"
                   sortKey={sortKey} sortDir={sortDir} filtered={!!fSku}
@@ -1476,12 +1781,76 @@ for (let i = 0; i < batches.length; i++) {
                     ))}
                   </div>
                 </InvHeader>
+                <InvHeader
+                  label="Old SKU" colKey="isOldSku"
+                  sortKey={sortKey} sortDir={sortDir} filtered={!!fOldSku}
+                  openMenu={openMenu} onToggle={openColumnMenu}
+                  onSort={(dir) => changeSort("isOldSku", dir)} onClearSort={clearSort}
+                  sortAscLabel="Current SKUs first" sortDescLabel="Old SKUs first"
+                  menuRef={menuRef}
+                >
+                  <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
+                    <div className="mb-1 font-semibold text-slate-700 dark:text-zinc-300">Filter Old SKU</div>
+                    {(
+                      [
+                        ["", "All products"],
+                        ["true", "Old SKUs only"],
+                        ["false", "Current SKUs only"],
+                      ] as const
+                    ).map(([val, label]) => (
+                      <button
+                        key={val || "all-old"}
+                        type="button"
+                        className={`block w-full px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${fOldSku === val ? "font-bold text-indigo-600 dark:text-indigo-400" : "text-slate-600 dark:text-zinc-300"}`}
+                        onClick={() => {
+                          setFOldSku(val);
+                          setOpenMenu(null);
+                          applyNow({ oldSku: val });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </InvHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
               {(rows as ProductRow[]).map((r, i) => (
-                <tr key={r.id || i} className="transition-colors hover:bg-slate-50/60 dark:hover:bg-zinc-800/40">
-                  <td className="px-3 py-2 font-mono text-xs font-bold text-slate-900 dark:text-white">{r.sku}</td>
+                <tr
+                  key={r.id || i}
+                  className={`transition-colors hover:bg-slate-50/60 dark:hover:bg-zinc-800/40 ${
+                    selectedIds.has(r.id) ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""
+                  }`}
+                >
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select product ${r.sku}`}
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggleSelectRow(r.id)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                    />
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs font-bold text-slate-900 dark:text-white">
+                    <div>{r.sku}</div>
+                    {r.supersededBySku && (
+                      <div
+                        className="mt-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400"
+                        title={`Old SKU replaced by ${r.supersededBySku}`}
+                      >
+                        → {r.supersededBySku}
+                      </div>
+                    )}
+                    {r.previousSku && (
+                      <div
+                        className="mt-0.5 text-[10px] font-semibold text-indigo-600 dark:text-indigo-400"
+                        title={`Replaces Old SKU ${r.previousSku}`}
+                      >
+                        ← {r.previousSku}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-600 dark:text-zinc-400">{r.productNumber || "—"}</td>
                   <td className="px-3 py-2 font-medium text-slate-800 dark:text-zinc-200">{r.description}</td>
                   <td className="px-3 py-2 text-slate-700 dark:text-zinc-300">
@@ -1512,11 +1881,29 @@ for (let i = 0; i < batches.length; i++) {
                       {savingId === r.id && <Spinner />}
                     </span>
                   </td>
+                  <td className="px-3 py-2 text-center">
+                    <span className="inline-flex items-center justify-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        aria-label={`Old SKU for ${r.sku}`}
+                        checked={Boolean(r.isOldSku)}
+                        disabled={savingOldSkuId === r.id || !r.id}
+                        onChange={(e) => void updateOldSku(r, e.target.checked)}
+                        title={
+                          r.supersededBySku
+                            ? `Superseded by SKU ${r.supersededBySku}`
+                            : "Check if this SKU has been superseded by a newer SKU"
+                        }
+                        className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      {savingOldSkuId === r.id && <Spinner />}
+                    </span>
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-slate-500 dark:text-zinc-400">
+                  <td colSpan={11} className="px-5 py-10 text-center text-slate-500 dark:text-zinc-400">
                     No products found matching current criteria.
                   </td>
                 </tr>
@@ -1613,6 +2000,44 @@ for (let i = 0; i < batches.length; i++) {
             await refreshWithFilters();
           }}
         />
+      )}
+      {showConfirmDeleteSelected && selectedIds.size > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selected products">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl text-slate-900">
+            <h2 className="text-base font-bold">
+              Delete {selectedIds.size.toLocaleString()} Selected Product{selectedIds.size === 1 ? "" : "s"}?
+            </h2>
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+              This will permanently remove the selected product{selectedIds.size === 1 ? "" : "s"} from All Inventory (this is permanent deletion, not marking them Inactive). Historical price update sheets, notes, and exports remain preserved.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Products with active Old SKU / replacement links to remaining inventory products are protected and cannot be deleted unless both linked SKUs are selected together.
+            </p>
+            {deleteSelectedError && (
+              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {deleteSelectedError}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingSelected}
+                onClick={() => { setShowConfirmDeleteSelected(false); setDeleteSelectedError(""); }}
+                className="rounded border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                busy={deletingSelected}
+                busyLabel="Deleting..."
+                onClick={() => void confirmDeleteSelected()}
+                className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Delete Permanently
+              </LoadingButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

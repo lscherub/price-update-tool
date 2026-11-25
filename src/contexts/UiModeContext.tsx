@@ -79,11 +79,13 @@ interface UiModeContextType {
   navigation: NavigationConfig;
   priceEditor: PriceEditorMode;
   userId: string | null;
+  spreadsheetFullscreen: boolean;
   setMode: (mode: UiMode) => void;
   setTheme: (theme: UiTheme) => void;
   setAccent: (accent: UiAccent) => void;
   setDensity: (density: UiDensity) => void;
   setPriceEditor: (editor: PriceEditorMode) => void;
+  setSpreadsheetFullscreen: (v: boolean | ((prev: boolean) => boolean)) => void;
   toggleSectionVisibility: (sectionId: DashboardSectionId) => void;
   reorderSections: (fromIndex: number, toIndex: number) => void;
   toggleMetricVisibility: (metricKey: MetricKey) => void;
@@ -102,6 +104,7 @@ export function UiModeProvider({ children }: { children: React.ReactNode }) {
   const [priceEditor, setPriceEditorState] = useState<PriceEditorMode>("legacy");
   const [userId, setUserId] = useState<string | null>(null);
   const [editorLoadedFor, setEditorLoadedFor] = useState<string | null>(null);
+  const [spreadsheetFullscreen, setSpreadsheetFullscreen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [, startTransition] = useTransition();
   const unsavedCheckersRef = React.useRef<Set<() => boolean>>(new Set());
@@ -346,11 +349,13 @@ export function UiModeProvider({ children }: { children: React.ReactNode }) {
         navigation: preferences.navigation,
         priceEditor,
         userId,
+        spreadsheetFullscreen,
         setMode,
         setTheme,
         setAccent,
         setDensity,
         setPriceEditor,
+        setSpreadsheetFullscreen,
         toggleSectionVisibility,
         reorderSections,
         toggleMetricVisibility,

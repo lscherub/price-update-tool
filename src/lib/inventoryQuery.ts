@@ -5,7 +5,7 @@
 export type InventoryQuery = {
   q: string; sku: string; productNumber: string; description: string;
   vendor: string; brand: string; vendorExact: string; brandExact: string;
-  inactive: string; sort: string; sortDir: string;
+  inactive: string; oldSku?: string; sort: string; sortDir: string;
 };
 export function parseInventoryQuery(sp: URLSearchParams): InventoryQuery {
   return {
@@ -18,11 +18,12 @@ export function parseInventoryQuery(sp: URLSearchParams): InventoryQuery {
     vendorExact: (sp.get("vendorExact") ?? "").trim() || (sp.get("vendor") ?? "").trim(),
     brandExact: (sp.get("brandExact") ?? "").trim(),
     inactive: (sp.get("inactive") ?? "").trim(),
+    oldSku: (sp.get("oldSku") ?? "").trim(),
     sort: (sp.get("sort") ?? "").trim(),
     sortDir: (sp.get("sortDir") ?? "").trim(),
   };
 }
-const SORTABLE = new Set(["sku","productNumber","description","vendor","brand","listCost","price","sizeDesc","status"]);
+const SORTABLE = new Set(["sku","productNumber","description","vendor","brand","listCost","price","sizeDesc","status","isOldSku"]);
 export function parseInventorySort(sort: unknown, dir: unknown): { key: string; dir: "asc" | "desc" } | null {
   if (typeof sort !== "string" || !SORTABLE.has(sort)) return null;
   if (dir !== "asc" && dir !== "desc") return null;
@@ -37,6 +38,8 @@ export function buildInventoryWhere(q: InventoryQuery): PrismaWhere {
   if (q.brandExact) where.brand = q.brandExact;
   if (q.inactive === "true") where.isInactive = true;
   else if (q.inactive === "false") where.isInactive = false;
+  if (q.oldSku === "true") where.isOldSku = true;
+  else if (q.oldSku === "false") where.isOldSku = false;
   if (q.q) {
     and.push({ OR: [
       { sku: { contains: q.q, mode: "insensitive" } },
@@ -57,7 +60,8 @@ export function buildInventoryWhere(q: InventoryQuery): PrismaWhere {
 }
 export type FileProductLike = {
   sku: string; normalizedSku: string; productNumber: string; description: string;
-  vendor: string; brand: string; isInactive: boolean; listCost: string; price: string; sizeDesc: string;
+  vendor: string; brand: string; isInactive: boolean; isOldSku?: boolean;
+  listCost: string; price: string; sizeDesc: string;
 };
 /** Same predicate as buildInventoryWhere, for the dev JSON file-store. */
 export function matchesInventoryFilters(p: FileProductLike, q: InventoryQuery): boolean {
@@ -65,6 +69,8 @@ export function matchesInventoryFilters(p: FileProductLike, q: InventoryQuery): 
   if (q.brandExact && p.brand !== q.brandExact) return false;
   if (q.inactive === "true" && !p.isInactive) return false;
   if (q.inactive === "false" && p.isInactive) return false;
+  if (q.oldSku === "true" && !p.isOldSku) return false;
+  if (q.oldSku === "false" && p.isOldSku) return false;
   if (q.q) {
     const needle = q.q.toLowerCase();
     const hay = [p.sku, p.normalizedSku, p.productNumber, p.description, p.brand, p.vendor].join(" ").toLowerCase();
@@ -95,6 +101,11 @@ export function compareInventoryRows(a: FileProductLike, b: FileProductLike, sor
   if (p.key === "status") {
     const x = a.isInactive ? 1 : 0;
     const y = b.isInactive ? 1 : 0;
+    return (x - y) * m;
+  }
+  if (p.key === "isOldSku") {
+    const x = a.isOldSku ? 1 : 0;
+    const y = b.isOldSku ? 1 : 0;
     return (x - y) * m;
   }
   if (p.key === "listCost" || p.key === "price") {

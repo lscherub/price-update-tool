@@ -14,6 +14,9 @@ export type ProductRow = {
   price: string;
   sizeDesc: string;
   isInactive: boolean;
+  isOldSku?: boolean;
+  supersededByProductId?: string | null;
+  previousSkuProductId?: string | null;
 };
 
 export type StoreShape = {

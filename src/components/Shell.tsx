@@ -20,9 +20,11 @@ const NAV = [
 ];
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const { mode, priceEditor, requestModeChange } = useUiMode();
+  const { mode, priceEditor, spreadsheetFullscreen, requestModeChange } = useUiMode();
   const path = usePathname();
-  const isWideSheet = priceEditor === "spreadsheet" && path.startsWith("/sessions/") && path !== "/sessions/new";
+  const isSessionDetail = path.startsWith("/sessions/") && path !== "/sessions/new";
+  const isWideSheet = priceEditor === "spreadsheet" && isSessionDetail;
+  const isFullScreenSheet = isWideSheet && spreadsheetFullscreen;
   const router = useRouter();
   const [user, setUser] = useState<{ email: string; role: string } | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -40,9 +42,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }
 
   // Otherwise, render the classic interface preserved exactly as existing
+  // (when full-screen spreadsheet is active, sidebar/header are removed while keeping <main>{children}</main> mounted).
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="flex min-h-screen">
+    <div className={isFullScreenSheet ? "h-screen w-screen overflow-hidden bg-white text-slate-900" : "min-h-screen bg-slate-50 text-slate-900"}>
+      <div className={isFullScreenSheet ? "flex h-full w-full" : "flex min-h-screen"}>
+        {!isFullScreenSheet && (
         <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4 md:flex">
           <div className="mb-4 px-2">
             <div className="text-lg font-bold">Price Update Tool</div>
@@ -99,7 +103,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             ) : null}
           </div>
         </aside>
-        <div className="flex min-w-0 flex-1 flex-col">
+        )}
+        <div className={isFullScreenSheet ? "flex h-full min-w-0 flex-1 flex-col overflow-hidden" : "flex min-w-0 flex-1 flex-col"}>
+          {!isFullScreenSheet && (
           <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
             <span className="font-bold">Price Update Tool</span>
             <nav className="flex gap-2 overflow-x-auto text-sm">
@@ -115,7 +121,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               New UI
             </button>
           </header>
-          <main className={isWideSheet ? "w-full flex-1 px-3 py-3 md:px-4" : "mx-auto w-full max-w-7xl flex-1 p-4 md:p-6"}>{children}</main>
+          )}
+          <main className={isFullScreenSheet ? "h-full w-full flex-1 overflow-hidden p-0 m-0" : isWideSheet ? "w-full flex-1 px-3 py-3 md:px-4" : "mx-auto w-full max-w-7xl flex-1 p-4 md:p-6"}>{children}</main>
         </div>
       </div>
     </div>

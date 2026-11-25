@@ -159,9 +159,12 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     theme,
     setTheme,
     priceEditor,
+    spreadsheetFullscreen,
     requestModeChange,
   } = useUiMode();
-  const isWideSheet = priceEditor === "spreadsheet" && path.startsWith("/sessions/") && path !== "/sessions/new";
+  const isSessionDetail = path.startsWith("/sessions/") && path !== "/sessions/new";
+  const isWideSheet = priceEditor === "spreadsheet" && isSessionDetail;
+  const isFullScreenSheet = isWideSheet && spreadsheetFullscreen;
 
   const [user, setUser] = useState<{ email: string; role: string } | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -208,16 +211,17 @@ export function NewShell({ children }: { children: React.ReactNode }) {
   const isCollapsed = navigation.collapsed;
 
   return (
-    <div className="flex min-h-screen bg-slate-50/70 text-slate-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className={isFullScreenSheet ? "flex h-screen w-screen overflow-hidden bg-white text-slate-900 dark:bg-zinc-950 dark:text-zinc-100" : "flex min-h-screen bg-slate-50/70 text-slate-900 dark:bg-zinc-950 dark:text-zinc-100"}>
       {/* Mobile Drawer Backdrop */}
-      {mobileMenuOpen && (
+      {!isFullScreenSheet && mobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
-      {/* Modern Sidebar (Desktop & Mobile Drawer) */}
+      {/* Modern Sidebar (completely omitted in Spreadsheet Full-Screen mode) */}
+      {!isFullScreenSheet && (
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-200/90 bg-white shadow-xs transition-all duration-200 dark:border-zinc-800 dark:bg-zinc-900 md:static ${
           mobileMenuOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0"
@@ -398,10 +402,12 @@ export function NewShell({ children }: { children: React.ReactNode }) {
           ) : null}
         </div>
       </aside>
+      )}
 
-      {/* Main Content Area */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
-        {/* Top Header Bar */}
+      {/* Main Content Area (always stays at the same tree position so children never unmount on full-screen toggle) */}
+      <div className={isFullScreenSheet ? "flex h-full min-w-0 flex-1 flex-col overflow-hidden" : "flex min-w-0 flex-1 flex-col overflow-x-hidden"}>
+        {/* Top Header Bar (omitted in Spreadsheet Full-Screen mode) */}
+        {!isFullScreenSheet && (
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/95 md:px-8">
           <div className="flex items-center gap-3">
             {/* Mobile menu trigger */}
@@ -476,9 +482,10 @@ export function NewShell({ children }: { children: React.ReactNode }) {
             </Link>
           </div>
         </header>
+        )}
 
         {/* Page Content Container */}
-        <main className={isWideSheet ? "w-full flex-1 px-3 py-3 md:px-4" : "mx-auto w-full max-w-7xl flex-1 p-4 md:p-6 lg:p-8"}>
+        <main className={isFullScreenSheet ? "h-full w-full flex-1 overflow-hidden p-0 m-0" : isWideSheet ? "w-full flex-1 px-3 py-3 md:px-4" : "mx-auto w-full max-w-7xl flex-1 p-4 md:p-6 lg:p-8"}>
           {children}
         </main>
       </div>

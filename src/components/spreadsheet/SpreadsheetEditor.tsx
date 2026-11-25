@@ -14,6 +14,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Flags, type Item } from "@/components/PriceGrid";
 import { MarkdownDoc } from "@/components/MarkdownEditor";
 import { useToast } from "@/components/Toast";
+import { useUiMode } from "@/contexts/UiModeContext";
 import type { SortableItemKey } from "@/lib/itemSort";
 import { getItemFlags } from "@/lib/itemSort";
 import {
@@ -126,6 +127,14 @@ export function SpreadsheetEditor({
   onSwitchToLegacy,
 }: SpreadsheetEditorProps) {
   const toast = useToast();
+  const { spreadsheetFullscreen: isFullscreen, setSpreadsheetFullscreen: setIsFullscreen } = useUiMode();
+
+  // Always exit full-screen cleanly when unmounting SpreadsheetEditor (e.g. route change / editor switch)
+  useEffect(() => {
+    return () => {
+      setIsFullscreen(false);
+    };
+  }, [setIsFullscreen]);
 
   // ---- Persistent user preferences (column order, widths, visibility, pins, wrap, density) ----
   const [prefs, setPrefs] = useState<SpreadsheetPrefs>(() => loadSpreadsheetPrefs(userId));
@@ -147,7 +156,6 @@ export function SpreadsheetEditor({
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterSpec>>({});
   const [sortRules, setSortRules] = useState<SortRule[]>([]);
   const [pinnedRowIds, setPinnedRowIds] = useState<string[]>([]);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // ---- Header Menu, Context Menu, Bulk Edit Modal ----
   const [headerMenu, setHeaderMenu] = useState<{ key: SortableItemKey; rect: DOMRect } | null>(null);
@@ -1172,7 +1180,7 @@ export function SpreadsheetEditor({
     <div
       className={
         isFullscreen
-          ? "fixed inset-0 z-40 flex flex-col bg-white dark:bg-zinc-950"
+          ? "flex h-full w-full flex-col bg-white dark:bg-zinc-950 overflow-hidden"
           : "flex flex-col rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs overflow-hidden"
       }
     >
@@ -1317,8 +1325,8 @@ export function SpreadsheetEditor({
         aria-label="Price Update Spreadsheet"
         onKeyDown={handleGridKeyDown}
         onPaste={handleGridPaste}
-        className="relative flex-1 overflow-auto outline-none bg-white dark:bg-zinc-950"
-        style={{ height: isFullscreen ? "100%" : "calc(100vh - 250px)", minHeight: isFullscreen ? undefined : 520 }}
+        className="relative flex-1 min-h-0 overflow-auto outline-none bg-white dark:bg-zinc-950"
+        style={isFullscreen ? undefined : { height: "calc(100vh - 250px)", minHeight: 520 }}
       >
         <div style={{ width: totalTableWidth, minHeight: "100%" }}>
           {/* Sticky Header Row */}

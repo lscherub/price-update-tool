@@ -280,10 +280,13 @@ export async function applyPosPriceUpdates(
 export async function clearProducts(
   db: DbLike,
 ): Promise<{ deletedProducts: number; detachedItems: number }> {
-  // Detach history first so no item can point at a product being removed.
+  // Detach history and self-referential Old SKU links first so no FK can block deletion.
   const detached = await db.$executeRawUnsafe(
     `UPDATE "PriceUpdateItem" SET "productId" = NULL WHERE "productId" IS NOT NULL`,
   );
+  await db.$executeRawUnsafe(
+    `UPDATE "Product" SET "supersededByProductId" = NULL, "previousSkuProductId" = NULL WHERE "supersededByProductId" IS NOT NULL OR "previousSkuProductId" IS NOT NULL`,
+  ).catch(() => null);
   const { count } = await db.product.deleteMany();
   return {
     deletedProducts: typeof count === "number" ? count : 0,
@@ -308,4 +311,147 @@ export async function setProductInactive(
     select: { id: true, sku: true, isInactive: true },
   });
   return { id: row.id, sku: row.sku, isInactive: row.isInactive };
+}
+
+/**
+ * Set one product's Old SKU flag by id.
+ * Targeted single-row update matching setProductInactive.
+ */
+export async function setProductOldSku(
+  db: DbLike,
+  id: string,
+  isOldSku: boolean,
+): Promise<{ id: string; sku: string; isOldSku: boolean } | null> {
+  const row = await db.product.update({
+    where: { id },
+    data: { isOldSku },
+    select: { id: true, sku: true, isOldSku: true },
+  });
+  return { id: row.id, sku: row.sku, isOldSku: row.isOldSku };
+}
+
+export type OldSkuLinkNode = {
+  id: string;
+  sku: string;
+  description?: string;
+  supersededByProductId?: string | null;
+  previousSkuProductId?: string | null;
+};
+
+export type BlockedDeletionItem = {
+  id: string;
+  sku: string;
+  linkedSku: string;
+  direction: "superseded_by" | "previous_sku";
+  reason: string;
+};
+
+/**
+ * Pure check for selective deletion safety around Old SKU replacement links.
+ *
+ * Any product participating in an Old SKU / Replacement SKU link whose partner
+ * product is NOT also being deleted in the same request is blocked, so no
+ * broken replacement relationship can ever be left behind.
+ */
+export function findBlockedOldSkuDeletions(
+  selectedIds: readonly string[],
+  involvedProducts: readonly OldSkuLinkNode[],
+): BlockedDeletionItem[] {
+  const selectedSet = new Set(selectedIds);
+  const byId = new Map(involvedProducts.map((p) => [p.id, p]));
+  const blocked = new Map<string, BlockedDeletionItem>();
+
+  for (const p of involvedProducts) {
+    if (selectedSet.has(p.id)) {
+      if (p.supersededByProductId && !selectedSet.has(p.supersededByProductId)) {
+        const partner = byId.get(p.supersededByProductId);
+        if (partner) {
+          blocked.set(p.id, {
+            id: p.id,
+            sku: p.sku,
+            linkedSku: partner.sku,
+            direction: "superseded_by",
+            reason: `SKU ${p.sku} is linked as an Old SKU replaced by ${partner.sku}. Select both or unlink before deleting.`,
+          });
+        }
+      }
+      if (!blocked.has(p.id) && p.previousSkuProductId && !selectedSet.has(p.previousSkuProductId)) {
+        const partner = byId.get(p.previousSkuProductId);
+        if (partner) {
+          blocked.set(p.id, {
+            id: p.id,
+            sku: p.sku,
+            linkedSku: partner.sku,
+            direction: "previous_sku",
+            reason: `SKU ${p.sku} is the replacement for Old SKU ${partner.sku}. Select both or unlink before deleting.`,
+          });
+        }
+      }
+    } else {
+      // A non-selected product references a selected product!
+      if (p.supersededByProductId && selectedSet.has(p.supersededByProductId)) {
+        const target = byId.get(p.supersededByProductId);
+        if (target && !blocked.has(target.id)) {
+          blocked.set(target.id, {
+            id: target.id,
+            sku: target.sku,
+            linkedSku: p.sku,
+            direction: "previous_sku",
+            reason: `SKU ${target.sku} is referenced as the replacement for Old SKU ${p.sku}.`,
+          });
+        }
+      }
+      if (p.previousSkuProductId && selectedSet.has(p.previousSkuProductId)) {
+        const target = byId.get(p.previousSkuProductId);
+        if (target && !blocked.has(target.id)) {
+          blocked.set(target.id, {
+            id: target.id,
+            sku: target.sku,
+            linkedSku: p.sku,
+            direction: "superseded_by",
+            reason: `SKU ${target.sku} is referenced as the Old SKU for ${p.sku}.`,
+          });
+        }
+      }
+    }
+  }
+  return [...blocked.values()];
+}
+
+/**
+ * Pure cycle/conflict validator before linking `oldProduct` -> `newSku` (or `newProductId`).
+ * Supports arbitrary multi-step chains A -> B -> C while rejecting self-links,
+ * already-superseded products, and circular references.
+ */
+export function validateOldSkuReplacement(
+  oldProduct: OldSkuLinkNode,
+  newSku: string,
+  allById: ReadonlyMap<string, OldSkuLinkNode>,
+  newProductId?: string,
+): { ok: true } | { ok: false; status: 400 | 409; error: string; existingReplacementSku?: string } {
+  if (oldProduct.sku === newSku || (newProductId && oldProduct.id === newProductId)) {
+    return { ok: false, status: 400, error: "Previous SKU cannot be the same as the new SKU." };
+  }
+  if (oldProduct.supersededByProductId) {
+    const existingRep = allById.get(oldProduct.supersededByProductId);
+    if (existingRep) {
+      return {
+        ok: false,
+        status: 409,
+        error: `SKU "${oldProduct.sku}" is already replaced by SKU "${existingRep.sku}"${existingRep.description ? ` (${existingRep.description})` : ""}. Resolve the existing replacement link before creating another.`,
+        existingReplacementSku: existingRep.sku,
+      };
+    }
+  }
+  // Walk ancestors from oldProduct to ensure no cycle (especially if linking existing IDs)
+  const visited = new Set<string>([oldProduct.id]);
+  let cur: OldSkuLinkNode | undefined = oldProduct;
+  while (cur?.previousSkuProductId) {
+    if (visited.has(cur.previousSkuProductId) || (newProductId && cur.previousSkuProductId === newProductId)) {
+      return { ok: false, status: 409, error: "Circular SKU replacement chain detected." };
+    }
+    visited.add(cur.previousSkuProductId);
+    cur = allById.get(cur.previousSkuProductId);
+  }
+  return { ok: true };
 }
