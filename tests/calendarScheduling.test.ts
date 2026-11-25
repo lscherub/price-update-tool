@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMEZONE,
   computeRelativeReminderAt,
+  isCalendarEventUpcoming,
   isValidDateKey,
   normalizeRecipientList,
   utcToLocalParts,
   validateAndComputeReminder,
 } from "@/lib/calendar";
+import { processDueReminders } from "@/lib/reminderProcessor";
 import {
   cancelSessionSchedule,
   markSessionScheduleCompleted,
@@ -438,5 +440,152 @@ describe("Scheduling, rescheduling, cancellation, and completion lifecycle", () 
     expect(bad.ok).toBe(false);
     const stillIntact = await getCalendarNotificationSettings(null);
     expect(stillIntact.recipients).toEqual(["one@genesis.ca", "three@genesis.ca"]);
+  });
+
+  it("excludes sent (cron or manual) and cancelled reminders from Upcoming count and Upcoming filter while preserving sent history", async () => {
+    await saveCalendarNotificationSettings(null, {
+      recipients: ["pricing@genesis.ca"],
+      timezone: DEFAULT_TIMEZONE,
+    });
+
+    // Add a third schedulable session so we can test 3 future reminders -> send 1 -> 2 remaining -> cancel 1 -> 1 remaining
+    const store = loadFileStore();
+    store.sessions.push({
+      id: "sess_third",
+      vendor: "CanPrev",
+      name: "CanPrev - January 10, 2027",
+      status: "Reviewed",
+      notes: "",
+      createdBy: "buyer@genesis.ca",
+      createdAt: "2027-01-10T16:00:00.000Z",
+      updatedAt: "2027-01-10T16:00:00.000Z",
+    });
+    store.items.push({
+      ...store.items[0],
+      id: "item_sess_third",
+      sessionId: "sess_third",
+      vendor: "CanPrev",
+    });
+    saveFileStore(store);
+
+    const t0 = new Date("2027-01-10T18:00:00.000Z"); // Jan 10 10:00 PST
+    // Test A & D: Schedule 3 future reminders
+    await scheduleOrRescheduleSession(
+      null,
+      "sess_reviewed",
+      "admin@genesis.ca",
+      {
+        effectiveDate: "2027-01-12",
+        reminderEnabled: true,
+        reminderType: "CUSTOM",
+        customDateKey: "2027-01-11",
+        customTimeHHMM: "09:00",
+      },
+      t0,
+    );
+    await scheduleOrRescheduleSession(
+      null,
+      "sess_ready",
+      "admin@genesis.ca",
+      {
+        effectiveDate: "2027-01-15",
+        reminderEnabled: true,
+        reminderType: "CUSTOM",
+        customDateKey: "2027-01-14",
+        customTimeHHMM: "09:00",
+      },
+      t0,
+    );
+    await scheduleOrRescheduleSession(
+      null,
+      "sess_third",
+      "admin@genesis.ca",
+      {
+        effectiveDate: "2027-01-20",
+        reminderEnabled: true,
+        reminderType: "ONE_DAY_BEFORE",
+      },
+      t0,
+    );
+
+    const calBefore = await queryCalendarEvents(null, { statusFilter: "all" }, t0);
+    const upcomingCountBefore = calBefore.events.filter((ev) =>
+      isCalendarEventUpcoming(ev, calBefore.todayKey),
+    ).length;
+    expect(upcomingCountBefore).toBe(3);
+
+    const upcomingListBefore = await queryCalendarEvents(
+      null,
+      { statusFilter: "all", timeframe: "upcoming" },
+      t0,
+    );
+    expect(upcomingListBefore.events).toHaveLength(3);
+
+    // Test B: Automatic Cron sends the Jan 11 09:00 PST (17:00 UTC) reminder
+    const mockSender = async () => ({
+      ok: true as const,
+      requestId: "req-up-1",
+      emailId: "em-up-1",
+      succeeded: 1,
+    });
+    const tAfterFirstSend = new Date("2027-01-11T17:05:00.000Z");
+    const cronRun = await processDueReminders({
+      prisma: null,
+      now: tAfterFirstSend,
+      sender: mockSender,
+      source: "cron",
+      bypassEnabledFlag: true,
+    });
+    expect(cronRun.sent).toBe(1);
+
+    // Upcoming count MUST drop from 3 -> 2, and sent item is excluded from Upcoming list
+    // while remaining visible in reminderFilter="sent"
+    const calAfterCron = await queryCalendarEvents(null, { statusFilter: "all" }, tAfterFirstSend);
+    expect(
+      calAfterCron.events.filter((ev) => isCalendarEventUpcoming(ev, calAfterCron.todayKey)),
+    ).toHaveLength(2);
+    const upcomingListAfterCron = await queryCalendarEvents(
+      null,
+      { statusFilter: "all", timeframe: "upcoming" },
+      tAfterFirstSend,
+    );
+    expect(upcomingListAfterCron.events.map((e) => e.id)).not.toContain("sess_reviewed");
+    expect(upcomingListAfterCron.events).toHaveLength(2);
+
+    const sentView = await queryCalendarEvents(
+      null,
+      { statusFilter: "all", reminderFilter: "sent" },
+      tAfterFirstSend,
+    );
+    expect(sentView.events.map((e) => e.id)).toContain("sess_reviewed");
+
+    // Test C: Manual processing ("Run Reminder Check Now") sends the Jan 14 reminder -> Upcoming drops 2 -> 1
+    const tAfterSecondSend = new Date("2027-01-14T17:05:00.000Z");
+    const manualRun = await processDueReminders({
+      prisma: null,
+      now: tAfterSecondSend,
+      sender: mockSender,
+      source: "manual",
+      triggeredBy: "admin@genesis.ca",
+      bypassEnabledFlag: true,
+    });
+    expect(manualRun.sent).toBe(1);
+
+    const calAfterManual = await queryCalendarEvents(
+      null,
+      { statusFilter: "all", timeframe: "upcoming" },
+      tAfterSecondSend,
+    );
+    expect(calAfterManual.events).toHaveLength(1);
+    expect(calAfterManual.events[0].id).toBe("sess_third");
+
+    // Test E: Cancel the remaining scheduled reminder -> Upcoming drops 1 -> 0
+    await cancelSessionSchedule(null, "sess_third", "admin@genesis.ca", tAfterSecondSend);
+    const calAfterCancel = await queryCalendarEvents(
+      null,
+      { statusFilter: "all", timeframe: "upcoming" },
+      tAfterSecondSend,
+    );
+    expect(calAfterCancel.events).toHaveLength(0);
   });
 });

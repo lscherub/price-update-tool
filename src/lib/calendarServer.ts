@@ -18,6 +18,7 @@ import {
   dateKeyToUtcMidnight,
   formatDateKeyShort,
   getReminderTypeLabel,
+  isCalendarEventUpcoming,
   isValidDateKey,
   normalizeRecipientList,
   toDateKey,
@@ -1150,7 +1151,7 @@ export async function queryCalendarEvents(
       if (ev.scheduleStatus === "CANCELLED") return false;
     }
 
-    if (timeframe === "upcoming" && ev.scheduledEffectiveDate < todayKey) return false;
+    if (timeframe === "upcoming" && !isCalendarEventUpcoming(ev, todayKey)) return false;
     if (timeframe === "past" && ev.scheduledEffectiveDate >= todayKey) return false;
 
     if (reminderFilter === "enabled" && !ev.activeReminder) return false;

@@ -4,6 +4,7 @@ import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuar
 import { queryCalendarEvents } from "@/lib/calendarServer";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -24,7 +25,9 @@ export async function GET(req: Request) {
       timeframe: searchParams.get("timeframe"),
       q: searchParams.get("q"),
     });
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not load calendar events." }, { status: 500 });

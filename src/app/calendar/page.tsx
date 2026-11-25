@@ -13,6 +13,7 @@ import {
   formatDateKeyLong,
   formatDateKeyShort,
   getReminderTypeLabel,
+  isCalendarEventUpcoming,
   isValidDateKey,
   todayDateKeyInTimezone,
 } from "@/lib/calendar";
@@ -161,8 +162,8 @@ export default function CalendarPage() {
   const [dropError, setDropError] = useState("");
   const [dropNeedsConfirm, setDropNeedsConfirm] = useState(false);
 
-  const loadCalendar = useCallback(async () => {
-    setLoading(true);
+  const loadCalendar = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (vendorFilter) params.set("vendor", vendorFilter);
@@ -171,11 +172,13 @@ export default function CalendarPage() {
       if (timeframeFilter !== "all") params.set("timeframe", timeframeFilter);
       if (q.trim()) params.set("q", q.trim());
 
-      const r = await fetch(`/api/calendar?${params.toString()}`);
+      const r = await fetch(`/api/calendar?${params.toString()}`, { cache: "no-store" });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(apiErrorText(d, "Could not load scheduled price updates."));
-        setEvents([]);
+        if (!opts?.silent) {
+          setError(apiErrorText(d, "Could not load scheduled price updates."));
+          setEvents([]);
+        }
         return;
       }
       setError("");
@@ -188,10 +191,12 @@ export default function CalendarPage() {
       // Keep open detail modal synced with fresh data
       setSelectedEvent((prev) => (prev ? loaded.find((x) => x.id === prev.id) ?? null : null));
     } catch {
-      setError("Could not reach the server. Check your connection and try again.");
-      setEvents([]);
+      if (!opts?.silent) {
+        setError("Could not reach the server. Check your connection and try again.");
+        setEvents([]);
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [vendorFilter, statusFilter, reminderFilter, timeframeFilter, q]);
 
@@ -220,7 +225,9 @@ export default function CalendarPage() {
     for (const ev of events) {
       if (ev.status === "Scheduled" && ev.scheduleStatus === "ACTIVE") {
         scheduled++;
-        if (ev.scheduledEffectiveDate >= todayKey) upcoming++;
+      }
+      if (isCalendarEventUpcoming(ev, todayKey)) {
+        upcoming++;
       }
       if (ev.activeReminder && (ev.activeReminder.status === "SCHEDULED" || ev.activeReminder.status === "PROCESSING")) {
         remindersActive++;
@@ -231,6 +238,31 @@ export default function CalendarPage() {
     }
     return { scheduled, upcoming, remindersActive, remindersFailed };
   }, [events, todayKey]);
+
+  // Keep Calendar UI counters in sync automatically after background Cron sends
+  // without requiring a manual page reload.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadCalendar({ silent: true });
+      }
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    const interval =
+      stats.remindersActive > 0
+        ? setInterval(() => {
+            if (document.visibilityState === "visible") {
+              void loadCalendar({ silent: true });
+            }
+          }, 30_000)
+        : null;
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      if (interval) clearInterval(interval);
+    };
+  }, [loadCalendar, stats.remindersActive]);
 
   const monthCells = useMemo(() => getMonthGridDays(anchorDate), [anchorDate]);
   const weekDays = useMemo(() => getWeekDays(anchorDate), [anchorDate]);

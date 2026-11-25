@@ -259,6 +259,49 @@ export function getReminderTypeLabel(type: string): string {
   return type;
 }
 
+/**
+ * Shared eligibility predicate for "Upcoming" across the Calendar counter and
+ * the Upcoming list filter.
+ *
+ * Excludes:
+ * - Cancelled or Completed/Exported schedules
+ * - Past effective dates (relative to todayKey in America/Vancouver)
+ * - Worksheets whose reminder has already been SENT, CANCELLED, EXPIRED, or FAILED
+ *   (unless a new pending SCHEDULED / PROCESSING reminder is active)
+ */
+export function isCalendarEventUpcoming(
+  ev: {
+    status: string;
+    scheduleStatus: string | null;
+    scheduledEffectiveDate: string;
+    activeReminder: { status: string } | null;
+    latestReminder: { status: string } | null;
+  },
+  todayKey: string,
+): boolean {
+  if (ev.status !== "Scheduled" || ev.scheduleStatus !== "ACTIVE") return false;
+  if (ev.scheduledEffectiveDate < todayKey) return false;
+
+  if (
+    ev.activeReminder &&
+    (ev.activeReminder.status === "SCHEDULED" || ev.activeReminder.status === "PROCESSING")
+  ) {
+    return true;
+  }
+
+  if (
+    ev.latestReminder &&
+    (ev.latestReminder.status === "SENT" ||
+      ev.latestReminder.status === "CANCELLED" ||
+      ev.latestReminder.status === "EXPIRED" ||
+      ev.latestReminder.status === "FAILED")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function isValidEmail(email: string): boolean {
   const trimmed = email.trim();
   if (trimmed.length < 5 || trimmed.length > 254) return false;
