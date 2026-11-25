@@ -16,6 +16,8 @@ export type Smtp2goPublicStatus = {
   fromName: string;
   appBaseUrl: string;
   cronSecretConfigured: boolean;
+  cronSecretTooShort: boolean;
+  cronSecretWeak: boolean;
   automatedSendingEnabled: boolean;
   readyToSend: boolean;
 };
@@ -40,7 +42,10 @@ export function getSmtp2goPublicStatus(): Smtp2goPublicStatus {
   const fromEmail = process.env.SMTP2GO_FROM_EMAIL?.trim() ?? "";
   const fromName = process.env.SMTP2GO_FROM_NAME?.trim() || "Genesis Nutrition";
   const fromEmailConfigured = Boolean(fromEmail);
-  const cronSecretConfigured = Boolean(process.env.CRON_SECRET?.trim());
+  const cronSecret = process.env.CRON_SECRET?.trim() ?? "";
+  const cronSecretConfigured = Boolean(cronSecret);
+  const cronSecretTooShort = cronSecretConfigured && cronSecret.length < 8;
+  const cronSecretWeak = cronSecretConfigured && cronSecret.length >= 8 && cronSecret.length < 16;
   const automatedSendingEnabled = process.env.REMINDER_EMAILS_ENABLED?.trim().toLowerCase() === "true";
 
   return {
@@ -50,6 +55,8 @@ export function getSmtp2goPublicStatus(): Smtp2goPublicStatus {
     fromName,
     appBaseUrl: resolveAppBaseUrl(),
     cronSecretConfigured,
+    cronSecretTooShort,
+    cronSecretWeak,
     automatedSendingEnabled,
     readyToSend: apiKeyConfigured && fromEmailConfigured,
   };

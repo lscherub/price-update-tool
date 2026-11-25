@@ -1,4 +1,5 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_TIMEZONE } from "@/lib/calendar";
@@ -16,9 +17,9 @@ import {
   getSmtp2goPublicStatus,
   sendViaSmtp2go,
 } from "@/lib/smtp2go";
-import { DATA_FILE, emptyStore, loadFileStore, saveFileStore } from "@/lib/store";
+import { emptyStore, loadFileStore, saveFileStore } from "@/lib/store";
 
-let backupRaw: string | null = null;
+let tmpStoreFile = "";
 const envBackup: Record<string, string | undefined> = {};
 
 function setEnv(k: string, v: string | undefined) {
@@ -69,7 +70,8 @@ function seedScheduledStore() {
 }
 
 beforeEach(() => {
-  backupRaw = fs.existsSync(DATA_FILE) ? fs.readFileSync(DATA_FILE, "utf8") : null;
+  tmpStoreFile = path.join(os.tmpdir(), `reminder-proc-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  process.env.TEST_STORE_FILE = tmpStoreFile;
   seedScheduledStore();
 });
 
@@ -79,11 +81,9 @@ afterEach(() => {
     else process.env[k] = v;
     delete envBackup[k];
   }
-  if (backupRaw !== null) {
-    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-    fs.writeFileSync(DATA_FILE, backupRaw);
-  } else if (fs.existsSync(DATA_FILE)) {
-    fs.unlinkSync(DATA_FILE);
+  delete process.env.TEST_STORE_FILE;
+  if (tmpStoreFile && fs.existsSync(tmpStoreFile)) {
+    fs.unlinkSync(tmpStoreFile);
   }
 });
 
@@ -203,10 +203,33 @@ describe("SMTP2GO email builder, client, and security", () => {
 });
 
 describe("Automated reminder processor: idempotency, retries, missed/expired handling, and cron auth", () => {
-  it("validates CRON_SECRET strictly and fails closed when missing", () => {
+  it("validates CRON_SECRET strictly, fails closed when missing or < 8 chars, and flags short secrets as weak", () => {
     setEnv("CRON_SECRET", undefined);
     expect(verifyCronAuth(new Request("http://localhost/api/cron/process-reminders"))).toBe(false);
 
+    // Too short (< 8 chars) -> fails closed
+    setEnv("CRON_SECRET", "short");
+    expect(
+      verifyCronAuth(
+        new Request("http://localhost/api/cron/process-reminders", {
+          headers: { Authorization: "Bearer short" },
+        }),
+      ),
+    ).toBe(false);
+    expect(getSmtp2goPublicStatus().cronSecretTooShort).toBe(true);
+
+    // 8-15 chars -> accepted if exact match, but flagged as weak in diagnostics
+    setEnv("CRON_SECRET", "test_11char");
+    expect(
+      verifyCronAuth(
+        new Request("http://localhost/api/cron/process-reminders", {
+          headers: { Authorization: "Bearer test_11char" },
+        }),
+      ),
+    ).toBe(true);
+    expect(getSmtp2goPublicStatus().cronSecretWeak).toBe(true);
+
+    // Strong 32+ char secret -> accepted & not weak
     setEnv("CRON_SECRET", "super-secret-cron-token-32-chars-long");
     expect(
       verifyCronAuth(
@@ -222,6 +245,95 @@ describe("Automated reminder processor: idempotency, retries, missed/expired han
         }),
       ),
     ).toBe(true);
+    expect(getSmtp2goPublicStatus().cronSecretWeak).toBe(false);
+  });
+
+  it("processes multiple due reminders at the same due time without duplicates across manual and cron runs", async () => {
+    const store = loadFileStore();
+    const nowIso = "2027-01-10T16:00:00.000Z";
+    store.sessions.push({
+      id: "sess_aor",
+      vendor: "AOR",
+      name: "AOR - January 10, 2027",
+      status: "Reviewed",
+      notes: "",
+      createdBy: "admin@genesis.ca",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    store.items.push({
+      ...store.items[0],
+      id: "item_2",
+      sessionId: "sess_aor",
+      vendor: "AOR",
+    });
+    saveFileStore(store);
+
+    await saveCalendarNotificationSettings(null, {
+      recipients: ["team@genesis.ca"],
+      timezone: DEFAULT_TIMEZONE,
+    });
+
+    // Schedule two worksheets with the EXACT same custom reminder timestamp
+    const schedNow = new Date("2027-01-10T18:00:00.000Z");
+    await scheduleOrRescheduleSession(
+      null,
+      "sess_flora",
+      "admin@genesis.ca",
+      {
+        effectiveDate: "2027-01-25",
+        reminderEnabled: true,
+        reminderType: "CUSTOM",
+        customDateKey: "2027-01-20",
+        customTimeHHMM: "15:40",
+      },
+      schedNow,
+    );
+    await scheduleOrRescheduleSession(
+      null,
+      "sess_aor",
+      "admin@genesis.ca",
+      {
+        effectiveDate: "2027-01-25",
+        reminderEnabled: true,
+        reminderType: "CUSTOM",
+        customDateKey: "2027-01-20",
+        customTimeHHMM: "15:40",
+      },
+      schedNow,
+    );
+
+    setEnv("REMINDER_EMAILS_ENABLED", "true");
+    const mockSender = vi.fn(async () => ({
+      ok: true as const,
+      requestId: "req-multi",
+      emailId: "em-multi",
+      succeeded: 1,
+    }));
+
+    // Automatic cron run at 15:41 PST (23:41 UTC) processes BOTH due reminders
+    const cronRun = await processDueReminders({
+      prisma: null,
+      now: new Date("2027-01-20T23:41:00.000Z"),
+      sender: mockSender,
+      source: "cron",
+      triggeredBy: "supabase-cron",
+    });
+    expect(cronRun.claimed).toBe(2);
+    expect(cronRun.sent).toBe(2);
+    expect(mockSender).toHaveBeenCalledTimes(2);
+
+    // Subsequent manual check finds 0 due and sends 0 duplicates
+    const manualRun = await processDueReminders({
+      prisma: null,
+      now: new Date("2027-01-20T23:42:00.000Z"),
+      sender: mockSender,
+      source: "manual",
+      triggeredBy: "admin@genesis.ca",
+    });
+    expect(manualRun.claimed).toBe(0);
+    expect(manualRun.sent).toBe(0);
+    expect(mockSender).toHaveBeenCalledTimes(2);
   });
 
   it("skips sending when REMINDER_EMAILS_ENABLED is false, and prevents duplicate emails across repeated cron runs", async () => {

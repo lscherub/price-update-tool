@@ -36,11 +36,14 @@ export const SUPABASE_CRON_JOB_NAME = "process-price-update-reminders";
 
 /**
  * Constant-time verification of `Authorization: Bearer <CRON_SECRET>`.
- * Always fails closed when CRON_SECRET is missing or shorter than 16 chars.
+ * Always fails closed when CRON_SECRET is missing or shorter than 8 chars.
+ * (32+ random characters via `openssl rand -hex 32` is strongly recommended;
+ * secrets between 8 and 15 chars are accepted so valid configured secrets
+ * don't silently 401, while Settings diagnostics flags them as weak.)
  */
 export function verifyCronAuth(req: Request): boolean {
   const secret = process.env.CRON_SECRET?.trim();
-  if (!secret || secret.length < 16) return false;
+  if (!secret || secret.length < 8) return false;
   const auth = req.headers.get("authorization") ?? "";
   const prefix = "Bearer ";
   if (!auth.startsWith(prefix)) return false;
@@ -88,11 +91,20 @@ export type ReminderRunSummary = {
   details: { reminderId: string; sessionId: string; outcome: string; detail?: string }[];
 };
 
+export type SchedulerOperationalState =
+  | "operational"
+  | "failing"
+  | "paused"
+  | "configured_unverified"
+  | "unconfigured";
+
 export type ReminderDiagnostics = {
   checkedAt: string;
   timezone: string;
   scheduler: {
     provider: "supabase_pg_cron" | "unconfigured";
+    operationalState: SchedulerOperationalState;
+    operationalReason: string;
     jobName: string;
     pgCronInstalled: boolean;
     pgNetInstalled: boolean;
@@ -104,6 +116,10 @@ export type ReminderDiagnostics = {
     lastCronJobRunAt: string | null;
     lastCronJobStatus: string | null;
     lastCronJobMessage: string | null;
+    lastHttpRequestAt: string | null;
+    lastHttpStatusCode: number | null;
+    lastHttpError: string | null;
+    lastSuccessfulHttpRequestAt: string | null;
   };
   counts: {
     pending: number;
@@ -114,7 +130,10 @@ export type ReminderDiagnostics = {
     expired: number;
   };
   lastExecution: ReminderRunHistoryEntry | null;
+  lastCronExecution: ReminderRunHistoryEntry | null;
+  lastSuccessfulCronExecution: ReminderRunHistoryEntry | null;
   lastSuccessfulExecution: ReminderRunHistoryEntry | null;
+  lastFailedExecution: ReminderRunHistoryEntry | null;
   lastError: string | null;
   history: ReminderRunHistoryEntry[];
   emailConfig: Smtp2goPublicStatus;
@@ -685,6 +704,8 @@ export async function getReminderDiagnostics(
 
   const scheduler: ReminderDiagnostics["scheduler"] = {
     provider: "unconfigured",
+    operationalState: "unconfigured",
+    operationalReason: "No active Supabase Cron job found.",
     jobName: SUPABASE_CRON_JOB_NAME,
     pgCronInstalled: false,
     pgNetInstalled: false,
@@ -696,6 +717,10 @@ export async function getReminderDiagnostics(
     lastCronJobRunAt: null,
     lastCronJobStatus: null,
     lastCronJobMessage: null,
+    lastHttpRequestAt: null,
+    lastHttpStatusCode: null,
+    lastHttpError: null,
+    lastSuccessfulHttpRequestAt: null,
   };
 
   if (!prisma) {
@@ -810,16 +835,100 @@ export async function getReminderDiagnostics(
           }
         }
       }
+
+      // Inspect pg_net HTTP responses (non-secret status_code, error_msg, timed_out)
+      // so we distinguish a scheduled job from actually reaching Vercel with HTTP 200.
+      if (scheduler.pgNetInstalled) {
+        const [latestHttp, latestOkHttp] = await Promise.all([
+          prisma
+            .$queryRawUnsafe<
+              { status_code: number | null; content_preview: string | null; error_msg: string | null; timed_out: boolean | null; created: Date }[]
+            >(
+              `SELECT status_code, left(content, 200) AS content_preview, error_msg, timed_out, created FROM net._http_response ORDER BY created DESC LIMIT 1`,
+            )
+            .catch(() => []),
+          prisma
+            .$queryRawUnsafe<{ created: Date }[]>(
+              `SELECT created FROM net._http_response WHERE status_code BETWEEN 200 AND 299 AND error_msg IS NULL AND NOT COALESCE(timed_out, false) ORDER BY created DESC LIMIT 1`,
+            )
+            .catch(() => []),
+        ]);
+
+        if (latestHttp.length > 0) {
+          const row = latestHttp[0];
+          scheduler.lastHttpRequestAt = new Date(row.created).toISOString();
+          scheduler.lastHttpStatusCode = row.status_code !== null ? Number(row.status_code) : null;
+          if (row.timed_out) {
+            scheduler.lastHttpError = "pg_net HTTP request to Vercel endpoint timed out.";
+          } else if (row.error_msg) {
+            scheduler.lastHttpError = `pg_net HTTP error: ${row.error_msg}`;
+          } else if (row.status_code !== null && (row.status_code < 200 || row.status_code >= 300)) {
+            let safeDetail = "";
+            if (row.status_code === 401) {
+              safeDetail = "Unauthorized — verify CRON_SECRET in Vercel matches calendar_cron_secret in Supabase Vault (min 8 chars; 32+ recommended).";
+            } else if (row.status_code === 404) {
+              safeDetail = "Endpoint not found — verify calendar_cron_endpoint_url in Supabase Vault.";
+            } else if (row.content_preview) {
+              try {
+                const parsed = JSON.parse(row.content_preview) as { error?: string };
+                if (parsed?.error) safeDetail = String(parsed.error);
+              } catch {
+                safeDetail = "";
+              }
+            }
+            scheduler.lastHttpError = `HTTP ${row.status_code}${safeDetail ? `: ${safeDetail}` : ""}`;
+          }
+        }
+
+        if (latestOkHttp.length > 0) {
+          scheduler.lastSuccessfulHttpRequestAt = new Date(latestOkHttp[0].created).toISOString();
+        }
+      }
     } catch {
       // Extensions/cron schema not accessible in this environment; keep safe defaults
     }
   }
 
   const lastExecution = history[0] ?? null;
+  const lastCronExecution = history.find((h) => h.source === "cron") ?? null;
+  const lastSuccessfulCronExecution =
+    history.find((h) => h.source === "cron" && h.ok && !h.skippedBecauseDisabled) ?? null;
   const lastSuccessfulExecution =
     history.find((h) => h.ok && !h.skippedBecauseDisabled) ?? null;
+  const lastFailedExecution = history.find((h) => !h.ok) ?? null;
+
+  // Derive truthful operational state: never claim operational just because cron.job exists
+  if (!scheduler.active) {
+    scheduler.operationalState = "unconfigured";
+    scheduler.operationalReason = scheduler.pgCronInstalled
+      ? "Extensions are installed, but the Supabase Cron job is not scheduled/active."
+      : "Supabase Cron is not configured.";
+  } else if (scheduler.lastHttpError) {
+    scheduler.operationalState = "failing";
+    scheduler.operationalReason = `Cron requests are failing (${scheduler.lastHttpError})`;
+  } else if (scheduler.lastCronJobStatus && scheduler.lastCronJobStatus !== "succeeded") {
+    scheduler.operationalState = "failing";
+    scheduler.operationalReason = `Supabase pg_cron execution failed (${scheduler.lastCronJobMessage || scheduler.lastCronJobStatus}).`;
+  } else if (!emailConfig.automatedSendingEnabled) {
+    scheduler.operationalState = "paused";
+    scheduler.operationalReason = "Cron job is scheduled, but REMINDER_EMAILS_ENABLED is not set to \"true\" in Vercel.";
+  } else if (lastCronExecution && !lastCronExecution.ok) {
+    scheduler.operationalState = "failing";
+    scheduler.operationalReason = lastCronExecution.error || "Last automatic reminder run failed.";
+  } else if (
+    lastSuccessfulCronExecution ||
+    (scheduler.lastSuccessfulHttpRequestAt && scheduler.lastHttpStatusCode !== null && scheduler.lastHttpStatusCode >= 200 && scheduler.lastHttpStatusCode < 300)
+  ) {
+    scheduler.operationalState = "operational";
+    scheduler.operationalReason = "Supabase Cron is reaching the Vercel endpoint and processing reminders.";
+  } else {
+    scheduler.operationalState = "configured_unverified";
+    scheduler.operationalReason = "Cron job is scheduled in Supabase, waiting for the first successful HTTP 200 call to Vercel.";
+  }
+
   const lastError =
-    (lastExecution && !lastExecution.ok && lastExecution.error) ||
+    scheduler.lastHttpError ||
+    (lastFailedExecution?.error ?? null) ||
     latestReminderError ||
     (lastExecution?.skippedBecauseDisabled ? lastExecution.error ?? null : null) ||
     null;
@@ -830,7 +939,10 @@ export async function getReminderDiagnostics(
     scheduler,
     counts,
     lastExecution,
+    lastCronExecution,
+    lastSuccessfulCronExecution,
     lastSuccessfulExecution,
+    lastFailedExecution,
     lastError,
     history,
     emailConfig,

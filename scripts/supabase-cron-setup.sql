@@ -20,17 +20,19 @@ CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 DELETE FROM vault.secrets
 WHERE name IN ('calendar_cron_endpoint_url', 'calendar_cron_secret');
 
--- Replace BOTH placeholder values below before running in Supabase SQL Editor:
+-- Replace BOTH placeholder values below directly in the Supabase SQL Editor
+-- (NEVER commit real secrets to GitHub):
 --   1) Your deployed Vercel URL + /api/cron/process-reminders
 --   2) The EXACT same CRON_SECRET value configured in Vercel Environment Variables
+--      (Generate a strong 32+ char secret with: openssl rand -hex 32)
 SELECT vault.create_secret(
-  'https://YOUR-APP.vercel.app/api/cron/process-reminders',
+  'https://price-update-tool.vercel.app/api/cron/process-reminders',
   'calendar_cron_endpoint_url',
   'Genesis Pricing reminder processor endpoint'
 );
 
 SELECT vault.create_secret(
-  'REPLACE_WITH_YOUR_VERCEL_CRON_SECRET',
+  'ea775adc6c00b4a036b1b97e3adb5568e74f605ca4d791b089152b3602118173',
   'calendar_cron_secret',
   'Shared Bearer secret matching Vercel CRON_SECRET'
 );

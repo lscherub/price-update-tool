@@ -1,4 +1,5 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -19,9 +20,9 @@ import {
   getCalendarNotificationSettings,
   saveCalendarNotificationSettings,
 } from "@/lib/notificationSettings";
-import { DATA_FILE, emptyStore, loadFileStore, saveFileStore } from "@/lib/store";
+import { emptyStore, loadFileStore, saveFileStore } from "@/lib/store";
 
-let backupRaw: string | null = null;
+let tmpStoreFile = "";
 
 function seedBaseStore() {
   const store = emptyStore();
@@ -109,16 +110,15 @@ function seedBaseStore() {
 }
 
 beforeEach(() => {
-  backupRaw = fs.existsSync(DATA_FILE) ? fs.readFileSync(DATA_FILE, "utf8") : null;
+  tmpStoreFile = path.join(os.tmpdir(), `calendar-sched-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  process.env.TEST_STORE_FILE = tmpStoreFile;
   seedBaseStore();
 });
 
 afterEach(() => {
-  if (backupRaw !== null) {
-    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-    fs.writeFileSync(DATA_FILE, backupRaw);
-  } else if (fs.existsSync(DATA_FILE)) {
-    fs.unlinkSync(DATA_FILE);
+  delete process.env.TEST_STORE_FILE;
+  if (tmpStoreFile && fs.existsSync(tmpStoreFile)) {
+    fs.unlinkSync(tmpStoreFile);
   }
 });
 

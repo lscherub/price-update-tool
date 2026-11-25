@@ -654,15 +654,21 @@ export function NotificationSettingsSection() {
                 <div className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Scheduler Status</div>
                 <div
                   className={`mt-1 font-bold ${
-                    diagnostics.scheduler.active && diagnostics.emailConfig.automatedSendingEnabled
+                    diagnostics.scheduler.operationalState === "operational"
                       ? "text-emerald-700 dark:text-emerald-400"
+                      : diagnostics.scheduler.operationalState === "failing"
+                      ? "text-red-600 dark:text-red-400"
                       : "text-amber-700 dark:text-amber-400"
                   }`}
                 >
-                  {diagnostics.scheduler.active
-                    ? diagnostics.emailConfig.automatedSendingEnabled
-                      ? "Active (Supabase Cron)"
-                      : "Scheduled (Paused by ENV)"
+                  {diagnostics.scheduler.operationalState === "operational"
+                    ? "Operational (Supabase Cron)"
+                    : diagnostics.scheduler.operationalState === "failing"
+                    ? `Failing${diagnostics.scheduler.lastHttpStatusCode ? ` (HTTP ${diagnostics.scheduler.lastHttpStatusCode})` : ""}`
+                    : diagnostics.scheduler.operationalState === "paused"
+                    ? "Scheduled · Paused by ENV"
+                    : diagnostics.scheduler.operationalState === "configured_unverified"
+                    ? "Configured · Waiting for First 200 OK"
                     : diagnostics.scheduler.pgCronInstalled
                     ? "Extensions Ready · Job Not Scheduled"
                     : "Not Configured"}
@@ -675,21 +681,32 @@ export function NotificationSettingsSection() {
               </div>
 
               <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-zinc-800">
-                <div className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Last Execution</div>
+                <div className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Last Automatic Cron Request</div>
                 <div className="mt-1 font-semibold text-slate-900 dark:text-white">
-                  {formatLocalTs(diagnostics.lastExecution?.ranAt ?? diagnostics.scheduler.lastCronJobRunAt)}
+                  {formatLocalTs(diagnostics.scheduler.lastHttpRequestAt ?? diagnostics.lastCronExecution?.ranAt)}
                 </div>
-                {diagnostics.lastExecution && (
-                  <div className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-400">
-                    Source: {diagnostics.lastExecution.source} · {diagnostics.lastExecution.sent} sent
-                  </div>
-                )}
+                <div className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-400">
+                  {diagnostics.scheduler.lastHttpStatusCode !== null
+                    ? `HTTP ${diagnostics.scheduler.lastHttpStatusCode}${
+                        diagnostics.scheduler.lastSuccessfulHttpRequestAt
+                          ? ` · Last OK: ${formatLocalTs(diagnostics.scheduler.lastSuccessfulHttpRequestAt)}`
+                          : " · No 200 OK yet"
+                      }`
+                    : "No Cron HTTP request recorded yet"}
+                </div>
               </div>
 
               <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-zinc-800">
-                <div className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Last Successful Run</div>
+                <div className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Last Successful Processing</div>
                 <div className="mt-1 font-semibold text-slate-900 dark:text-white">
-                  {formatLocalTs(diagnostics.lastSuccessfulExecution?.ranAt)}
+                  {formatLocalTs(diagnostics.lastSuccessfulCronExecution?.ranAt ?? diagnostics.lastSuccessfulExecution?.ranAt)}
+                </div>
+                <div className="mt-0.5 text-[11px] text-slate-500 dark:text-zinc-400">
+                  {diagnostics.lastSuccessfulCronExecution
+                    ? `Automatic cron · ${diagnostics.lastSuccessfulCronExecution.sent} sent`
+                    : diagnostics.lastSuccessfulExecution
+                    ? `Manual check only · ${diagnostics.lastSuccessfulExecution.sent} sent`
+                    : "No successful run yet"}
                 </div>
               </div>
 
@@ -812,8 +829,22 @@ export function NotificationSettingsSection() {
             </div>
             <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-zinc-800">
               <div className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Scheduler Auth Secret</div>
-              <div className={`mt-1 font-bold ${emailConfig.cronSecretConfigured ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
-                {emailConfig.cronSecretConfigured ? "Configured" : "Missing"}
+              <div
+                className={`mt-1 font-bold ${
+                  emailConfig.cronSecretConfigured && !emailConfig.cronSecretTooShort && !emailConfig.cronSecretWeak
+                    ? "text-emerald-700 dark:text-emerald-400"
+                    : emailConfig.cronSecretTooShort
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-amber-700 dark:text-amber-400"
+                }`}
+              >
+                {!emailConfig.cronSecretConfigured
+                  ? "Missing"
+                  : emailConfig.cronSecretTooShort
+                  ? "Invalid (< 8 chars)"
+                  : emailConfig.cronSecretWeak
+                  ? "Configured (Short — rotate to 32+ chars)"
+                  : "Configured"}
               </div>
             </div>
             <div className="rounded-lg border border-slate-200 p-3 text-xs dark:border-zinc-800">

@@ -145,6 +145,10 @@ export type ItemRow = {
 
 export const DATA_FILE = path.join(process.cwd(), "data", "store.json");
 
+function activeDataFile(): string {
+  return process.env.TEST_STORE_FILE?.trim() || DATA_FILE;
+}
+
 export function cuid(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -169,8 +173,9 @@ export function emptyStore(): StoreShape {
 
 export function loadFileStore(): StoreShape {
   try {
-    if (!fs.existsSync(DATA_FILE)) return emptyStore();
-    const raw = fs.readFileSync(DATA_FILE, "utf8");
+    const file = activeDataFile();
+    if (!fs.existsSync(file)) return emptyStore();
+    const raw = fs.readFileSync(file, "utf8");
     if (!raw.trim()) return emptyStore();
     return { ...emptyStore(), ...JSON.parse(raw) };
   } catch {
@@ -185,8 +190,9 @@ export function saveFileStore(s: StoreShape) {
   if (process.env.NODE_ENV === "production") {
     throw new Error("File store writes are disabled in production. Configure DATABASE_URL (PostgreSQL).");
   }
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(s, null, 2));
+  const file = activeDataFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(s, null, 2));
 }
 
 export const decOrNull = (v: unknown): string | null => {
