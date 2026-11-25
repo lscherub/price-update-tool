@@ -402,4 +402,41 @@ describe("Scheduling, rescheduling, cancellation, and completion lifecycle", () 
     const loadedSettings = await getCalendarNotificationSettings(null);
     expect(loadedSettings.recipients).toEqual(["new-global@genesis.ca"]);
   });
+
+  it("persists multiple recipients, partial updates, edits, removals, and preserves timezone defaults", async () => {
+    // Save timezone + defaults + first recipient
+    const s1 = await saveCalendarNotificationSettings(null, {
+      recipients: ["one@genesis.ca", "two@genesis.ca"],
+      timezone: "America/Toronto",
+      defaultReminderHour: 9,
+      defaultReminderMinute: 30,
+      defaultSendReminder: true,
+    });
+    expect(s1.ok).toBe(true);
+
+    // Partial update touching ONLY recipients (e.g. removing one) must preserve timezone & defaults
+    const s2 = await saveCalendarNotificationSettings(null, {
+      recipients: ["one@genesis.ca", "three@genesis.ca"],
+    });
+    expect(s2.ok).toBe(true);
+    if (!s2.ok) return;
+    expect(s2.settings.recipients).toEqual(["one@genesis.ca", "three@genesis.ca"]);
+    expect(s2.settings.timezone).toBe("America/Toronto");
+    expect(s2.settings.defaultReminderHour).toBe(9);
+    expect(s2.settings.defaultReminderMinute).toBe(30);
+    expect(s2.settings.defaultSendReminder).toBe(true);
+
+    // Fresh reload from storage matches persisted database state
+    const reloaded = await getCalendarNotificationSettings(null);
+    expect(reloaded.recipients).toEqual(["one@genesis.ca", "three@genesis.ca"]);
+    expect(reloaded.timezone).toBe("America/Toronto");
+
+    // Invalid email is rejected without wiping existing saved recipients
+    const bad = await saveCalendarNotificationSettings(null, {
+      recipients: ["one@genesis.ca", "not-valid"],
+    });
+    expect(bad.ok).toBe(false);
+    const stillIntact = await getCalendarNotificationSettings(null);
+    expect(stillIntact.recipients).toEqual(["one@genesis.ca", "three@genesis.ca"]);
+  });
 });

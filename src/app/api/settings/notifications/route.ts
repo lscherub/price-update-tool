@@ -8,6 +8,9 @@ import {
 import { getSmtp2goPublicStatus } from "@/lib/smtp2go";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 
 export async function GET() {
   const session = await getSession();
@@ -19,11 +22,14 @@ export async function GET() {
 
   try {
     const settings = await getCalendarNotificationSettings(prisma);
-    return NextResponse.json({
-      settings,
-      canEdit: session.role === "admin",
-      emailConfig: getSmtp2goPublicStatus(),
-    });
+    return NextResponse.json(
+      {
+        settings,
+        canEdit: session.role === "admin",
+        emailConfig: getSmtp2goPublicStatus(),
+      },
+      { headers: NO_STORE_HEADERS },
+    );
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not load notification settings." }, { status: 500 });
@@ -53,11 +59,14 @@ export async function PUT(req: Request) {
     if (!saved.ok) {
       return NextResponse.json({ error: saved.error }, { status: 400 });
     }
-    return NextResponse.json({
-      ok: true,
-      settings: saved.settings,
-      emailConfig: getSmtp2goPublicStatus(),
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        settings: saved.settings,
+        emailConfig: getSmtp2goPublicStatus(),
+      },
+      { headers: NO_STORE_HEADERS },
+    );
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
     return NextResponse.json({ error: "Could not save notification settings." }, { status: 500 });

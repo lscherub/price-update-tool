@@ -91,11 +91,23 @@ ADMIN_PASSWORD="<a-strong-password-min-8-chars>" \
 | `CRON_SECRET` | `openssl rand -hex 32` — authenticates Vercel Cron (`Authorization: Bearer`) | Production, Preview |
 | `REMINDER_EMAILS_ENABLED` | Set to `true` after test verification to enable automated cron email sends | Production |
 
-#### Price Update Calendar & Automated Reminders (Vercel Cron + SMTP2GO)
+#### Price Update Calendar & Automated Reminders (Supabase Cron + pg_net + SMTP2GO)
 
 - **Sender Verification**: SMTP2GO requires `SMTP2GO_FROM_EMAIL` to be either a verified single sender or on a verified sender domain (DNS CNAME records for SPF/DKIM under **Sending → Verified Senders**). An API key alone will not guarantee delivery without sender verification.
-- **Vercel Cron (`vercel.json`)**: Configured to run `/api/cron/process-reminders` every 15 minutes (`*/15 * * * *`, requires Vercel Pro). If deploying on Vercel Hobby (which restricts crons to once daily), update the `schedule` in `vercel.json` to a daily expression such as `0 16 * * *` (8:00 AM PST / 9:00 AM PDT) or invoke `/api/cron/process-reminders` from an external scheduler with `Authorization: Bearer <CRON_SECRET>`.
-- **Testing Safely**: Keep `REMINDER_EMAILS_ENABLED="false"` while verifying setup, use **Settings → Price Update Calendar & Notifications → Send Test Email** with a test address, then set `REMINDER_EMAILS_ENABLED="true"` and redeploy.
+- **Automated Scheduling via Supabase Cron (`pg_cron` + `pg_net` + Supabase Vault)**:
+  - Works on the **free Vercel Hobby plan** without upgrading to Vercel Pro (Vercel Cron is disabled in `vercel.json` so the two schedulers never conflict).
+  - Run [scripts/supabase-cron-setup.sql](scripts/supabase-cron-setup.sql) in the **Supabase SQL Editor** after replacing the two Vault placeholders (`calendar_cron_endpoint_url` and `calendar_cron_secret` matching Vercel's `CRON_SECRET`).
+  - Starts at **every minute** (`* * * * *`) for testing so reminders scheduled a few minutes ahead trigger promptly.
+  - After testing, switch frequency directly in Supabase SQL Editor with zero application code changes:
+    | Schedule | Frequency | Expected Delivery Delay |
+    | --- | --- | --- |
+    | `* * * * *` | Every minute (testing) | Up to ~1 minute |
+    | `*/5 * * * *` | Every 5 minutes | Up to 5 minutes |
+    | `*/15 * * * *` | Every 15 minutes (recommended production) | Up to 15 minutes |
+    | `0 * * * *` | Every hour | Up to 1 hour |
+    | `0 16 * * *` | Once daily (8 AM PST / 9 AM PDT) | Up to ~24 hours for custom afternoon times |
+- **Diagnostics & Manual Trigger**: Open **Settings → Price Update Calendar & Notifications** to inspect live scheduler status, pending/due/sent/failed counts, execution history, and trigger **"Run Reminder Check Now"** (admin-only, uses the exact same duplicate-safe processor).
+- **Testing Safely**: Keep `REMINDER_EMAILS_ENABLED="false"` while verifying setup, use **Send Test Email** with a test address, then set `REMINDER_EMAILS_ENABLED="true"` in Vercel and redeploy.
 
 Deploy/redeploy after saving the variables (env changes need a new build).
 

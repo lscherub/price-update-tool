@@ -248,6 +248,10 @@ export async function sendViaSmtp2go(
 
   let res: Response;
   try {
+    const signal =
+      typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(20_000)
+        : undefined;
     res = await fetchImpl(SMTP2GO_SEND_URL, {
       method: "POST",
       headers: {
@@ -256,9 +260,20 @@ export async function sendViaSmtp2go(
         "X-Smtp2go-Api-Key": apiKey,
       },
       body: JSON.stringify(payload),
+      ...(signal ? { signal } : {}),
     });
   } catch (e) {
+    const errName = (e as { name?: string })?.name ?? "";
     const detail = e instanceof Error ? e.message : "Network error";
+    const isTimeout = errName === "TimeoutError" || errName === "AbortError" || /timed?\s*out|aborted/i.test(detail);
+    if (isTimeout) {
+      return {
+        ok: false,
+        error:
+          "SMTP2GO request timed out before a response was received. Automatic retry was skipped to avoid potential duplicate delivery — check SMTP2GO Activity logs before resending.",
+        retryable: false,
+      };
+    }
     return {
       ok: false,
       error: `Could not reach SMTP2GO API: ${detail}`,

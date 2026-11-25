@@ -108,7 +108,7 @@ export function ScheduleWorksheetModal({
         setNewRecipientInput("");
         setLoadingConfig(true);
       })
-      .then(() => fetch("/api/settings/notifications", { signal: ctrl.signal }))
+      .then(() => fetch("/api/settings/notifications", { signal: ctrl.signal, cache: "no-store" }))
       .then((r) => (r.ok ? r.json() : {}))
       .then((d: NotificationConfigResponse) => {
         if (!active) return;

@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_TIMEZONE } from "@/lib/calendar";
 import { scheduleOrRescheduleSession } from "@/lib/calendarServer";
 import { saveCalendarNotificationSettings } from "@/lib/notificationSettings";
-import { processDueReminders, verifyCronAuth } from "@/lib/reminderProcessor";
+import {
+  computeNextCronRun,
+  getReminderDiagnostics,
+  processDueReminders,
+  verifyCronAuth,
+} from "@/lib/reminderProcessor";
 import {
   SMTP2GO_SEND_URL,
   buildReminderEmailContent,
@@ -178,6 +183,22 @@ describe("SMTP2GO email builder, client, and security", () => {
     );
     expect(retryRes.ok).toBe(false);
     if (!retryRes.ok) expect(retryRes.retryable).toBe(true);
+
+    // Request timeout -> NOT auto-retryable to avoid potential duplicate emails
+    const mockFetchTimeout = vi.fn(async () => {
+      const err = new Error("The operation was aborted due to timeout");
+      err.name = "TimeoutError";
+      throw err;
+    });
+    const timeoutRes = await sendViaSmtp2go(
+      { to: ["a@test.com"], subject: "Test", textBody: "Hi", htmlBody: "<p>Hi</p>" },
+      mockFetchTimeout as unknown as typeof fetch,
+    );
+    expect(timeoutRes.ok).toBe(false);
+    if (!timeoutRes.ok) {
+      expect(timeoutRes.retryable).toBe(false);
+      expect(timeoutRes.error.toLowerCase()).toContain("timed out");
+    }
   });
 });
 
@@ -355,5 +376,53 @@ describe("Automated reminder processor: idempotency, retries, missed/expired han
     expect(rExpired.expired).toBe(1);
     expect(rExpired.sent).toBe(0);
     expect(loadFileStore().reminders?.[0].status).toBe("EXPIRED");
+  });
+
+  it("tracks diagnostics counts, execution history, and next cron run timestamps", async () => {
+    expect(computeNextCronRun("* * * * *", new Date("2027-01-10T18:00:20.000Z"))).toBe("2027-01-10T18:01:00.000Z");
+    expect(computeNextCronRun("*/15 * * * *", new Date("2027-01-10T18:04:00.000Z"))).toBe("2027-01-10T18:15:00.000Z");
+    expect(computeNextCronRun("0 * * * *", new Date("2027-01-10T18:04:00.000Z"))).toBe("2027-01-10T19:00:00.000Z");
+    expect(computeNextCronRun("0 16 * * *", new Date("2027-01-10T18:04:00.000Z"))).toBe("2027-01-11T16:00:00.000Z");
+
+    await saveCalendarNotificationSettings(null, {
+      recipients: ["team@genesis.ca"],
+      timezone: DEFAULT_TIMEZONE,
+    });
+    await scheduleOrRescheduleSession(
+      null,
+      "sess_flora",
+      "admin@genesis.ca",
+      { effectiveDate: "2027-01-25", reminderEnabled: true, reminderType: "ONE_DAY_BEFORE" },
+      new Date("2027-01-10T18:00:00.000Z"),
+    );
+
+    const beforeDiag = await getReminderDiagnostics(null, new Date("2027-01-24T16:05:00.000Z"));
+    expect(beforeDiag.counts.pending).toBe(1);
+    expect(beforeDiag.counts.due).toBe(1);
+    expect(beforeDiag.counts.sent).toBe(0);
+
+    setEnv("REMINDER_EMAILS_ENABLED", "true");
+    const mockOk = vi.fn(async () => ({
+      ok: true as const,
+      requestId: "req-diag",
+      emailId: "em-diag",
+      succeeded: 1,
+    }));
+    await processDueReminders({
+      prisma: null,
+      now: new Date("2027-01-24T16:05:00.000Z"),
+      sender: mockOk,
+      source: "manual",
+      triggeredBy: "admin@genesis.ca",
+    });
+
+    const afterDiag = await getReminderDiagnostics(null, new Date("2027-01-24T16:06:00.000Z"));
+    expect(afterDiag.counts.pending).toBe(0);
+    expect(afterDiag.counts.due).toBe(0);
+    expect(afterDiag.counts.sent).toBe(1);
+    expect(afterDiag.lastExecution?.source).toBe("manual");
+    expect(afterDiag.lastExecution?.sent).toBe(1);
+    expect(afterDiag.lastSuccessfulExecution?.sent).toBe(1);
+    expect(afterDiag.history.length).toBeGreaterThanOrEqual(1);
   });
 });
