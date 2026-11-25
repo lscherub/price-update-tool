@@ -6,6 +6,7 @@ export type UiMode = "new" | "classic";
 export type UiTheme = "light" | "dark" | "system";
 export type UiAccent = "indigo" | "blue" | "emerald" | "violet" | "slate";
 export type UiDensity = "compact" | "comfortable" | "spacious";
+export type PriceEditorMode = "legacy" | "spreadsheet";
 
 export type DashboardSectionId = "metrics" | "quickActions" | "recentUpdates" | "inventoryHealth";
 export type MetricKey = "products" | "active" | "inactive" | "vendors" | "sessions";
@@ -62,6 +63,11 @@ const DEFAULT_PREFERENCES: UiPreferences = {
 };
 
 const STORAGE_KEY = "price_tool_ui_preferences_v1";
+const EDITOR_STORAGE_PREFIX = "price_tool_editor_pref_v1:";
+
+export function editorStorageKeyForUser(userId: string | null | undefined): string {
+  return `${EDITOR_STORAGE_PREFIX}${userId ? userId : "default"}`;
+}
 
 interface UiModeContextType {
   preferences: UiPreferences;
@@ -71,10 +77,13 @@ interface UiModeContextType {
   density: UiDensity;
   dashboard: DashboardConfig;
   navigation: NavigationConfig;
+  priceEditor: PriceEditorMode;
+  userId: string | null;
   setMode: (mode: UiMode) => void;
   setTheme: (theme: UiTheme) => void;
   setAccent: (accent: UiAccent) => void;
   setDensity: (density: UiDensity) => void;
+  setPriceEditor: (editor: PriceEditorMode) => void;
   toggleSectionVisibility: (sectionId: DashboardSectionId) => void;
   reorderSections: (fromIndex: number, toIndex: number) => void;
   toggleMetricVisibility: (metricKey: MetricKey) => void;
@@ -90,9 +99,46 @@ const UiModeContext = createContext<UiModeContextType | null>(null);
 
 export function UiModeProvider({ children }: { children: React.ReactNode }) {
   const [preferences, setPreferences] = useState<UiPreferences>(DEFAULT_PREFERENCES);
+  const [priceEditor, setPriceEditorState] = useState<PriceEditorMode>("legacy");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [editorLoadedFor, setEditorLoadedFor] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [, startTransition] = useTransition();
   const unsavedCheckersRef = React.useRef<Set<() => boolean>>(new Set());
+
+  // Identify current user and load user-specific price editor preference (defaults to "legacy").
+  useEffect(() => {
+    let active = true;
+    const applyForUser = (uid: string | null) => {
+      if (!active) return;
+      setUserId(uid);
+      const key = editorStorageKeyForUser(uid);
+      try {
+        const raw = localStorage.getItem(key);
+        setPriceEditorState(raw === "spreadsheet" ? "spreadsheet" : "legacy");
+      } catch {
+        setPriceEditorState("legacy");
+      } finally {
+        setEditorLoadedFor(key);
+      }
+    };
+    fetch("/api/auth/session")
+      .then((r) => (r.ok ? r.json() : { user: null }))
+      .then((d) => applyForUser(d?.user?.id ? String(d.user.id) : null))
+      .catch(() => applyForUser(null));
+    return () => { active = false; };
+  }, []);
+
+  const setPriceEditor = (editor: PriceEditorMode) => {
+    const normalized: PriceEditorMode = editor === "spreadsheet" ? "spreadsheet" : "legacy";
+    setPriceEditorState(normalized);
+    try {
+      const key = editorLoadedFor ?? editorStorageKeyForUser(userId);
+      localStorage.setItem(key, normalized);
+    } catch {
+      // Ignore quota errors
+    }
+  };
 
   // Load preferences from localStorage on mount
   useEffect(() => {
@@ -298,10 +344,13 @@ export function UiModeProvider({ children }: { children: React.ReactNode }) {
         density: preferences.density,
         dashboard: preferences.dashboard,
         navigation: preferences.navigation,
+        priceEditor,
+        userId,
         setMode,
         setTheme,
         setAccent,
         setDensity,
+        setPriceEditor,
         toggleSectionVisibility,
         reorderSections,
         toggleMetricVisibility,

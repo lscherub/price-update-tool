@@ -20,8 +20,9 @@ const NAV = [
 ];
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const { mode, requestModeChange } = useUiMode();
+  const { mode, priceEditor, requestModeChange } = useUiMode();
   const path = usePathname();
+  const isWideSheet = priceEditor === "spreadsheet" && path.startsWith("/sessions/") && path !== "/sessions/new";
   const router = useRouter();
   const [user, setUser] = useState<{ email: string; role: string } | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -114,7 +115,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               New UI
             </button>
           </header>
-          <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6">{children}</main>
+          <main className={isWideSheet ? "w-full flex-1 px-3 py-3 md:px-4" : "mx-auto w-full max-w-7xl flex-1 p-4 md:p-6"}>{children}</main>
         </div>
       </div>
     </div>

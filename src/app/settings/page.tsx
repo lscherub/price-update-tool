@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useUiMode, type UiMode, type UiTheme, type UiAccent, type UiDensity, type DashboardSectionId, type MetricKey } from "@/contexts/UiModeContext";
+import { useUiMode, type UiMode, type UiTheme, type UiAccent, type UiDensity, type DashboardSectionId, type MetricKey, type PriceEditorMode } from "@/contexts/UiModeContext";
 import { useToast } from "@/components/Toast";
 
 export default function SettingsPage() {
@@ -13,10 +13,12 @@ export default function SettingsPage() {
     density,
     dashboard,
     navigation,
+    priceEditor,
     requestModeChange,
     setTheme,
     setAccent,
     setDensity,
+    setPriceEditor,
     toggleSectionVisibility,
     reorderSections,
     toggleMetricVisibility,
@@ -35,6 +37,15 @@ export default function SettingsPage() {
         "All data and preferences remain preserved."
       );
     }
+  };
+
+  const handlePriceEditorSelect = (next: PriceEditorMode) => {
+    if (next === priceEditor) return;
+    setPriceEditor(next);
+    toast.success(
+      `Price Update Editor set to ${next === "spreadsheet" ? "Spreadsheet Editor" : "Legacy Editor"}.`,
+      "Your preference is saved for your account on this browser and can be switched anytime."
+    );
   };
 
   const handleReset = () => {
@@ -180,6 +191,74 @@ export default function SettingsPage() {
                 </div>
                 <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
                   <span>Preserves original visual style</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1b: Price Update Table Editor */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Price Update Table Editor</h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+              Choose which table editor opens for Price Update worksheets. Both editors use the exact same database records, pricing calculations, and exports. You can also switch directly from any worksheet toolbar.
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => handlePriceEditorSelect("legacy")}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePriceEditorSelect("legacy"); } }}
+                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all ${
+                  priceEditor === "legacy"
+                    ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900/15 dark:border-slate-300 dark:bg-zinc-800"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white">Legacy Editor</span>
+                    {priceEditor === "legacy" && (
+                      <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white dark:bg-slate-200 dark:text-slate-900">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">
+                    The existing paginated Price Update table editor, preserved completely unchanged as a reliable default.
+                  </p>
+                </div>
+                <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                  <span>Default editor</span>
+                </div>
+              </div>
+
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => handlePriceEditorSelect("spreadsheet")}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePriceEditorSelect("spreadsheet"); } }}
+                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all ${
+                  priceEditor === "spreadsheet"
+                    ? "border-emerald-600 bg-emerald-50/40 ring-2 ring-emerald-600/20 dark:border-emerald-400 dark:bg-emerald-950/20"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white">Spreadsheet Editor</span>
+                    {priceEditor === "spreadsheet" && (
+                      <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">
+                    Excel-like virtualized workspace for 20,000+ rows with multi-column sorting, per-column filters, column drag/freeze/hide, fill handle, copy/paste, bulk edit, and instant batched saving.
+                  </p>
+                </div>
+                <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  <span>Optional high-speed Excel-like experience</span>
                 </div>
               </div>
             </div>

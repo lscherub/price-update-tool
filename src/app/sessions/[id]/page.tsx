@@ -14,7 +14,11 @@ import { apiErrorText } from "@/lib/apiError";
 import { buildExportFilename, getFilenameFromContentDisposition } from "@/lib/exportFilename";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
-import { useUiMode } from "@/contexts/UiModeContext";
+import { useUiMode, type PriceEditorMode } from "@/contexts/UiModeContext";
+import { SpreadsheetEditor } from "@/components/spreadsheet/SpreadsheetEditor";
+import { applyOptimisticPatch } from "@/lib/spreadsheet/engine";
+import { SpreadsheetSaveQueue } from "@/lib/spreadsheet/saveQueue";
+import type { CellPatch, SaveQueueSnapshot, SortRule } from "@/lib/spreadsheet/types";
 import {
   canRedo, canUndo, EMPTY_HISTORY, pushHistory, redoLabel, takeRedo, takeUndo, undoLabel,
   type HistoryState,
@@ -73,8 +77,23 @@ function lowerCandidates(rows: Item[]): Item[] {
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const toast = useToast();
-  const { mode, density, registerUnsavedChecker } = useUiMode();
+  const { priceEditor, setPriceEditor, userId, registerUnsavedChecker } = useUiMode();
+  const isSpreadsheet = priceEditor === "spreadsheet";
   const [items, setItems] = useState<Item[]>([]);
+  const [switchingEditor, setSwitchingEditor] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveQueueSnapshot>({
+    state: "saved",
+    pendingCount: 0,
+    inFlightCount: 0,
+    failedCount: 0,
+    lastSavedAt: null,
+    lastError: null,
+  });
+  const saveQueueRef = useRef<SpreadsheetSaveQueue | null>(null);
+  const [sheetExportOrder, setSheetExportOrder] = useState<{ ids: string[] | null; primarySort: SortRule | null }>({
+    ids: null,
+    primarySort: null,
+  });
   const [name, setName] = useState("");
   const [vendor, setVendor] = useState("");
   const [sheetStatus, setSheetStatus] = useState("");
@@ -128,8 +147,75 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const savingCellRef = useRef<string | null>(null);
   useEffect(() => { savingCellRef.current = savingCell; }, [savingCell]);
 
+  // Initialize revision-safe batched save queue for Spreadsheet Editor
   useEffect(() => {
-    return registerUnsavedChecker(() => Boolean(savingCell || noteBusy || sheetNotesBusy));
+    const queue = new SpreadsheetSaveQueue({
+      transport: async (batch) => {
+        try {
+          const r = await fetch(`/api/sessions/${id}/items`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(batch.length === 1 ? batch[0] : { items: batch }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            return {
+              ok: false,
+              error: apiErrorText(d, "Could not save changes."),
+              retryable: r.status >= 500 || r.status === 429,
+            };
+          }
+          const returned = Array.isArray(d.items) ? (d.items as Item[]) : [];
+          return { ok: true, items: returned };
+        } catch {
+          return {
+            ok: false,
+            error: "Could not reach the server while saving.",
+            retryable: true,
+          };
+        }
+      },
+      onServerRowsApplied: (serverRows) => {
+        if (!serverRows.length) return;
+        const byId = new Map(serverRows.map((row) => [row.id, row]));
+        setItems((prev) => {
+          let changed = false;
+          const next = prev.map((it) => {
+            const srv = byId.get(it.id);
+            if (!srv || (srv.cleanedSku === undefined && srv.rawVendorSku === undefined)) return it;
+            changed = true;
+            return { ...it, ...srv };
+          });
+          return changed ? next : prev;
+        });
+      },
+      onStatusChange: (snap) => {
+        setSaveStatus(snap);
+      },
+    });
+    saveQueueRef.current = queue;
+    return () => {
+      queue.dispose();
+      if (saveQueueRef.current === queue) saveQueueRef.current = null;
+    };
+  }, [id]);
+
+  // Warn user if closing/leaving the browser tab with unsaved spreadsheet changes
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (saveQueueRef.current?.hasUnsavedChanges() || savingCellRef.current) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    return registerUnsavedChecker(() =>
+      Boolean(savingCell || noteBusy || sheetNotesBusy || saveQueueRef.current?.hasUnsavedChanges()),
+    );
   }, [registerUnsavedChecker, savingCell, noteBusy, sheetNotesBusy]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
@@ -311,6 +397,61 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     });
   }, []);
 
+  const toggleRowsBulk = useCallback((ids: string[], checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const rid of ids) next.add(rid);
+      } else {
+        for (const rid of ids) next.delete(rid);
+      }
+      return next;
+    });
+  }, []);
+
+  /** Flush any pending spreadsheet saves before switching editors or exporting. */
+  const ensureSavedBeforeAction = useCallback(async (actionLabel: string): Promise<boolean> => {
+    const q = saveQueueRef.current;
+    if (!q || !q.hasUnsavedChanges()) return true;
+    const ok = await q.flushAll();
+    if (!ok) {
+      toast.error(
+        `Unsaved changes could not be saved before ${actionLabel}.`,
+        "Click Retry on the save status indicator and try again.",
+      );
+      return false;
+    }
+    return true;
+  }, [toast]);
+
+  /** Safely switch between Legacy Editor and Spreadsheet Editor without reloading the sheet. */
+  const switchPriceEditor = useCallback(async (next: PriceEditorMode) => {
+    if (next === priceEditor || switchingEditor) return;
+    if (savingCellRef.current) {
+      toast.info("Wait a moment for the current cell to finish saving.");
+      return;
+    }
+    setSwitchingEditor(true);
+    try {
+      const saved = await ensureSavedBeforeAction("switching editors");
+      if (!saved) return;
+      setPriceEditor(next);
+      toast.success(
+        `Switched to ${next === "spreadsheet" ? "Spreadsheet Editor" : "Legacy Editor"}.`,
+        "Your current price sheet and data are preserved.",
+      );
+    } finally {
+      setSwitchingEditor(false);
+    }
+  }, [priceEditor, switchingEditor, ensureSavedBeforeAction, setPriceEditor, toast]);
+
+  const handleSheetExportOrderChange = useCallback(
+    (sortedAllIds: string[] | null, primarySort: SortRule | null) => {
+      setSheetExportOrder({ ids: sortedAllIds, primarySort });
+    },
+    [],
+  );
+
   const sliceIds = useMemo(() => {
     return filtered.slice((page - 1) * pageSize, page * pageSize).map((r) => r.id);
   }, [filtered, page, pageSize]);
@@ -465,8 +606,53 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /**
+   * Optimistic + batched cell/bulk edit path used by the Spreadsheet Editor.
+   * Updates only affected rows in memory immediately using the exact existing
+   * pricing functions, enqueues debounced PATCH persistence, and records a
+   * matching instant Undo/Redo entry.
+   */
+  const applySheetPatchesLocalAndQueue = useCallback((patches: CellPatch[], immediate = false) => {
+    if (!patches.length) return;
+    const byId = new Map(patches.map((p) => [p.id, p.fields]));
+    setItems((prev) =>
+      prev.map((it) => {
+        const fields = byId.get(it.id);
+        return fields ? applyOptimisticPatch(it, fields) : it;
+      }),
+    );
+    saveQueueRef.current?.enqueue(patches, { immediate });
+  }, []);
+
+  const handleSheetBatchEdit = useCallback(
+    (patches: CellPatch[], beforePatches: CellPatch[], label: string) => {
+      if (!patches.length) return;
+      applySheetPatchesLocalAndQueue(patches);
+      recordHistory(
+        label,
+        async () => {
+          applySheetPatchesLocalAndQueue(beforePatches, true);
+        },
+        async () => {
+          applySheetPatchesLocalAndQueue(patches, true);
+        },
+      );
+    },
+    [applySheetPatchesLocalAndQueue, recordHistory],
+  );
+
   /** Restore the configured Vendor/Brand default discount (clears a manual override). */
   const restoreDiscount = async (item: Item) => {
+    if (isSpreadsheet) {
+      const before = item.discount ?? "";
+      handleSheetBatchEdit(
+        [{ id: item.id, fields: { discount: "" } }],
+        [{ id: item.id, fields: { discount: before } }],
+        "Restore default discount",
+      );
+      toast.success("Default discount restored.");
+      return;
+    }
     if (savingCell) return;
     const before = item.discount ?? "";
     setSavingCell(`${item.id}:discount`);
@@ -496,6 +682,16 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     if (!noteRow || noteBusy) return;
     const before = noteRow.notes ?? "";
     if (value === before) { setNoteRow(null); return; }
+    if (isSpreadsheet) {
+      handleSheetBatchEdit(
+        [{ id: noteRow.id, fields: { notes: value } }],
+        [{ id: noteRow.id, fields: { notes: before } }],
+        "Edit Notes",
+      );
+      setNoteRow(null);
+      toast.success("Note saved.");
+      return;
+    }
     setNoteBusy(true);
     setPinnedOrder(visibleIds);
     try {
@@ -913,13 +1109,29 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Resolve export order body without accidentally dropping filtered rows in Spreadsheet mode. */
+  const buildExportOrderBody = useCallback(() => {
+    if (isSpreadsheet) {
+      if (sheetExportOrder.ids && sheetExportOrder.primarySort) {
+        return {
+          ids: sheetExportOrder.ids,
+          sortKey: sheetExportOrder.primarySort.id,
+          sortDir: sheetExportOrder.primarySort.desc ? "desc" : "asc",
+        };
+      }
+      return {};
+    }
+    return sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+  }, [isSpreadsheet, sheetExportOrder, sortKey, sortDir, filtered]);
+
   /** Fetch the Digital Store Count Excel for Full Vendor workflows. */
   const downloadFullVendorExcel = async (options?: DigitalStoreCountExportOptions) => {
     if (exportBusy) return;
+    if (!(await ensureSavedBeforeAction("exporting"))) return;
     setExportBusy("fv-storecount");
     try {
       const body = {
-        ...(sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {}),
+        ...buildExportOrderBody(),
         priceMode: options?.priceMode ?? "changed",
         productFilter: options?.productFilter ?? "all",
       };
@@ -951,10 +1163,11 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   /** Fetch the Store Count Excel workbook, save it to disk, and report success/failure. */
   const downloadExcel = async () => {
     if (exportBusy) return;
+    if (!(await ensureSavedBeforeAction("exporting"))) return;
     setExportBusy("storecount");
     try {
       // Preserve the table's current order, same as the PDF.
-      const body = sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+      const body = buildExportOrderBody();
       const r = await fetch(`/api/sessions/${id}/storecount/excel`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -978,6 +1191,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   /** Fetch the POS CSV export with Full Vendor selection options. */
   const downloadFullVendorPos = async (options: PosExportOptions) => {
     if (exportBusy) return;
+    if (!(await ensureSavedBeforeAction("exporting"))) return;
     setExportBusy("pos");
     try {
       const body = {
@@ -1017,6 +1231,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   /** Fetch the POS CSV export, save it to disk, and report success/failure. */
   const download = async (kind: "pos") => {
     if (exportBusy) return;
+    if (!(await ensureSavedBeforeAction("exporting"))) return;
     setExportBusy(kind);
     try {
       const r = await fetch(`/api/sessions/${id}/export?kind=${kind}`);
@@ -1084,12 +1299,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
 
   const pdf = async () => {
     if (pdfBusy) return;
+    if (!(await ensureSavedBeforeAction("generating PDF"))) return;
     setPdfBusy(true);
     setMsg("Generating PDF...");
     try {
-      // Preserve the table's current order: send the sorted visible row ids so
+      // Preserve the table's current order: send the sorted row ids so
       // the PDF lists products in that same order (inclusion rules unchanged).
-      const body = sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
+      const body = buildExportOrderBody();
       const r = await fetch(`/api/sessions/${id}/storecount`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -1141,6 +1357,40 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Quick Editor Switcher (Legacy vs Spreadsheet) */}
+          <div
+            role="group"
+            aria-label="Table editor mode"
+            className="inline-flex items-center rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-100/80 dark:bg-zinc-800 p-0.5 text-xs shadow-2xs"
+          >
+            <button
+              type="button"
+              disabled={switchingEditor}
+              onClick={() => void switchPriceEditor("legacy")}
+              title="Use the original Legacy Table Editor"
+              className={`rounded-md px-2.5 py-1 font-semibold transition-colors disabled:opacity-60 ${
+                !isSpreadsheet
+                  ? "bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-2xs"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              Legacy
+            </button>
+            <button
+              type="button"
+              disabled={switchingEditor}
+              onClick={() => void switchPriceEditor("spreadsheet")}
+              title="Use the Excel-like Spreadsheet Editor"
+              className={`rounded-md px-2.5 py-1 font-semibold transition-colors disabled:opacity-60 ${
+                isSpreadsheet
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              Spreadsheet
+            </button>
+          </div>
+
           {/* Status selector */}
           <label className="flex items-center gap-1.5 text-xs">
             <span className="font-medium text-slate-500 dark:text-zinc-400">Status:</span>
@@ -1256,7 +1506,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
           </div>
         </div>
 
-        {/* Center: Search, Flags Filter, and Row Filter in a single compact toolbar */}
+        {/* Center: Search, Flags Filter, and Row Filter (Legacy Editor only; Spreadsheet Editor has its own integrated bar) */}
+        {!isSpreadsheet ? (
         <div className="flex flex-1 items-center gap-1.5 min-w-64 max-w-xl">
           <div className="relative flex-1">
             <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 dark:text-zinc-500">
@@ -1378,6 +1629,14 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             <option value="custom">Custom</option>
           </select>
         </div>
+        ) : (
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+              Spreadsheet Editor Active
+            </span>
+            <span>All edits sync live to the database.</span>
+          </div>
+        )}
 
         {/* Right: Selection Actions (Set Lower & Destructive Delete visually separated) */}
         <div className="flex items-center gap-1.5 border-l border-slate-200 dark:border-zinc-700 pl-2">
@@ -1425,51 +1684,86 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         </div>
       )}
 
-      {/* 3. Worksheet Table Area */}
-      <div ref={gridContainerRef} className="rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
-        <PriceGrid
-          rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
-          selected={selected} onToggle={toggleOne} onToggleAll={togglePageVisible}
-          sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
-          onOpenNotes={(item) => setNoteRow(item)}
-          onRestoreDiscount={restoreDiscount}
-          layoutKey={id}
-          availableFlags={availableFlags}
-          selectedFlags={selectedFlags}
-          onToggleFlag={toggleFlagFilter}
-          onClearFlags={clearFlagFilter}
-        />
-      </div>
+      {/* 3. Worksheet Table Area (Legacy Editor vs Optional Spreadsheet Editor) */}
+      {isSpreadsheet ? (
+        <div ref={gridContainerRef}>
+          <SpreadsheetEditor
+            items={items}
+            userId={userId}
+            selected={selected}
+            onToggleRow={toggleOne}
+            onToggleRows={toggleRowsBulk}
+            onApplyBatchEdit={handleSheetBatchEdit}
+            onDeleteRow={removeRow}
+            onOpenNotes={(item) => setNoteRow(item)}
+            onRestoreDiscount={restoreDiscount}
+            saveStatus={saveStatus}
+            onFlushNow={() => void saveQueueRef.current?.flushAll()}
+            onRetryFailed={() => void saveQueueRef.current?.retryFailed()}
+            onExportOrderChange={handleSheetExportOrderChange}
+            onUndo={() => void runHistory("undo")}
+            onRedo={() => void runHistory("redo")}
+            canUndo={canUndo(history) && !histBusy}
+            canRedo={canRedo(history) && !histBusy}
+            undoTooltip={canUndo(history) ? `Undo ${undoLabel(history)} (Ctrl/Cmd+Z)` : "Nothing to undo"}
+            redoTooltip={canRedo(history) ? `Redo ${redoLabel(history)} (Ctrl/Cmd+Shift+Z)` : "Nothing to redo"}
+            onAddRow={() => setShowAdd(true)}
+            onBulkAdd={() => setShowBulkAdd(true)}
+            onOpenSetLower={() => setConfirmLower(true)}
+            lowerCount={lowerCount}
+            onOpenDeleteSelected={() => setConfirmBulk(true)}
+            sheetTitle={name}
+            onSwitchToLegacy={() => void switchPriceEditor("legacy")}
+          />
+        </div>
+      ) : (
+        <>
+          <div ref={gridContainerRef} className="rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
+            <PriceGrid
+              rows={filtered} page={page} pageSize={pageSize} onEdit={editCell} onDelete={removeRow}
+              selected={selected} onToggle={toggleOne} onToggleAll={togglePageVisible}
+              sortKey={sortKey} sortDir={sortDir} onSort={changeSort} onFillDown={fillDown}
+              onOpenNotes={(item) => setNoteRow(item)}
+              onRestoreDiscount={restoreDiscount}
+              layoutKey={id}
+              availableFlags={availableFlags}
+              selectedFlags={selectedFlags}
+              onToggleFlag={toggleFlagFilter}
+              onClearFlags={clearFlagFilter}
+            />
+          </div>
 
-      {/* 4. Compact Pagination Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs shadow-xs">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={page <= 1}
-            className="h-7 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1"
-            onClick={() => goToPage(page - 1)}
-          >
-            <span>←</span>
-            <span>Prev</span>
-          </button>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            className="h-7 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1"
-            onClick={() => goToPage(page + 1)}
-          >
-            <span>Next</span>
-            <span>→</span>
-          </button>
-        </div>
-        <div className="font-medium text-slate-700 dark:text-zinc-300">
-          Page {page} of {totalPages} · {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} products
-        </div>
-        <div className="text-slate-400 dark:text-zinc-500">
-          {pageSize} products per page
-        </div>
-      </div>
+          {/* 4. Compact Pagination Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs shadow-xs">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                className="h-7 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1"
+                onClick={() => goToPage(page - 1)}
+              >
+                <span>←</span>
+                <span>Prev</span>
+              </button>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                className="h-7 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 font-medium text-slate-700 dark:text-zinc-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 transition-colors inline-flex items-center gap-1"
+                onClick={() => goToPage(page + 1)}
+              >
+                <span>Next</span>
+                <span>→</span>
+              </button>
+            </div>
+            <div className="font-medium text-slate-700 dark:text-zinc-300">
+              Page {page} of {totalPages} · {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount} products
+            </div>
+            <div className="text-slate-400 dark:text-zinc-500">
+              {pageSize} products per page
+            </div>
+          </div>
+        </>
+      )}
 
       {showAdd && (
         <AddItemDialog

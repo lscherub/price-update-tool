@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import Decimal from "decimal.js";
 import { getSession } from "@/lib/auth";
 import { getPrisma, dbUnreachableResponse, isDbConnectionError, productionDbGuard } from "@/lib/db";
-import { recalcRow, type CurRow } from "@/lib/recalc";
-import { computeRowsForImport } from "@/lib/lookup";
+import { lookupProductsBatch, recalcRow, resolveRecalcLookupKey, type CurRow } from "@/lib/recalc";
+import { computeRowsForImport, getDiscountMaps } from "@/lib/lookup";
 import { resolveNearest9 } from "@/lib/nearest9";
 import { DEFAULT_DIVISOR, normalizeSku } from "@/lib/pricing";
 import { cuid, loadFileStore, saveFileStore, type ItemRow } from "@/lib/store";
@@ -56,6 +56,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   if (!prisma) {
     const store = loadFileStore();
+    const discMaps = await getDiscountMaps();
+    const lookupKeys: string[] = [];
+    for (const u of updates) {
+      const cur = store.items.find((i) => i.id === String(u.id) && i.sessionId === id);
+      if (!cur) continue;
+      lookupKeys.push(resolveRecalcLookupKey(cur, u as Record<string, unknown>));
+    }
+    const productByKey = await lookupProductsBatch(lookupKeys);
     const out: unknown[] = [];
     for (const u of updates) {
       const cur = store.items.find((i) => i.id === String(u.id) && i.sessionId === id);
@@ -66,7 +74,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         vendor: cur.vendor, brand: cur.brand,
         vendorListPriceNew: cur.vendorListPriceNew, marginDivisor: cur.marginDivisor, notes: cur.notes,
         nearest9Custom: cur.nearest9Custom ?? null,
-      }, u);
+      }, u, { discMaps, productByKey });
       Object.assign(cur, { ...r, updatedAt: new Date().toISOString() });
       out.push(cur);
     }
@@ -76,8 +84,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const out: unknown[] = [];
   try {
     const ids = updates.map((u: Record<string, unknown>) => String(u.id ?? ""));
-    const curs = await prisma.priceUpdateItem.findMany({ where: { id: { in: ids }, sessionId: id } });
+    const [curs, discMaps] = await Promise.all([
+      prisma.priceUpdateItem.findMany({ where: { id: { in: ids }, sessionId: id } }),
+      getDiscountMaps(),
+    ]);
     const byId = new Map(curs.map((c) => [c.id, c]));
+    const lookupKeys: string[] = [];
+    for (const u of updates) {
+      const cur = byId.get(String((u as Record<string, unknown>).id ?? ""));
+      if (!cur) continue;
+      lookupKeys.push(resolveRecalcLookupKey(cur, u as Record<string, unknown>));
+    }
+    const productByKey = await lookupProductsBatch(lookupKeys);
     const writes: { id: string; data: object }[] = [];
     for (const u of updates) {
       const cur = byId.get(String((u as Record<string, unknown>).id ?? ""));
@@ -89,7 +107,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         vendorListPriceNew: cur.vendorListPriceNew ? String(cur.vendorListPriceNew) : null,
         marginDivisor: String(cur.marginDivisor ?? "0.605"), notes: cur.notes,
         nearest9Custom: cur.nearest9Custom ? String(cur.nearest9Custom) : null,
-      }, u as Record<string, unknown>);
+      }, u as Record<string, unknown>, { discMaps, productByKey });
       writes.push({ id: cur.id, data: {
         rawVendorSku: r.rawVendorSku, cleanedSku: r.cleanedSku, cleanedOverridden: r.cleanedOverridden,
         productId: r.productId, productNumber: r.productNumber, productName: r.productName,
@@ -104,7 +122,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         nearest9Custom: r.nearest9Custom ? new Decimal(r.nearest9Custom) : null,
         notes: r.notes, isInactive: r.isInactive, matched: r.matched,
       } });
-      out.push({ id: cur.id });
+      out.push({
+        id: cur.id, sessionId: cur.sessionId,
+        rawVendorSku: r.rawVendorSku, cleanedSku: r.cleanedSku, cleanedOverridden: r.cleanedOverridden,
+        productId: r.productId, productNumber: r.productNumber, productName: r.productName,
+        brand: r.brand, vendor: r.vendor, discount: r.discount,
+        currentListPrice: r.currentListPrice, vendorListPriceNew: r.vendorListPriceNew,
+        ourNewListPrice: r.ourNewListPrice, marginDivisor: r.marginDivisor,
+        ourNewRetailPrice: r.ourNewRetailPrice, oldRetailPrice: r.oldRetailPrice,
+        nearest9: r.nearest9, nearest9Custom: r.nearest9Custom,
+        notes: r.notes, isInactive: r.isInactive, matched: r.matched,
+      });
     }
     for (let j = 0; j < writes.length; j += 50) {
       await prisma.$transaction(writes.slice(j, j + 50).map((w) => prisma.priceUpdateItem.update({ where: { id: w.id }, data: w.data as never })));

@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { calculateRow, resolveNearest9 } from "./nearest9";
 import { normalizeSku, normalizeVendor, normalizeBrand } from "./pricing";
-import { getDiscountMaps, resolveDefaultDiscount } from "./lookup";
+import { getDiscountMaps, resolveDefaultDiscount, type DiscountMaps } from "./lookup";
 import { getPrisma } from "./db";
 import { loadFileStore } from "./store";
 
@@ -14,7 +14,23 @@ export type CurRow = {
   nearest9Custom?: string | null;
 };
 
-export async function lookupProduct(cleanedSku: string) {
+export type LookedUpProduct = {
+  id: string;
+  productNumber: string;
+  description: string;
+  brand: string;
+  vendor: string;
+  listCost: string;
+  price: string;
+  isInactive: boolean;
+};
+
+export type RecalcBatchContext = {
+  discMaps?: DiscountMaps;
+  productByKey?: Map<string, LookedUpProduct | null>;
+};
+
+export async function lookupProduct(cleanedSku: string): Promise<LookedUpProduct | null> {
   const stripped = cleanedSku.replace(/^0+/, "") || "0";
   const prisma = getPrisma();
   if (!prisma) {
@@ -27,14 +43,89 @@ export async function lookupProduct(cleanedSku: string) {
   return hit ? { id: hit.id, productNumber: hit.productNumber, description: hit.description, brand: hit.brand, vendor: hit.vendor, listCost: String(hit.listCost), price: String(hit.price), isInactive: hit.isInactive } : null;
 }
 
-export async function recalcRow(cur: CurRow, patch: Record<string, unknown>) {
-  const discMaps = await getDiscountMaps();
+/**
+ * Batch product lookup matching the exact semantics of `lookupProduct()` across
+ * many lookup keys in minimal DB queries (eliminating N+1 queries on batch PATCH).
+ */
+export async function lookupProductsBatch(lookupKeys: string[]): Promise<Map<string, LookedUpProduct | null>> {
+  const uniqueKeys = [...new Set(lookupKeys)];
+  const out = new Map<string, LookedUpProduct | null>();
+  if (!uniqueKeys.length) return out;
+  const strip = (s: string) => s.replace(/^0+/, "") || "0";
+  const prisma = getPrisma();
+
+  if (!prisma) {
+    const products = loadFileStore().products;
+    const byExact = new Map<string, LookedUpProduct>();
+    const byStripped = new Map<string, LookedUpProduct>();
+    for (const p of products) {
+      const mapped: LookedUpProduct = {
+        id: p.id, productNumber: p.productNumber, description: p.description,
+        brand: p.brand, vendor: p.vendor, listCost: p.listCost, price: p.price, isInactive: p.isInactive,
+      };
+      if (!byExact.has(p.normalizedSku)) byExact.set(p.normalizedSku, mapped);
+      if (!byExact.has(p.sku)) byExact.set(p.sku, mapped);
+      const sn = strip(p.normalizedSku);
+      const ss = strip(p.sku);
+      if (!byStripped.has(sn)) byStripped.set(sn, mapped);
+      if (!byStripped.has(ss)) byStripped.set(ss, mapped);
+    }
+    for (const key of uniqueKeys) {
+      out.set(key, byExact.get(key) ?? byStripped.get(strip(key)) ?? null);
+    }
+    return out;
+  }
+
+  const allCands = new Set<string>();
+  for (const k of uniqueKeys) {
+    allCands.add(k);
+    allCands.add(strip(k));
+  }
+  const candArr = [...allCands];
+  const byExact = new Map<string, LookedUpProduct>();
+  const byStripped = new Map<string, LookedUpProduct>();
+  for (let i = 0; i < candArr.length; i += 2000) {
+    const chunk = candArr.slice(i, i + 2000);
+    const hits = await prisma.product.findMany({
+      where: { OR: [{ normalizedSku: { in: chunk } }, { sku: { in: chunk } }] },
+      take: 50000,
+    });
+    for (const h of hits) {
+      const mapped: LookedUpProduct = {
+        id: h.id, productNumber: h.productNumber, description: h.description,
+        brand: h.brand, vendor: h.vendor, listCost: String(h.listCost), price: String(h.price), isInactive: h.isInactive,
+      };
+      if (!byExact.has(h.normalizedSku)) byExact.set(h.normalizedSku, mapped);
+      if (!byExact.has(h.sku)) byExact.set(h.sku, mapped);
+      const sn = strip(h.normalizedSku);
+      const ss = strip(h.sku);
+      if (!byStripped.has(sn)) byStripped.set(sn, mapped);
+      if (!byStripped.has(ss)) byStripped.set(ss, mapped);
+    }
+  }
+  for (const key of uniqueKeys) {
+    out.set(key, byExact.get(key) ?? byStripped.get(strip(key)) ?? null);
+  }
+  return out;
+}
+
+/** Resolve the inventory lookup key for a row + patch (shared by recalcRow & batch prefetcher). */
+export function resolveRecalcLookupKey(cur: Pick<CurRow, "rawVendorSku" | "cleanedSku" | "cleanedOverridden">, patch: Record<string, unknown>): string {
   const overridden = patch.cleanedSku !== undefined ? true : cur.cleanedOverridden;
   const rawNext = patch.rawVendorSku !== undefined ? String(patch.rawVendorSku) : cur.rawVendorSku;
-  const lookupKey = patch.cleanedSku !== undefined
+  return patch.cleanedSku !== undefined
     ? String(patch.cleanedSku).trim()
     : (overridden || !rawNext.trim() ? cur.cleanedSku : normalizeSku(rawNext));
-  const prod = await lookupProduct(lookupKey);
+}
+
+export async function recalcRow(cur: CurRow, patch: Record<string, unknown>, ctx?: RecalcBatchContext) {
+  const discMaps = ctx?.discMaps ?? await getDiscountMaps();
+  const overridden = patch.cleanedSku !== undefined ? true : cur.cleanedOverridden;
+  const rawNext = patch.rawVendorSku !== undefined ? String(patch.rawVendorSku) : cur.rawVendorSku;
+  const lookupKey = resolveRecalcLookupKey(cur, patch);
+  const prod = ctx?.productByKey && ctx.productByKey.has(lookupKey)
+    ? (ctx.productByKey.get(lookupKey) ?? null)
+    : await lookupProduct(lookupKey);
 
   // ---- Discount: automatic default vs manual override ----
   // Clearing the cell ("") restores the automatic default (existing nearest-9

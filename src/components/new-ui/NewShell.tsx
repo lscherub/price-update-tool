@@ -158,8 +158,10 @@ export function NewShell({ children }: { children: React.ReactNode }) {
     toggleSidebarCollapsed,
     theme,
     setTheme,
+    priceEditor,
     requestModeChange,
   } = useUiMode();
+  const isWideSheet = priceEditor === "spreadsheet" && path.startsWith("/sessions/") && path !== "/sessions/new";
 
   const [user, setUser] = useState<{ email: string; role: string } | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -476,7 +478,7 @@ export function NewShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content Container */}
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 md:p-6 lg:p-8">
+        <main className={isWideSheet ? "w-full flex-1 px-3 py-3 md:px-4" : "mx-auto w-full max-w-7xl flex-1 p-4 md:p-6 lg:p-8"}>
           {children}
         </main>
       </div>
