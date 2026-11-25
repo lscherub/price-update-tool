@@ -5,6 +5,9 @@ import { AddItemDialog, type NewItemInput } from "@/components/AddItemDialog";
 import { BulkAddDialog } from "@/components/BulkAddDialog";
 import { DigitalStoreCountExportDialog, type DigitalStoreCountExportOptions } from "@/components/DigitalStoreCountExportDialog";
 import { PosExportOptionsDialog, type PosExportOptions } from "@/components/PosExportOptionsDialog";
+import { ScheduleWorksheetModal } from "@/components/ScheduleWorksheetModal";
+import { SCHEDULABLE_STATUSES, formatDateKeyShort } from "@/lib/calendar";
+import type { SerializedScheduleSummary } from "@/lib/calendarServer";
 import type { BulkAddInputRow } from "@/lib/bulkAdd";
 import { MarkdownDoc, MarkdownEditor, NotesModal } from "@/components/MarkdownEditor";
 import { applyPinnedOrder } from "@/lib/markdown";
@@ -99,6 +102,8 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const [vendor, setVendor] = useState("");
   const [sheetStatus, setSheetStatus] = useState("");
   const [statusBusy, setStatusBusy] = useState(false);
+  const [scheduleSummary, setScheduleSummary] = useState<SerializedScheduleSummary | null>(null);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [sheetNotes, setSheetNotes] = useState("");
   const [sheetNotesBusy, setSheetNotesBusy] = useState(false);
   const [sheetNotesEditing, setSheetNotesEditing] = useState(false);
@@ -311,6 +316,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
       });
       setItems(next); setName(d.session?.name ?? ""); setVendor(d.session?.vendor ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
       setIsFullVendor(!!d.session?.isFullVendor);
+      setScheduleSummary(d.session?.schedule ?? null);
     } catch {
       setMsg("Could not reach the server. Check your connection and try again.");
     }
@@ -326,6 +332,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         if (!r.ok) { setMsg(apiErrorText(d, "Could not load this price update.")); setItems([]); return; }
         setMsg(""); setItems(d.items ?? []); setName(d.session?.name ?? ""); setVendor(d.session?.vendor ?? ""); setSheetNotes(String(d.session?.notes ?? "")); setSheetStatus(String(d.session?.status ?? ""));
         setIsFullVendor(!!d.session?.isFullVendor);
+        setScheduleSummary(d.session?.schedule ?? null);
       })
       .catch(() => { if (active) setMsg("Could not reach the server. Check your connection and try again."); });
     return () => { active = false; };
@@ -1412,6 +1419,43 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             </select>
           </label>
 
+          {/* Schedule Action */}
+          {(() => {
+            const isActiveSchedule =
+              sheetStatus === "Scheduled" && scheduleSummary?.scheduleStatus === "ACTIVE" && Boolean(scheduleSummary.scheduledEffectiveDate);
+            const canSchedule = SCHEDULABLE_STATUSES.has(sheetStatus) && items.length > 0;
+            return (
+              <button
+                type="button"
+                disabled={!canSchedule}
+                onClick={() => setShowScheduleModal(true)}
+                title={
+                  !canSchedule
+                    ? sheetStatus === "Draft" || items.length === 0
+                      ? "Import or add products so the worksheet is Ready before scheduling"
+                      : "Change status back to Reviewed or Ready before scheduling"
+                    : isActiveSchedule
+                    ? "Change effective date, edit reminder, or cancel schedule"
+                    : "Schedule this worksheet for a future effective date"
+                }
+                className={`h-8 inline-flex items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold shadow-2xs transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                  isActiveSchedule
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200 dark:hover:bg-indigo-900/60"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                }`}
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {isActiveSchedule && scheduleSummary?.scheduledEffectiveDate ? (
+                  <span>Scheduled: {formatDateKeyShort(scheduleSummary.scheduledEffectiveDate)}</span>
+                ) : (
+                  <span>Schedule</span>
+                )}
+              </button>
+            );
+          })()}
+
           {/* Export Toolbar Group */}
           <div className="flex items-center rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50/70 dark:bg-zinc-800/60 p-0.5 gap-0.5 shadow-xs text-xs">
             <LoadingButton
@@ -1791,6 +1835,23 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
         vendorName={vendor}
         onClose={() => { if (!exportBusy) setShowFvExportModal(false); }}
         onExport={(opts) => downloadFullVendorExcel(opts)}
+      />
+      <ScheduleWorksheetModal
+        isOpen={showScheduleModal}
+        sessionId={id}
+        vendor={vendor}
+        worksheetName={name}
+        currentStatus={sheetStatus}
+        currentSchedule={scheduleSummary}
+        onClose={() => setShowScheduleModal(false)}
+        onSaved={({ status, schedule }) => {
+          setSheetStatus(status);
+          setScheduleSummary(schedule);
+        }}
+        onCancelled={({ restoredStatus, schedule }) => {
+          setSheetStatus(restoredStatus);
+          setScheduleSummary(schedule);
+        }}
       />
       {isFullVendor && (
         <PosExportOptionsDialog

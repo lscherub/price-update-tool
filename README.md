@@ -84,6 +84,18 @@ ADMIN_PASSWORD="<a-strong-password-min-8-chars>" \
 | `DATABASE_URL` | Supabase **transaction pooler** URI (port `6543`, `?pgbouncer=true`) | Production, Preview, Development |
 | `AUTH_SECRET` | `openssl rand -base64 48` (min 32 chars) — same value per environment family | Production, Preview, Development |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | only needed for `npm run seed`; not required at runtime | — |
+| `SMTP2GO_API_KEY` | SMTP2GO API key (`Sending → API Keys`), server-only | Production, Preview |
+| `SMTP2GO_FROM_EMAIL` | Verified sender email or address on a verified sender domain in SMTP2GO | Production, Preview |
+| `SMTP2GO_FROM_NAME` | Sender display name (e.g. `Genesis Nutrition`) | Production, Preview |
+| `APP_BASE_URL` | Full app URL for secure worksheet links in reminder emails | Production, Preview |
+| `CRON_SECRET` | `openssl rand -hex 32` — authenticates Vercel Cron (`Authorization: Bearer`) | Production, Preview |
+| `REMINDER_EMAILS_ENABLED` | Set to `true` after test verification to enable automated cron email sends | Production |
+
+#### Price Update Calendar & Automated Reminders (Vercel Cron + SMTP2GO)
+
+- **Sender Verification**: SMTP2GO requires `SMTP2GO_FROM_EMAIL` to be either a verified single sender or on a verified sender domain (DNS CNAME records for SPF/DKIM under **Sending → Verified Senders**). An API key alone will not guarantee delivery without sender verification.
+- **Vercel Cron (`vercel.json`)**: Configured to run `/api/cron/process-reminders` every 15 minutes (`*/15 * * * *`, requires Vercel Pro). If deploying on Vercel Hobby (which restricts crons to once daily), update the `schedule` in `vercel.json` to a daily expression such as `0 16 * * *` (8:00 AM PST / 9:00 AM PDT) or invoke `/api/cron/process-reminders` from an external scheduler with `Authorization: Bearer <CRON_SECRET>`.
+- **Testing Safely**: Keep `REMINDER_EMAILS_ENABLED="false"` while verifying setup, use **Settings → Price Update Calendar & Notifications → Send Test Email** with a test address, then set `REMINDER_EMAILS_ENABLED="true"` and redeploy.
 
 Deploy/redeploy after saving the variables (env changes need a new build).
 

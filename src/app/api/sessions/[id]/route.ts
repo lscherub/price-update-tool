@@ -3,10 +3,12 @@ import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, saveFileStore } from "@/lib/store";
 import { fullVendorSessionIds } from "@/lib/fullVendorServer";
+import { ALL_SESSION_STATUSES } from "@/lib/calendar";
+import { getSessionScheduleSummary, markSessionScheduleCompleted } from "@/lib/calendarServer";
 
 export const runtime = "nodejs";
 
-const ALLOWED_STATUSES = new Set(["Draft", "Ready", "Being Reviewed", "Reviewed", "Exported"]);
+const ALLOWED_STATUSES = ALL_SESSION_STATUSES;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -19,16 +21,25 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const store = loadFileStore();
     const s = store.sessions.find((x) => x.id === id);
     if (!s) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
-    const isFullVendor = (await fullVendorSessionIds(null, [id])).has(id);
-    return NextResponse.json({ session: { ...s, isFullVendor }, items: store.items.filter((i) => i.sessionId === id) });
+    const [isFullVendor, schedule] = await Promise.all([
+      fullVendorSessionIds(null, [id]).then((set) => set.has(id)),
+      getSessionScheduleSummary(null, id),
+    ]);
+    return NextResponse.json({
+      session: { ...s, isFullVendor, schedule },
+      items: store.items.filter((i) => i.sessionId === id),
+    });
   }
   try {
     const s = await prisma.priceUpdateSession.findUnique({ where: { id } });
     if (!s) return NextResponse.json({ error: "Price update not found" }, { status: 404 });
-    const isFullVendor = (await fullVendorSessionIds(prisma, [id])).has(id);
-    const items = await prisma.priceUpdateItem.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000 });
+    const [isFullVendor, schedule, items] = await Promise.all([
+      fullVendorSessionIds(prisma, [id]).then((set) => set.has(id)),
+      getSessionScheduleSummary(prisma, id),
+      prisma.priceUpdateItem.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" }, take: 50000 }),
+    ]);
     return NextResponse.json({
-      session: { id: s.id, vendor: s.vendor, name: s.name, status: s.status, notes: s.notes, createdBy: s.createdBy, isFullVendor },
+      session: { id: s.id, vendor: s.vendor, name: s.name, status: s.status, notes: s.notes, createdBy: s.createdBy, isFullVendor, schedule },
       items: items.map((i) => ({
         id: i.id, sessionId: i.sessionId, rawVendorSku: i.rawVendorSku, cleanedSku: i.cleanedSku,
         cleanedOverridden: i.cleanedOverridden, productId: i.productId, productNumber: i.productNumber,
@@ -60,7 +71,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const prodErr = productionDbGuard(prisma);
   if (prodErr) return prodErr;
   if (body.status !== undefined && !ALLOWED_STATUSES.has(String(body.status))) {
-    return NextResponse.json({ error: "Invalid status. Use Draft, Ready, Being Reviewed, Reviewed, or Exported." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid status. Use Draft, Ready, Being Reviewed, Reviewed, Scheduled, or Exported." },
+      { status: 400 },
+    );
   }
   if (body.name !== undefined && String(body.name).trim().length > 200) {
     return NextResponse.json({ error: "Update name is too long (max 200 characters)" }, { status: 400 });
@@ -75,6 +89,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (body.vendor !== undefined) s.vendor = String(body.vendor).slice(0, 200);
     s.updatedAt = new Date().toISOString();
     saveFileStore(store);
+    if (body.status === "Exported") {
+      await markSessionScheduleCompleted(null, id, session.email, "Status changed to Exported");
+    }
     return NextResponse.json({ ok: true, session: s });
   }
   try {
@@ -87,6 +104,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         vendor: body.vendor !== undefined ? String(body.vendor).slice(0, 200) : undefined,
       },
     });
+    if (body.status === "Exported") {
+      await markSessionScheduleCompleted(prisma, id, session.email, "Status changed to Exported").catch(() => null);
+    }
     return NextResponse.json({ ok: true, session: { id: s.id, status: s.status } });
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
@@ -108,6 +128,8 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     store.sessions = store.sessions.filter((x) => x.id !== id);
     store.items = store.items.filter((x) => x.sessionId !== id);
     store.exports = store.exports.filter((x) => x.sessionId !== id);
+    store.reminders = (store.reminders ?? []).filter((x) => x.sessionId !== id);
+    store.scheduleHistory = (store.scheduleHistory ?? []).filter((x) => x.sessionId !== id);
     saveFileStore(store);
     return NextResponse.json({ ok: true });
   }

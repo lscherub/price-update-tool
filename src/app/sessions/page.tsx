@@ -14,6 +14,8 @@ type SessionRow = {
   createdAt: string;
   updatedAt: string;
   isFullVendor?: boolean;
+  scheduledEffectiveDate?: string | null;
+  scheduleStatus?: string | null;
 };
 
 export default function SessionsPage() {
@@ -126,7 +128,14 @@ export default function SessionsPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-2">{s.status}</td>
+                  <td className="px-4 py-2">
+                    <span>{s.status}</span>
+                    {s.status === "Scheduled" && s.scheduledEffectiveDate && (
+                      <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700">
+                        {s.scheduledEffectiveDate}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-xs text-slate-500">{new Date(s.updatedAt).toLocaleString()}</td>
                   <td className="px-4 py-2 text-right">
                     <span className="inline-flex items-center gap-3">
@@ -269,6 +278,8 @@ export default function SessionsPage() {
             { id: "ready", label: "Ready" },
             { id: "being reviewed", label: "Being Reviewed" },
             { id: "reviewed", label: "Reviewed" },
+            { id: "scheduled", label: "Scheduled" },
+            { id: "exported", label: "Exported" },
             { id: "fullvendor", label: "Full Vendor Only" },
           ].map((tab) => (
             <button
@@ -311,7 +322,11 @@ export default function SessionsPage() {
 
               {!loading && filteredRows.map((s) => {
                 const statusColor =
-                  s.status === "Reviewed"
+                  s.status === "Scheduled"
+                    ? "bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800"
+                    : s.status === "Exported"
+                    ? "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800"
+                    : s.status === "Reviewed"
                     ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
                     : s.status === "Being Reviewed"
                     ? "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"
@@ -340,9 +355,16 @@ export default function SessionsPage() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusColor}`}>
-                        {s.status}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${statusColor}`}>
+                          {s.status}
+                        </span>
+                        {s.status === "Scheduled" && s.scheduledEffectiveDate && (
+                          <span className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">
+                            {s.scheduledEffectiveDate}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3.5 text-slate-600 dark:text-zinc-300">
                       {new Date(s.updatedAt).toLocaleDateString("en-US", {

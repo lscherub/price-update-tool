@@ -8,6 +8,7 @@ import { NewShell } from "@/components/new-ui/NewShell";
 const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/sessions", label: "Price Updates" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/sessions/new", label: "New Price Update" },
   { href: "/calculator", label: "Calculator" },
   { href: "/pos-cleaner", label: "POS Excel Cleaner" },

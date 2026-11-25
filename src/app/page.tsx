@@ -361,7 +361,11 @@ export default function Home() {
                 <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
                   {(data?.recentSessions ?? []).map((s) => {
                     const statusColor =
-                      s.status === "Reviewed"
+                      s.status === "Scheduled"
+                        ? "bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800"
+                        : s.status === "Exported"
+                        ? "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800"
+                        : s.status === "Reviewed"
                         ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
                         : s.status === "Being Reviewed"
                         ? "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"

@@ -6,6 +6,7 @@ import { buildHistorySearchParams, matchesHistoryRow } from "@/lib/sessionSearch
 import { cuid, loadFileStore, saveFileStore } from "@/lib/store";
 import { formatUpdateName } from "@/lib/pricing";
 import { fullVendorSessionIds } from "@/lib/fullVendorServer";
+import { toDateKey } from "@/lib/calendar";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ type SessionListRow = {
   status: string;
   notes: string;
   createdBy: string;
+  scheduledEffectiveDate?: Date | null;
+  scheduleStatus?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -35,7 +38,7 @@ async function searchSessionsDb(
   const p = buildHistorySearchParams(q);
   if (p.normLike && p.from && p.to && p.utcFrom && p.utcTo) {
     return prisma.$queryRaw<SessionListRow[]>(Prisma.sql`
-      SELECT "id", "vendor", "name", "status", "notes", "createdBy", "createdAt", "updatedAt"
+      SELECT "id", "vendor", "name", "status", "notes", "createdBy", "scheduledEffectiveDate", "scheduleStatus", "createdAt", "updatedAt"
       FROM "PriceUpdateSession"
       WHERE ("vendor" ILIKE ${p.like} OR "name" ILIKE ${p.like}
         OR regexp_replace(lower("vendor"), '[^a-z0-9]', '', 'g') LIKE ${p.normLike}
@@ -48,7 +51,7 @@ async function searchSessionsDb(
   }
   if (p.normLike) {
     return prisma.$queryRaw<SessionListRow[]>(Prisma.sql`
-      SELECT "id", "vendor", "name", "status", "notes", "createdBy", "createdAt", "updatedAt"
+      SELECT "id", "vendor", "name", "status", "notes", "createdBy", "scheduledEffectiveDate", "scheduleStatus", "createdAt", "updatedAt"
       FROM "PriceUpdateSession"
       WHERE ("vendor" ILIKE ${p.like} OR "name" ILIKE ${p.like}
         OR regexp_replace(lower("vendor"), '[^a-z0-9]', '', 'g') LIKE ${p.normLike}
@@ -57,7 +60,7 @@ async function searchSessionsDb(
   }
   if (p.from && p.to && p.utcFrom && p.utcTo) {
     return prisma.$queryRaw<SessionListRow[]>(Prisma.sql`
-      SELECT "id", "vendor", "name", "status", "notes", "createdBy", "createdAt", "updatedAt"
+      SELECT "id", "vendor", "name", "status", "notes", "createdBy", "scheduledEffectiveDate", "scheduleStatus", "createdAt", "updatedAt"
       FROM "PriceUpdateSession"
       WHERE ("vendor" ILIKE ${p.like} OR "name" ILIKE ${p.like}
         OR ("createdAt" >= ${p.from} AND "createdAt" <= ${p.to})
@@ -67,7 +70,7 @@ async function searchSessionsDb(
       ORDER BY "updatedAt" DESC LIMIT 200`);
   }
   return prisma.$queryRaw<SessionListRow[]>(Prisma.sql`
-    SELECT "id", "vendor", "name", "status", "notes", "createdBy", "createdAt", "updatedAt"
+    SELECT "id", "vendor", "name", "status", "notes", "createdBy", "scheduledEffectiveDate", "scheduleStatus", "createdAt", "updatedAt"
     FROM "PriceUpdateSession"
     WHERE ("vendor" ILIKE ${p.like} OR "name" ILIKE ${p.like})
     ORDER BY "updatedAt" DESC LIMIT 200`);
@@ -102,6 +105,8 @@ export async function GET(req: Request) {
       rows: rows.map((s) => ({
         id: s.id, vendor: s.vendor, name: s.name, status: s.status, notes: s.notes,
         createdBy: s.createdBy,
+        scheduledEffectiveDate: toDateKey(s.scheduledEffectiveDate),
+        scheduleStatus: s.scheduleStatus ?? null,
         createdAt: new Date(s.createdAt).toISOString(),
         updatedAt: new Date(s.updatedAt).toISOString(),
         isFullVendor: fvIds.has(s.id),

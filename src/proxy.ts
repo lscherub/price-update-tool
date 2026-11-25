@@ -16,7 +16,15 @@ function secret(): Uint8Array {
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (pathname.startsWith("/api/auth") || pathname.startsWith("/_next") || pathname === "/login" || pathname === "/api/health") return NextResponse.next();
+  if (
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/_next") ||
+    pathname === "/login" ||
+    pathname === "/api/health"
+  ) {
+    return NextResponse.next();
+  }
   if (pathname.startsWith("/api/")) {
     const tok = req.cookies.get("pu_session")?.value;
     if (!tok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

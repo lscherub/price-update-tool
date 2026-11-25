@@ -6,6 +6,7 @@ import { resolveLiveProducts } from "@/lib/lookup";
 import { buildContentDisposition, buildExportFilename } from "@/lib/exportFilename";
 import { fullVendorSessionIds } from "@/lib/fullVendorServer";
 import { filterAndMapPosRows, type PosExportMode } from "@/lib/fullVendorPosExport";
+import { markSessionScheduleCompleted } from "@/lib/calendarServer";
 
 export const runtime = "nodejs";
 
@@ -137,8 +138,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (prisma) {
       await recordExport(prisma, id, kind, session.email, rows.length);
       await prisma.priceUpdateSession.update({ where: { id }, data: { status: "Exported" } }).catch(() => null);
+      await markSessionScheduleCompleted(prisma, id, session.email, "POS CSV exported").catch(() => null);
     } else {
       recordFileStoreExport(id, kind, session.email, rows.length, true);
+      await markSessionScheduleCompleted(null, id, session.email, "POS CSV exported").catch(() => null);
     }
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();
@@ -224,8 +227,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (prisma) {
       await recordExport(prisma, id, kind, session.email, exportRows.length);
       await prisma.priceUpdateSession.update({ where: { id }, data: { status: "Exported" } }).catch(() => null);
+      await markSessionScheduleCompleted(prisma, id, session.email, "Full Vendor POS CSV exported").catch(() => null);
     } else {
       recordFileStoreExport(id, kind, session.email, exportRows.length, true);
+      await markSessionScheduleCompleted(null, id, session.email, "Full Vendor POS CSV exported").catch(() => null);
     }
   } catch (e) {
     if (isDbConnectionError(e)) return dbUnreachableResponse();

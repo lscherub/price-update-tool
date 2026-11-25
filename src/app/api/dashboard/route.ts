@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { dbUnreachableResponse, getPrisma, isDbConnectionError, productionDbGuard } from "@/lib/db";
 import { loadFileStore, type ItemRow } from "@/lib/store";
+import { toDateKey } from "@/lib/calendar";
 
 export const runtime = "nodejs";
 
@@ -63,8 +64,12 @@ export async function GET(req: Request) {
       active: totalProducts - inactiveProducts, vendors: vendorCount, sessions: sessionCount,
     },
     recentSessions: sessions.map((s) => ({
-      id: s.id, vendor: (s as { vendor: string }).vendor, name: (s as { name: string }).name,
+      id: s.id,
+      vendor: (s as { vendor: string }).vendor,
+      name: (s as { name: string }).name,
       status: (s as { status: string }).status,
+      scheduledEffectiveDate: toDateKey((s as { scheduledEffectiveDate?: Date | string | null }).scheduledEffectiveDate),
+      scheduleStatus: (s as { scheduleStatus?: string | null }).scheduleStatus ?? null,
       updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : (s as unknown as { updatedAt: string }).updatedAt,
     })),
     sessionStats: stats,

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useUiMode, type UiMode, type UiTheme, type UiAccent, type UiDensity, type DashboardSectionId, type MetricKey, type PriceEditorMode } from "@/contexts/UiModeContext";
 import { useToast } from "@/components/Toast";
+import { NotificationSettingsSection } from "@/components/NotificationSettingsSection";
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -26,7 +27,7 @@ export default function SettingsPage() {
     resetDefaults,
   } = useUiMode();
 
-  const [activeTab, setActiveTab] = useState<"appearance" | "dashboard" | "system">("appearance");
+  const [activeTab, setActiveTab] = useState<"appearance" | "dashboard" | "notifications" | "system">("appearance");
 
   const handleModeSelect = (newMode: UiMode) => {
     if (newMode === mode) return;
@@ -115,6 +116,17 @@ export default function SettingsPage() {
           }`}
         >
           Dashboard & Layout
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("notifications")}
+          className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+            activeTab === "notifications"
+              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+              : "border-transparent text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+          }`}
+        >
+          Price Update Calendar &amp; Notifications
         </button>
         <button
           type="button"
@@ -533,7 +545,10 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* TAB 3: System & Data Rules */}
+      {/* TAB 3: Price Update Calendar & Notifications */}
+      {activeTab === "notifications" && <NotificationSettingsSection />}
+
+      {/* TAB 4: System & Data Rules */}
       {activeTab === "system" && (
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">

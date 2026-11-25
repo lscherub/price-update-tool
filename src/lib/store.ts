@@ -37,6 +37,43 @@ export type StoreShape = {
   /** Ad Hoc Count Sheets */
   adHocSheets?: AdHocCountSheetRow[];
   adHocItems?: AdHocCountItemRow[];
+  /** Price Update Calendar & Reminders (dev file-store parity) */
+  reminders?: PriceUpdateReminderRow[];
+  scheduleHistory?: PriceUpdateScheduleHistoryRow[];
+  appSettings?: Record<string, string>;
+};
+
+export type PriceUpdateReminderRow = {
+  id: string;
+  sessionId: string;
+  reminderType: string;
+  scheduledReminderAt: string;
+  customRecipientsJson: string | null;
+  resolvedRecipientsJson: string | null;
+  status: string;
+  processingStartedAt: string | null;
+  sentAt: string | null;
+  attemptedAt: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  nextRetryAt: string | null;
+  lastError: string | null;
+  providerRequestId: string | null;
+  providerEmailId: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PriceUpdateScheduleHistoryRow = {
+  id: string;
+  sessionId: string;
+  action: string;
+  previousEffectiveDate: string | null;
+  newEffectiveDate: string | null;
+  performedBy: string;
+  detail: string;
+  createdAt: string;
 };
 
 export type AdHocCountSheetRow = {
@@ -76,8 +113,21 @@ export type Price99BatchRow = {
 };
 
 export type SessionRow = {
-  id: string; vendor: string; name: string; status: string;
-  notes: string; createdBy: string; createdAt: string; updatedAt: string;
+  id: string;
+  vendor: string;
+  name: string;
+  status: string;
+  notes: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  scheduledEffectiveDate?: string | null;
+  scheduledAt?: string | null;
+  scheduledBy?: string | null;
+  previousStatus?: string | null;
+  scheduleStatus?: string | null;
+  scheduleCancelledAt?: string | null;
+  scheduleCancelledBy?: string | null;
 };
 
 export type ItemRow = {
@@ -100,7 +150,21 @@ export function cuid(): string {
 }
 
 export function emptyStore(): StoreShape {
-  return { products: [], vendorDiscounts: [], brandDiscounts: [], sessions: [], items: [], users: [], exports: [], price99Batches: [], adHocSheets: [], adHocItems: [] };
+  return {
+    products: [],
+    vendorDiscounts: [],
+    brandDiscounts: [],
+    sessions: [],
+    items: [],
+    users: [],
+    exports: [],
+    price99Batches: [],
+    adHocSheets: [],
+    adHocItems: [],
+    reminders: [],
+    scheduleHistory: [],
+    appSettings: {},
+  };
 }
 
 export function loadFileStore(): StoreShape {

@@ -65,20 +65,72 @@ model BrandDiscount {
 }
 
 model PriceUpdateSession {
-  id        String   @id @default(cuid())
-  vendor    String   @default("")
-  name      String
-  status    String   @default("Draft")
-  notes     String   @default("")
-  createdBy String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  vendor                 String    @default("")
+  name                   String
+  status                 String    @default("Draft")
+  notes                  String    @default("")
+  createdBy              String    @default("")
+  scheduledEffectiveDate DateTime? @db.Date
+  scheduledAt            DateTime?
+  scheduledBy            String?
+  previousStatus         String?
+  scheduleStatus         String?
+  scheduleCancelledAt    DateTime?
+  scheduleCancelledBy    String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  items   PriceUpdateItem[]
-  exports ExportLog[]
+  items           PriceUpdateItem[]
+  exports         ExportLog[]
+  reminders       PriceUpdateReminder[]
+  scheduleHistory PriceUpdateScheduleHistory[]
 
   @@index([vendor])
   @@index([status])
+  @@index([scheduledEffectiveDate])
+  @@index([scheduleStatus])
+}
+
+model PriceUpdateReminder {
+  id                     String             @id @default(cuid())
+  sessionId              String
+  session                PriceUpdateSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  reminderType           String
+  scheduledReminderAt    DateTime
+  customRecipientsJson   String?            @db.Text
+  resolvedRecipientsJson String?            @db.Text
+  status                 String             @default("SCHEDULED")
+  processingStartedAt    DateTime?
+  sentAt                 DateTime?
+  attemptedAt            DateTime?
+  attemptCount           Int                @default(0)
+  maxAttempts            Int                @default(3)
+  nextRetryAt            DateTime?
+  lastError              String?            @db.Text
+  providerRequestId      String?
+  providerEmailId        String?
+  createdBy              String             @default("")
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([sessionId])
+  @@index([status, scheduledReminderAt])
+  @@index([status, nextRetryAt])
+}
+
+model PriceUpdateScheduleHistory {
+  id                    String             @id @default(cuid())
+  sessionId             String
+  session               PriceUpdateSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  action                String
+  previousEffectiveDate DateTime?          @db.Date
+  newEffectiveDate      DateTime?          @db.Date
+  performedBy           String             @default("")
+  detail                String             @default("") @db.Text
+  createdAt             DateTime           @default(now())
+
+  @@index([sessionId, createdAt])
 }
 
 model PriceUpdateItem {
