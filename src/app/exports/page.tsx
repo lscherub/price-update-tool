@@ -157,7 +157,7 @@ export default function ExportsPage() {
         {/* Search header */}
         <div className="border-b border-slate-100 p-3.5 dark:border-zinc-800">
           <input
-            className="h-8.5 w-full max-w-sm rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            className="h-8.5 w-full max-w-sm rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
             placeholder="Search price worksheets..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -165,7 +165,7 @@ export default function ExportsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="density-table w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
                 <th className="px-5 py-3">Worksheet Name</th>

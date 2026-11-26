@@ -604,7 +604,7 @@ export function UnifiedPosImporterDialog({ isOpen, onClose, onSuccess }: Props) 
                 <div className="flex min-w-60 flex-1 items-center gap-2 max-w-md">
                   <input
                     type="text"
-                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
                     placeholder="Search SKU, Product #, Description, Vendor, Brand..."
                     value={previewSearch}
                     onChange={(e) => {
@@ -1019,15 +1019,15 @@ export function UnifiedPosImporterDialog({ isOpen, onClose, onSuccess }: Props) 
                       {showFailedRows ? "Hide failed rows" : `View Failed Rows (${importReport.failed.length})`}
                     </button>
                     {showFailedRows && (
-                      <div className="mt-2 max-h-48 overflow-auto rounded-lg border border-slate-200 text-xs">
+                      <div className="mt-2 max-h-48 overflow-auto rounded-lg border border-slate-200 text-xs dark:border-zinc-800">
                         <table className="w-full">
-                          <thead className="bg-slate-50 text-[11px]"><tr className="text-left"><th className="px-2 py-1">Row</th><th className="px-2 py-1">SKU</th><th className="px-2 py-1">Reason</th></tr></thead>
-                          <tbody>
+                          <thead className="bg-slate-50 text-[11px] text-slate-600 dark:bg-zinc-950 dark:text-zinc-400"><tr className="text-left"><th className="px-2 py-1">Row</th><th className="px-2 py-1">SKU</th><th className="px-2 py-1">Reason</th></tr></thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
                             {importReport.failed.map((f, i) => (
-                              <tr key={i} className="border-t">
-                                <td className="px-2 py-1 font-mono">{f.row}</td>
-                                <td className="px-2 py-1 font-mono">{f.sku}</td>
-                                <td className="px-2 py-1 text-red-600">{f.reason}</td>
+                              <tr key={i}>
+                                <td className="px-2 py-1 font-mono text-slate-700 dark:text-zinc-300">{f.row}</td>
+                                <td className="px-2 py-1 font-mono text-slate-700 dark:text-zinc-300">{f.sku}</td>
+                                <td className="px-2 py-1 text-red-600 dark:text-red-400">{f.reason}</td>
                               </tr>
                             ))}
                           </tbody>

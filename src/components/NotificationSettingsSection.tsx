@@ -416,7 +416,7 @@ export function NotificationSettingsSection() {
                 }
               }}
               placeholder="Enter email address (e.g. pricing@genesisnutrition.ca)"
-              className="h-9 min-w-64 flex-1 rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+              className="h-9 min-w-64 flex-1 rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
             />
             <LoadingButton
               busy={savingRecipients}

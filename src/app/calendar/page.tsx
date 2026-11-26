@@ -512,7 +512,7 @@ export default function CalendarPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search vendor or worksheet reference..."
-            className="h-8 min-w-52 flex-1 rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            className="h-8 min-w-52 flex-1 rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
           />
 
           <select
@@ -574,7 +574,7 @@ export default function CalendarPage() {
           <button
             type="button"
             onClick={() => void loadCalendar()}
-            className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-200 dark:hover:bg-amber-950/60"
           >
             Retry
           </button>
@@ -799,7 +799,7 @@ export default function CalendarPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="density-table w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
                     <th className="px-4 py-3">Effective Date</th>
@@ -1152,7 +1152,7 @@ export default function CalendarPage() {
                     setPendingDrop(null);
                     setEditingScheduleEvent(ev);
                   }}
-                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800"
+                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200 dark:hover:bg-indigo-900/60"
                 >
                   Edit Reminder Instead
                 </button>

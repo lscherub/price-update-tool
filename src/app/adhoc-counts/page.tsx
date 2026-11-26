@@ -147,7 +147,7 @@ export default function AdHocCountsListPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search sheets by name..."
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pr-4 pl-9 text-xs text-slate-900 transition-colors focus:border-indigo-600 focus:bg-white focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pr-4 pl-9 text-xs text-slate-900 transition-colors focus:border-indigo-600 focus:bg-white focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:bg-zinc-900"
           />
           <svg
             className="absolute top-2.5 left-3 h-4 w-4 text-slate-400 dark:text-zinc-500"
@@ -210,7 +210,7 @@ export default function AdHocCountsListPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="density-table w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-zinc-800 dark:bg-zinc-800/80 dark:text-zinc-400">
                 <tr>
                   <th className="px-5 py-3">Sheet Name</th>
@@ -302,7 +302,7 @@ export default function AdHocCountsListPage() {
               type="text"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
-              className="mt-4 w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-medium text-slate-900 focus:border-indigo-600 focus:bg-white focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="mt-4 w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-medium text-slate-900 focus:border-indigo-600 focus:bg-white focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:bg-zinc-900"
             />
             <div className="mt-5 flex justify-end gap-2">
               <button

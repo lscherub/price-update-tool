@@ -28,9 +28,9 @@ export function numOk(v: string, min: number, max: number): boolean {
 
 export function Section(p: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border bg-white p-5 shadow-sm">
-      <h2 className="text-base font-bold">{p.title}</h2>
-      {p.sub && <p className="mt-1 text-sm text-slate-500">{p.sub}</p>}
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+      <h2 className="text-base font-bold text-slate-900 dark:text-white">{p.title}</h2>
+      {p.sub && <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">{p.sub}</p>}
       <div className="mt-4">{p.children}</div>
     </section>
   );
@@ -39,24 +39,25 @@ export function Section(p: { title: string; sub?: string; children: React.ReactN
 export function Field(p: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="font-medium text-slate-700">{p.label}</span>
+      <span className="font-medium text-slate-700 dark:text-zinc-300">{p.label}</span>
       {p.children}
-      {p.hint && <span className="text-xs text-slate-500">{p.hint}</span>}
+      {p.hint && <span className="text-xs text-slate-500 dark:text-zinc-400">{p.hint}</span>}
     </label>
   );
 }
 
-export const inputCls = "rounded border px-3 py-1.5";
+export const inputCls =
+  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-indigo-400";
 
 export function SourceBadge(p: { source: DiscountSource }) {
   const c =
     p.source === "brand"
-      ? "bg-violet-100 text-violet-800"
+      ? "bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300"
       : p.source === "vendor"
-        ? "bg-sky-100 text-sky-800"
+        ? "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
         : p.source === "manual"
-          ? "bg-amber-100 text-amber-800"
-          : "bg-slate-100 text-slate-600";
+          ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+          : "bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300";
   return (
     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c}`}>
       {discountSourceLabel(p.source)}

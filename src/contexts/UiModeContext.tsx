@@ -1,90 +1,88 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useTransition } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useTransition } from "react";
+import { usePathname } from "next/navigation";
+import {
+  DEFAULT_DASHBOARD_CONFIG,
+  DEFAULT_NAVIGATION_CONFIG,
+  DEFAULT_USER_PREFERENCES,
+  sanitizeUserPreferences,
+  type DashboardConfig,
+  type DashboardSectionId,
+  type MetricKey,
+  type NavigationConfig,
+  type PriceEditorMode,
+  type StoredUserPreferences,
+  type UiAccent,
+  type UiDensity,
+  type UiMode,
+  type UiTheme,
+} from "@/lib/userPreferencesShared";
 
-export type UiMode = "new" | "classic";
-export type UiTheme = "light" | "dark" | "system";
-export type UiAccent = "indigo" | "blue" | "emerald" | "violet" | "slate";
-export type UiDensity = "compact" | "comfortable" | "spacious";
-export type PriceEditorMode = "legacy" | "spreadsheet";
-
-export type DashboardSectionId = "metrics" | "quickActions" | "recentUpdates" | "inventoryHealth";
-export type MetricKey = "products" | "active" | "inactive" | "vendors" | "sessions";
-
-export interface DashboardConfig {
-  sections: DashboardSectionId[];
-  sectionVisibility: Record<DashboardSectionId, boolean>;
-  visibleMetrics: Record<MetricKey, boolean>;
-}
-
-export interface NavigationConfig {
-  collapsed: boolean;
-  hiddenNavItems: string[];
-}
-
-export interface UiPreferences {
-  mode: UiMode;
-  theme: UiTheme;
-  accent: UiAccent;
-  density: UiDensity;
-  dashboard: DashboardConfig;
-  navigation: NavigationConfig;
-}
-
-const DEFAULT_DASHBOARD_CONFIG: DashboardConfig = {
-  sections: ["metrics", "quickActions", "recentUpdates", "inventoryHealth"],
-  sectionVisibility: {
-    metrics: true,
-    quickActions: true,
-    recentUpdates: true,
-    inventoryHealth: true,
-  },
-  visibleMetrics: {
-    products: true,
-    active: true,
-    inactive: true,
-    vendors: true,
-    sessions: true,
-  },
+export type {
+  UiMode,
+  UiTheme,
+  UiAccent,
+  UiDensity,
+  PriceEditorMode,
+  DashboardSectionId,
+  MetricKey,
+  DashboardConfig,
+  NavigationConfig,
 };
 
-const DEFAULT_NAVIGATION_CONFIG: NavigationConfig = {
-  collapsed: false,
-  hiddenNavItems: [],
-};
+export type UiPreferences = StoredUserPreferences;
 
 const DEFAULT_PREFERENCES: UiPreferences = {
-  mode: "new",
-  theme: "light",
-  accent: "indigo",
-  density: "comfortable",
+  ...DEFAULT_USER_PREFERENCES,
   dashboard: DEFAULT_DASHBOARD_CONFIG,
   navigation: DEFAULT_NAVIGATION_CONFIG,
 };
 
 const STORAGE_KEY = "price_tool_ui_preferences_v1";
+const USER_PREFS_STORAGE_PREFIX = "price_tool_user_prefs_v1:";
 const EDITOR_STORAGE_PREFIX = "price_tool_editor_pref_v1:";
 
 export function editorStorageKeyForUser(userId: string | null | undefined): string {
   return `${EDITOR_STORAGE_PREFIX}${userId ? userId : "default"}`;
 }
 
+export function userPrefsStorageKey(userId: string | null | undefined): string {
+  return `${USER_PREFS_STORAGE_PREFIX}${userId ? userId : "default"}`;
+}
+
+export function resolveEffectiveTheme(
+  mode: UiMode,
+  theme: UiTheme,
+  systemPrefersDark: boolean,
+): "light" | "dark" {
+  if (mode !== "new") return "light";
+  if (theme === "dark") return "dark";
+  if (theme === "system") return systemPrefersDark ? "dark" : "light";
+  return "light";
+}
+
 interface UiModeContextType {
   preferences: UiPreferences;
   mode: UiMode;
   theme: UiTheme;
+  resolvedTheme: "light" | "dark";
   accent: UiAccent;
   density: UiDensity;
   dashboard: DashboardConfig;
   navigation: NavigationConfig;
+  defaultPriceEditor: PriceEditorMode;
   priceEditor: PriceEditorMode;
   userId: string | null;
+  preferencesLoaded: boolean;
   spreadsheetFullscreen: boolean;
   setMode: (mode: UiMode) => void;
   setTheme: (theme: UiTheme) => void;
   setAccent: (accent: UiAccent) => void;
   setDensity: (density: UiDensity) => void;
+  setDefaultPriceEditor: (editor: PriceEditorMode) => void;
   setPriceEditor: (editor: PriceEditorMode) => void;
+  resetPriceEditorToDefault: () => void;
   setSpreadsheetFullscreen: (v: boolean | ((prev: boolean) => boolean)) => void;
   toggleSectionVisibility: (sectionId: DashboardSectionId) => void;
   reorderSections: (fromIndex: number, toIndex: number) => void;
@@ -99,243 +97,370 @@ interface UiModeContextType {
 
 const UiModeContext = createContext<UiModeContextType | null>(null);
 
+function readCachedPreferences(key: string): UiPreferences | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return sanitizeUserPreferences(JSON.parse(raw), DEFAULT_PREFERENCES);
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedPreferences(prefs: UiPreferences, uid: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    const serialized = JSON.stringify(prefs);
+    localStorage.setItem(STORAGE_KEY, serialized);
+    if (uid) {
+      localStorage.setItem(userPrefsStorageKey(uid), serialized);
+      localStorage.setItem(editorStorageKeyForUser(uid), prefs.defaultPriceEditor);
+    }
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 export function UiModeProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [preferences, setPreferences] = useState<UiPreferences>(DEFAULT_PREFERENCES);
-  const [priceEditor, setPriceEditorState] = useState<PriceEditorMode>("legacy");
+  const [priceEditorOverride, setPriceEditorOverride] = useState<PriceEditorMode | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [editorLoadedFor, setEditorLoadedFor] = useState<string | null>(null);
   const [spreadsheetFullscreen, setSpreadsheetFullscreen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(false);
   const [, startTransition] = useTransition();
-  const unsavedCheckersRef = React.useRef<Set<() => boolean>>(new Set());
+  const unsavedCheckersRef = useRef<Set<() => boolean>>(new Set());
+  const loadedUserIdRef = useRef<string | null | undefined>(undefined);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Identify current user and load user-specific price editor preference (defaults to "legacy").
+  // Hydrate initial client cache right after mount for zero-flash UX without SSR mismatch
   useEffect(() => {
     let active = true;
-    const applyForUser = (uid: string | null) => {
+    queueMicrotask(() => {
       if (!active) return;
-      setUserId(uid);
-      const key = editorStorageKeyForUser(uid);
-      try {
-        const raw = localStorage.getItem(key);
-        setPriceEditorState(raw === "spreadsheet" ? "spreadsheet" : "legacy");
-      } catch {
-        setPriceEditorState("legacy");
-      } finally {
-        setEditorLoadedFor(key);
+      const cached = readCachedPreferences(STORAGE_KEY);
+      if (cached) {
+        setPreferences(cached);
       }
-    };
-    fetch("/api/auth/session")
-      .then((r) => (r.ok ? r.json() : { user: null }))
-      .then((d) => applyForUser(d?.user?.id ? String(d.user.id) : null))
-      .catch(() => applyForUser(null));
-    return () => { active = false; };
-  }, []);
-
-  const setPriceEditor = (editor: PriceEditorMode) => {
-    const normalized: PriceEditorMode = editor === "spreadsheet" ? "spreadsheet" : "legacy";
-    setPriceEditorState(normalized);
-    try {
-      const key = editorLoadedFor ?? editorStorageKeyForUser(userId);
-      localStorage.setItem(key, normalized);
-    } catch {
-      // Ignore quota errors
-    }
-  };
-
-  // Load preferences from localStorage on mount
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setPreferences({
-          mode: parsed.mode === "classic" ? "classic" : "new",
-          theme: ["light", "dark", "system"].includes(parsed.theme) ? parsed.theme : "light",
-          accent: ["indigo", "blue", "emerald", "violet", "slate"].includes(parsed.accent) ? parsed.accent : "indigo",
-          density: ["compact", "comfortable", "spacious"].includes(parsed.density) ? parsed.density : "comfortable",
-          dashboard: {
-            sections: Array.isArray(parsed.dashboard?.sections) ? parsed.dashboard.sections : DEFAULT_DASHBOARD_CONFIG.sections,
-            sectionVisibility: {
-              ...DEFAULT_DASHBOARD_CONFIG.sectionVisibility,
-              ...(parsed.dashboard?.sectionVisibility || {}),
-            },
-            visibleMetrics: {
-              ...DEFAULT_DASHBOARD_CONFIG.visibleMetrics,
-              ...(parsed.dashboard?.visibleMetrics || {}),
-            },
-          },
-          navigation: {
-            collapsed: Boolean(parsed.navigation?.collapsed),
-            hiddenNavItems: Array.isArray(parsed.navigation?.hiddenNavItems) ? parsed.navigation.hiddenNavItems : [],
-          },
-        });
-      } else {
-        // First-time users default to New UI as requested in Requirement 1
-        setPreferences(DEFAULT_PREFERENCES);
+      if (typeof window !== "undefined") {
+        setSystemPrefersDark(window.matchMedia("(prefers-color-scheme: dark)").matches);
       }
-    } catch {
-      // Fallback to default
-      setPreferences(DEFAULT_PREFERENCES);
-    } finally {
       setIsLoaded(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Listen to live OS color scheme changes so Follow System responds immediately
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemPrefersDark(mq.matches);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", update);
+      return () => mq.removeEventListener("change", update);
+    }
+    mq.addListener(update);
+    return () => mq.removeListener(update);
+  }, []);
+
+  // Persist user preferences to the server (per-user AppSetting) with light debouncing
+  const syncPreferencesToServer = useCallback((next: UiPreferences, immediate = false) => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const run = () => {
+      fetch("/api/settings/preferences", {
+        method: "PUT",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      }).catch(() => {
+        // Offline or unauthenticated — localStorage cache still preserves state
+      });
+    };
+    if (immediate) {
+      run();
+    } else {
+      saveTimerRef.current = setTimeout(run, 150);
     }
   }, []);
 
-  // Save preferences to localStorage whenever they change
   useEffect(() => {
-    if (!isLoaded) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-    } catch {
-      // Ignore quota errors
-    }
-  }, [preferences, isLoaded]);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
-  // Apply theme & accent data attributes to document element
+  // Load authenticated user's persisted preferences from server (re-runs on route changes
+  // so login/logout or account switches immediately pick up the active user's settings).
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/session", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { user: null }))
+      .then(async (d) => {
+        if (!active) return;
+        const uid: string | null = d?.user?.id ? String(d.user.id) : null;
+
+        // Avoid redundant server reloads if the authenticated user hasn't changed
+        if (loadedUserIdRef.current === uid) {
+          setPreferencesLoaded(true);
+          return;
+        }
+        loadedUserIdRef.current = uid;
+        setUserId(uid);
+        setPriceEditorOverride(null);
+
+        if (!uid) {
+          const fallback = readCachedPreferences(STORAGE_KEY) ?? DEFAULT_PREFERENCES;
+          setPreferences(fallback);
+          setPreferencesLoaded(true);
+          return;
+        }
+
+        // Apply user-scoped local cache immediately if available while fetching server truth
+        const userCached = readCachedPreferences(userPrefsStorageKey(uid));
+        if (userCached) {
+          setPreferences(userCached);
+        }
+
+        try {
+          const prefRes = await fetch("/api/settings/preferences", { cache: "no-store" });
+          if (!active) return;
+          if (prefRes.ok) {
+            const prefData = await prefRes.json().catch(() => ({}));
+            if (prefData?.preferences) {
+              const serverPrefs = sanitizeUserPreferences(prefData.preferences, DEFAULT_PREFERENCES);
+              setPreferences(serverPrefs);
+              writeCachedPreferences(serverPrefs, uid);
+            }
+          }
+        } catch {
+          // Keep cached / default preferences if network fails
+        } finally {
+          if (active) setPreferencesLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (active) setPreferencesLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
+
+  const resolvedTheme = resolveEffectiveTheme(preferences.mode, preferences.theme, systemPrefersDark);
+
+  // Apply theme, accent, density, and color-scheme attributes to <html>
   useEffect(() => {
     if (!isLoaded) return;
     const root = document.documentElement;
     root.setAttribute("data-ui-mode", preferences.mode);
     root.setAttribute("data-ui-accent", preferences.accent);
     root.setAttribute("data-ui-density", preferences.density);
+    root.setAttribute("data-ui-theme", preferences.theme);
 
-    // Dark mode handling
-    if (preferences.mode === "new") {
-      let isDark = preferences.theme === "dark";
-      if (preferences.theme === "system" && typeof window !== "undefined") {
-        isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      }
-      if (isDark) {
-        root.classList.add("dark");
-      } else {
-        root.classList.remove("dark");
-      }
+    if (resolvedTheme === "dark") {
+      root.classList.add("dark");
+      root.style.colorScheme = "dark";
     } else {
-      // Classic mode is light
       root.classList.remove("dark");
+      root.style.colorScheme = "light";
     }
-  }, [preferences.mode, preferences.theme, preferences.accent, preferences.density, isLoaded]);
+  }, [preferences.mode, preferences.theme, preferences.accent, preferences.density, resolvedTheme, isLoaded]);
 
-  const registerUnsavedChecker = (checker: () => boolean) => {
+  const updatePreferences = useCallback(
+    (updater: (prev: UiPreferences) => UiPreferences, opts?: { immediate?: boolean; transition?: boolean }) => {
+      const apply = () => {
+        setPreferences((prev) => {
+          const next = updater(prev);
+          writeCachedPreferences(next, userId);
+          if (userId) {
+            syncPreferencesToServer(next, opts?.immediate ?? false);
+          }
+          return next;
+        });
+      };
+      if (opts?.transition) {
+        startTransition(apply);
+      } else {
+        apply();
+      }
+    },
+    [userId, syncPreferencesToServer],
+  );
+
+  const registerUnsavedChecker = useCallback((checker: () => boolean) => {
     unsavedCheckersRef.current.add(checker);
     return () => {
       unsavedCheckersRef.current.delete(checker);
     };
-  };
+  }, []);
 
-  const requestModeChange = (newMode: UiMode): boolean => {
-    if (newMode === preferences.mode) return true;
-    for (const checker of unsavedCheckersRef.current) {
-      if (checker()) {
-        const confirm = window.confirm(
-          "You have unsaved changes on this page. Switching UI modes will reload the view. Are you sure you want to proceed?"
-        );
-        if (!confirm) return false;
-        break;
+  const setMode = useCallback(
+    (mode: UiMode) => {
+      updatePreferences((prev) => ({ ...prev, mode }), { transition: true, immediate: true });
+    },
+    [updatePreferences],
+  );
+
+  const requestModeChange = useCallback(
+    (newMode: UiMode): boolean => {
+      if (newMode === preferences.mode) return true;
+      for (const checker of unsavedCheckersRef.current) {
+        if (checker()) {
+          const confirmed = window.confirm(
+            "You have unsaved changes on this page. Switching UI modes will reload the view. Are you sure you want to proceed?",
+          );
+          if (!confirmed) return false;
+          break;
+        }
       }
-    }
-    setMode(newMode);
-    return true;
-  };
+      setMode(newMode);
+      return true;
+    },
+    [preferences.mode, setMode],
+  );
 
-  const setMode = (mode: UiMode) => {
-    startTransition(() => {
-      setPreferences((prev) => ({ ...prev, mode }));
-    });
-  };
+  const setTheme = useCallback(
+    (theme: UiTheme) => {
+      updatePreferences((prev) => ({ ...prev, theme }), { transition: true, immediate: true });
+    },
+    [updatePreferences],
+  );
 
-  const setTheme = (theme: UiTheme) => {
-    startTransition(() => {
-      setPreferences((prev) => ({ ...prev, theme }));
-    });
-  };
+  const setAccent = useCallback(
+    (accent: UiAccent) => {
+      updatePreferences((prev) => ({ ...prev, accent }), { transition: true, immediate: true });
+    },
+    [updatePreferences],
+  );
 
-  const setAccent = (accent: UiAccent) => {
-    startTransition(() => {
-      setPreferences((prev) => ({ ...prev, accent }));
-    });
-  };
+  const setDensity = useCallback(
+    (density: UiDensity) => {
+      updatePreferences((prev) => ({ ...prev, density }), { transition: true, immediate: true });
+    },
+    [updatePreferences],
+  );
 
-  const setDensity = (density: UiDensity) => {
-    startTransition(() => {
-      setPreferences((prev) => ({ ...prev, density }));
-    });
-  };
+  /** Updates the user's saved Default Price Update Editor (persisted to DB + cache). */
+  const setDefaultPriceEditor = useCallback(
+    (editor: PriceEditorMode) => {
+      const normalized: PriceEditorMode = editor === "legacy" ? "legacy" : "spreadsheet";
+      setPriceEditorOverride(null);
+      updatePreferences((prev) => ({ ...prev, defaultPriceEditor: normalized }), { immediate: true });
+    },
+    [updatePreferences],
+  );
 
-  const toggleSectionVisibility = (sectionId: DashboardSectionId) => {
-    setPreferences((prev) => ({
-      ...prev,
-      dashboard: {
-        ...prev.dashboard,
-        sectionVisibility: {
-          ...prev.dashboard.sectionVisibility,
-          [sectionId]: !prev.dashboard.sectionVisibility[sectionId],
-        },
-      },
-    }));
-  };
+  /** Temporarily switches the active editor on the current worksheet without changing the saved default. */
+  const setPriceEditor = useCallback((editor: PriceEditorMode) => {
+    const normalized: PriceEditorMode = editor === "legacy" ? "legacy" : "spreadsheet";
+    setPriceEditorOverride(normalized);
+  }, []);
 
-  const reorderSections = (fromIndex: number, toIndex: number) => {
-    setPreferences((prev) => {
-      const updated = [...prev.dashboard.sections];
-      const [moved] = updated.splice(fromIndex, 1);
-      updated.splice(toIndex, 0, moved);
-      return {
+  const resetPriceEditorToDefault = useCallback(() => {
+    setPriceEditorOverride(null);
+  }, []);
+
+  const toggleSectionVisibility = useCallback(
+    (sectionId: DashboardSectionId) => {
+      updatePreferences((prev) => ({
         ...prev,
         dashboard: {
           ...prev.dashboard,
-          sections: updated,
+          sectionVisibility: {
+            ...prev.dashboard.sectionVisibility,
+            [sectionId]: !prev.dashboard.sectionVisibility[sectionId],
+          },
         },
-      };
-    });
-  };
+      }));
+    },
+    [updatePreferences],
+  );
 
-  const toggleMetricVisibility = (metricKey: MetricKey) => {
-    setPreferences((prev) => ({
-      ...prev,
-      dashboard: {
-        ...prev.dashboard,
-        visibleMetrics: {
-          ...prev.dashboard.visibleMetrics,
-          [metricKey]: !prev.dashboard.visibleMetrics[metricKey],
+  const reorderSections = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      updatePreferences((prev) => {
+        const updated = [...prev.dashboard.sections];
+        const [moved] = updated.splice(fromIndex, 1);
+        updated.splice(toIndex, 0, moved);
+        return {
+          ...prev,
+          dashboard: {
+            ...prev.dashboard,
+            sections: updated,
+          },
+        };
+      });
+    },
+    [updatePreferences],
+  );
+
+  const toggleMetricVisibility = useCallback(
+    (metricKey: MetricKey) => {
+      updatePreferences((prev) => ({
+        ...prev,
+        dashboard: {
+          ...prev.dashboard,
+          visibleMetrics: {
+            ...prev.dashboard.visibleMetrics,
+            [metricKey]: !prev.dashboard.visibleMetrics[metricKey],
+          },
         },
-      },
-    }));
-  };
+      }));
+    },
+    [updatePreferences],
+  );
 
-  const setSidebarCollapsed = (collapsed: boolean | ((prev: boolean) => boolean)) => {
-    setPreferences((prev) => ({
-      ...prev,
-      navigation: {
-        ...prev.navigation,
-        collapsed: typeof collapsed === "function" ? collapsed(prev.navigation.collapsed) : collapsed,
-      },
-    }));
-  };
-
-  const toggleSidebarCollapsed = () => {
-    setSidebarCollapsed((prev) => !prev);
-  };
-
-  const toggleNavItemVisibility = (href: string) => {
-    setPreferences((prev) => {
-      const exists = prev.navigation.hiddenNavItems.includes(href);
-      return {
+  const setSidebarCollapsed = useCallback(
+    (collapsed: boolean | ((prev: boolean) => boolean)) => {
+      updatePreferences((prev) => ({
         ...prev,
         navigation: {
           ...prev.navigation,
-          hiddenNavItems: exists
-            ? prev.navigation.hiddenNavItems.filter((h) => h !== href)
-            : [...prev.navigation.hiddenNavItems, href],
+          collapsed: typeof collapsed === "function" ? collapsed(prev.navigation.collapsed) : collapsed,
         },
-      };
-    });
-  };
+      }));
+    },
+    [updatePreferences],
+  );
 
-  const resetDefaults = () => {
-    setPreferences(DEFAULT_PREFERENCES);
-  };
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, [setSidebarCollapsed]);
+
+  const toggleNavItemVisibility = useCallback(
+    (href: string) => {
+      updatePreferences((prev) => {
+        const exists = prev.navigation.hiddenNavItems.includes(href);
+        return {
+          ...prev,
+          navigation: {
+            ...prev.navigation,
+            hiddenNavItems: exists
+              ? prev.navigation.hiddenNavItems.filter((h) => h !== href)
+              : [...prev.navigation.hiddenNavItems, href],
+          },
+        };
+      });
+    },
+    [updatePreferences],
+  );
+
+  const resetDefaults = useCallback(() => {
+    setPriceEditorOverride(null);
+    updatePreferences(() => DEFAULT_PREFERENCES, { immediate: true });
+  }, [updatePreferences]);
+
+  const defaultPriceEditor = preferences.defaultPriceEditor;
+  const priceEditor = priceEditorOverride ?? defaultPriceEditor;
 
   return (
     <UiModeContext.Provider
@@ -343,18 +468,23 @@ export function UiModeProvider({ children }: { children: React.ReactNode }) {
         preferences,
         mode: preferences.mode,
         theme: preferences.theme,
+        resolvedTheme,
         accent: preferences.accent,
         density: preferences.density,
         dashboard: preferences.dashboard,
         navigation: preferences.navigation,
+        defaultPriceEditor,
         priceEditor,
         userId,
+        preferencesLoaded,
         spreadsheetFullscreen,
         setMode,
         setTheme,
         setAccent,
         setDensity,
+        setDefaultPriceEditor,
         setPriceEditor,
+        resetPriceEditorToDefault,
         setSpreadsheetFullscreen,
         toggleSectionVisibility,
         reorderSections,
@@ -379,4 +509,3 @@ export function useUiMode() {
   }
   return context;
 }
-

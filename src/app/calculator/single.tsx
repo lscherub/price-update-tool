@@ -73,8 +73,8 @@ export function SingleCalc(p: { disc: DiscountState }) {
                 ))}
             </datalist>
           </Field>
-          <label className="flex items-center gap-2 text-sm sm:col-span-2">
-            <input type="checkbox" checked={boxMode} onChange={(e) => setBoxMode(e.target.checked)} />
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300 sm:col-span-2">
+            <input type="checkbox" checked={boxMode} onChange={(e) => setBoxMode(e.target.checked)} className="rounded border-slate-300 dark:border-zinc-600" />
             <span className="font-medium">Calculate from a box/case price</span>
           </label>
           {boxMode ? (
@@ -102,7 +102,7 @@ export function SingleCalc(p: { disc: DiscountState }) {
             {touched ? (
               <button
                 type="button"
-                className="text-xs text-blue-700 underline"
+                className="text-xs text-blue-700 underline dark:text-indigo-400"
                 onClick={() => {
                   setTouched(false);
                   setDIn("");
@@ -129,32 +129,32 @@ export function SingleCalc(p: { disc: DiscountState }) {
             </Field>
           ) : null}
         </div>
-        <div className="mt-4 divide-y rounded-lg border text-sm">
+        <div className="mt-4 divide-y divide-slate-200 rounded-lg border border-slate-200 text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-950/40">
           {boxMode ? (
             <div className="flex justify-between gap-4 px-3 py-2">
-              <span className="text-slate-600">Per-unit list</span>
-              <span className="font-semibold">{perUnit ? `$${perUnit}` : "—"}</span>
+              <span className="text-slate-600 dark:text-zinc-400">Per-unit list</span>
+              <span className="font-semibold text-slate-900 dark:text-zinc-100">{perUnit ? `$${perUnit}` : "—"}</span>
             </div>
           ) : null}
           <div className="flex justify-between gap-4 px-3 py-2">
-            <span className="text-slate-600">Discount</span>
-            <span className="font-semibold">{discount || "0"}% <SourceBadge source={source} /></span>
+            <span className="text-slate-600 dark:text-zinc-400">Discount</span>
+            <span className="font-semibold text-slate-900 dark:text-zinc-100">{discount || "0"}% <SourceBadge source={source} /></span>
           </div>
           <div className="flex justify-between gap-4 px-3 py-2">
-            <span className="text-slate-600">Net cost</span>
-            <span className="font-semibold">{result?.netCost ? `$${result.netCost}` : "—"}</span>
+            <span className="text-slate-600 dark:text-zinc-400">Net cost</span>
+            <span className="font-semibold text-slate-900 dark:text-zinc-100">{result?.netCost ? `$${result.netCost}` : "—"}</span>
           </div>
           <div className="flex justify-between gap-4 px-3 py-2">
-            <span className="text-slate-600">Suggested retail</span>
-            <span className="text-xl font-bold text-emerald-700">{result?.retailRounded ? `$${result.retailRounded}` : "—"}</span>
+            <span className="text-slate-600 dark:text-zinc-400">Suggested retail</span>
+            <span className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{result?.retailRounded ? `$${result.retailRounded}` : "—"}</span>
           </div>
-          <div className="flex justify-between gap-4 px-3 py-2 text-xs text-slate-500">
+          <div className="flex justify-between gap-4 px-3 py-2 text-xs text-slate-500 dark:text-zinc-400">
             <span>Margin {result?.margin ?? "—"}% / Markup {result?.markup ?? "—"}%</span>
             {result?.retailExact ? <span>exact ${result.retailExact}</span> : null}
           </div>
         </div>
-        {boxErr ? <p className="mt-2 text-sm text-amber-700">{boxErr}</p> : null}
-        {!result && !boxErr ? <p className="mt-2 text-sm text-slate-500">Enter a vendor list cost.</p> : null}
+        {boxErr ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{boxErr}</p> : null}
+        {!result && !boxErr ? <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">Enter a vendor list cost.</p> : null}
         <div className="mt-3 flex gap-2">
           <button
             type="button"
@@ -162,11 +162,11 @@ export function SingleCalc(p: { disc: DiscountState }) {
             onClick={() => {
               if (result?.retailRounded) navigator.clipboard.writeText(`Net $${result.netCost} Retail $${result.retailRounded}`).catch(() => {});
             }}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-indigo-600 dark:hover:bg-indigo-500"
           >
             Copy
           </button>
-          <button type="button" onClick={reset} className="rounded border px-3 py-1.5 text-sm">Reset</button>
+          <button type="button" onClick={reset} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">Reset</button>
         </div>
       </Section>
     </div>

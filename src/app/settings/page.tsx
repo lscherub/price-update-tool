@@ -14,12 +14,12 @@ export default function SettingsPage() {
     density,
     dashboard,
     navigation,
-    priceEditor,
+    defaultPriceEditor,
     requestModeChange,
     setTheme,
     setAccent,
     setDensity,
-    setPriceEditor,
+    setDefaultPriceEditor,
     toggleSectionVisibility,
     reorderSections,
     toggleMetricVisibility,
@@ -41,11 +41,11 @@ export default function SettingsPage() {
   };
 
   const handlePriceEditorSelect = (next: PriceEditorMode) => {
-    if (next === priceEditor) return;
-    setPriceEditor(next);
+    if (next === defaultPriceEditor) return;
+    setDefaultPriceEditor(next);
     toast.success(
-      `Price Update Editor set to ${next === "spreadsheet" ? "Spreadsheet Editor" : "Legacy Editor"}.`,
-      "Your preference is saved for your account on this browser and can be switched anytime."
+      `Default Price Update Editor set to ${next === "spreadsheet" ? "Spreadsheet Editor" : "Legacy Editor"}.`,
+      "Saved to your account across sessions. You can still switch editors on any worksheet."
     );
   };
 
@@ -94,9 +94,11 @@ export default function SettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-zinc-800">
+      <div role="tablist" aria-label="Settings sections" className="flex flex-wrap border-b border-slate-200 dark:border-zinc-800">
         <button
           type="button"
+          role="tab"
+          aria-selected={activeTab === "appearance"}
           onClick={() => setActiveTab("appearance")}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
             activeTab === "appearance"
@@ -108,6 +110,8 @@ export default function SettingsPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeTab === "dashboard"}
           onClick={() => setActiveTab("dashboard")}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
             activeTab === "dashboard"
@@ -119,6 +123,8 @@ export default function SettingsPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeTab === "notifications"}
           onClick={() => setActiveTab("notifications")}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
             activeTab === "notifications"
@@ -130,6 +136,8 @@ export default function SettingsPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeTab === "system"}
           onClick={() => setActiveTab("system")}
           className={`border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
             activeTab === "system"
@@ -154,11 +162,15 @@ export default function SettingsPage() {
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* Option: New UI */}
               <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={mode === "new"}
                 onClick={() => handleModeSelect("new")}
-                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all ${
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleModeSelect("new"); } }}
+                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                   mode === "new"
                     ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-600/20 dark:border-indigo-400 dark:bg-indigo-950/20"
-                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
                 }`}
               >
                 <div>
@@ -181,11 +193,15 @@ export default function SettingsPage() {
 
               {/* Option: Classic UI */}
               <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={mode === "classic"}
                 onClick={() => handleModeSelect("classic")}
-                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all ${
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleModeSelect("classic"); } }}
+                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                   mode === "classic"
                     ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900/20 dark:border-slate-400 dark:bg-zinc-800"
-                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
                 }`}
               >
                 <div>
@@ -201,67 +217,39 @@ export default function SettingsPage() {
                     The familiar original layout preserved exactly as previously built. Ideal for existing team members preferring continuity.
                   </p>
                 </div>
-                <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
                   <span>Preserves original visual style</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Section 1b: Price Update Table Editor */}
+          {/* Section 1b: Default Price Update Editor */}
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">Price Update Table Editor</h2>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Default Price Update Editor</h2>
             <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
-              Choose which table editor opens for Price Update worksheets. Both editors use the exact same database records, pricing calculations, and exports. You can also switch directly from any worksheet toolbar.
+              Choose which editor opens by default whenever you open a Price Update worksheet. Saved per user across sessions and devices without modifying any worksheet data. You can still switch editors manually on any worksheet.
             </p>
 
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div
                 role="button"
                 tabIndex={0}
-                onClick={() => handlePriceEditorSelect("legacy")}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePriceEditorSelect("legacy"); } }}
-                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all ${
-                  priceEditor === "legacy"
-                    ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900/15 dark:border-slate-300 dark:bg-zinc-800"
-                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 dark:text-white">Legacy Editor</span>
-                    {priceEditor === "legacy" && (
-                      <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white dark:bg-slate-200 dark:text-slate-900">
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">
-                    The existing paginated Price Update table editor, preserved completely unchanged as a reliable default.
-                  </p>
-                </div>
-                <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
-                  <span>Default editor</span>
-                </div>
-              </div>
-
-              <div
-                role="button"
-                tabIndex={0}
+                aria-pressed={defaultPriceEditor === "spreadsheet"}
                 onClick={() => handlePriceEditorSelect("spreadsheet")}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePriceEditorSelect("spreadsheet"); } }}
-                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all ${
-                  priceEditor === "spreadsheet"
+                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                  defaultPriceEditor === "spreadsheet"
                     ? "border-emerald-600 bg-emerald-50/40 ring-2 ring-emerald-600/20 dark:border-emerald-400 dark:bg-emerald-950/20"
-                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 dark:text-white">Spreadsheet Editor</span>
-                    {priceEditor === "spreadsheet" && (
+                    {defaultPriceEditor === "spreadsheet" && (
                       <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                        Active
+                        Default
                       </span>
                     )}
                   </div>
@@ -270,7 +258,37 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                  <span>Optional high-speed Excel-like experience</span>
+                  <span>Recommended default editor</span>
+                </div>
+              </div>
+
+              <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={defaultPriceEditor === "legacy"}
+                onClick={() => handlePriceEditorSelect("legacy")}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePriceEditorSelect("legacy"); } }}
+                className={`relative flex cursor-pointer flex-col justify-between rounded-xl border p-4 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                  defaultPriceEditor === "legacy"
+                    ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900/15 dark:border-slate-300 dark:bg-zinc-800"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white">Legacy Editor</span>
+                    {defaultPriceEditor === "legacy" && (
+                      <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white dark:bg-slate-200 dark:text-slate-900">
+                        Default
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400">
+                    The original paginated Price Update table editor, preserved unchanged for users who prefer the classic workflow.
+                  </p>
+                </div>
+                <div className="mt-4 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                  <span>Classic paginated table editor</span>
                 </div>
               </div>
             </div>
@@ -440,8 +458,9 @@ export default function SettingsPage() {
                         type="button"
                         disabled={index === 0}
                         onClick={() => reorderSections(index, index - 1)}
-                        className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 dark:hover:bg-zinc-800"
+                        className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
                         title="Move Up"
+                        aria-label={`Move ${info.label} up`}
                       >
                         ▲
                       </button>
@@ -449,8 +468,9 @@ export default function SettingsPage() {
                         type="button"
                         disabled={index === dashboard.sections.length - 1}
                         onClick={() => reorderSections(index, index + 1)}
-                        className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 dark:hover:bg-zinc-800"
+                        className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
                         title="Move Down"
+                        aria-label={`Move ${info.label} down`}
                       >
                         ▼
                       </button>

@@ -127,6 +127,7 @@ export function BulkPastePreviewDialog({
           </div>
           <button
             type="button"
+            aria-label="Close bulk add dialog"
             onClick={onClose}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
           >
@@ -156,7 +157,7 @@ export function BulkPastePreviewDialog({
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={`62773300207\n62773300420\n62773301060\n62354374619\n03367414961`}
                   rows={10}
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3.5 font-mono text-sm text-slate-900 transition-colors focus:border-indigo-600 focus:bg-white focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-indigo-400"
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3.5 font-mono text-sm text-slate-900 transition-colors focus:border-indigo-600 focus:bg-white focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-indigo-400 dark:focus:bg-zinc-900"
                 />
                 <p className="mt-1.5 text-xs text-slate-500 dark:text-zinc-400">
                   Leading zeros are strictly preserved. Whitespace and spreadsheet copy/paste formats are automatically handled.

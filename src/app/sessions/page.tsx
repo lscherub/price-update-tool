@@ -112,7 +112,7 @@ export default function SessionsPage() {
         {error && <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</div>}
         {loading && <div className="text-sm text-slate-500">Loading price updates...</div>}
         <div className="rounded-xl border bg-white">
-          <table className="w-full text-sm">
+          <table className="density-table w-full text-sm">
             <thead><tr className="text-left text-slate-500"><th className="px-4 py-2">Vendor</th><th className="px-4 py-2">Name</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Updated</th><th className="px-4 py-2 text-right">Actions</th></tr></thead>
             <tbody>
               {rows.map((s) => (
@@ -262,6 +262,7 @@ export default function SessionsPage() {
           {q && (
             <button
               type="button"
+              aria-label="Clear search"
               onClick={() => setQ("")}
               className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
             >
@@ -301,7 +302,7 @@ export default function SessionsPage() {
       {/* Main Table */}
       <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="density-table w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
                 <th className="px-5 py-3">Vendor</th>

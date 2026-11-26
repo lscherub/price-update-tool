@@ -7,6 +7,7 @@ import {
   clampColWidth, clampRowHeight, isWrapped, loadTableLayout, saveTableLayout, toggleWrapped,
 } from "@/lib/tableLayout";
 import { markdownExcerpt } from "@/lib/markdown";
+import { AnchoredMenu } from "./AnchoredMenu";
 import { MarkdownDoc } from "./MarkdownEditor";
 
 export type Item = {
@@ -150,7 +151,6 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   const allChecked = slice.length > 0 && sliceSelected === slice.length;
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [fill, setFill] = useState<{ rowId: string; key: string; value: string; endId: string | null } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ rowId: string; key: string; startY: number; currentY: number } | null>(null);
   const [, forceTick] = useState(0);
@@ -476,14 +476,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
       </>
     );
   };
-  useEffect(() => {
-    if (!openMenu) return;
-    const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [openMenu]);
+  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
   const menuFor = (kind: "text" | "number" | "flags", key: string): { label: string; dir: SortDir }[] => {
     if (kind === "number") return [
       { label: "Sort Smallest → Largest", dir: "asc" },
@@ -501,7 +494,7 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
   };
   return (
     <div ref={listRef} className="overflow-auto rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900" style={{ maxHeight: "65vh" }}>
-      <table className="w-full min-w-[1800px] border-collapse text-xs">
+      <table className="density-price-grid w-full min-w-[1800px] border-collapse text-xs">
         <thead className="sticky top-0 bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200" style={{ zIndex: 20 }}>
           <tr>
             <th
@@ -561,7 +554,10 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                         aria-haspopup="menu"
                         aria-expanded={openMenu === c.key}
                         className="rounded p-0.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 hover:text-slate-900"
-                        onClick={() => setOpenMenu(openMenu === c.key ? null : c.key)}
+                        onClick={(e) => {
+                          menuAnchorRef.current = e.currentTarget;
+                          setOpenMenu(openMenu === c.key ? null : c.key);
+                        }}
                       >
                         <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -590,32 +586,37 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                   >
                     <span className="absolute top-0 right-0 h-full w-[3px] bg-transparent hover:bg-sky-500" />
                   </span>
-                  {openMenu === c.key && (
-                    <div ref={menuRef} role="menu" aria-label={`Sort ${c.label}`} className="absolute left-0 top-full z-30 min-w-44 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 py-1 text-xs font-normal shadow-lg dark:text-zinc-200">
-                      {menuFor(c.kind, c.key).map((o) => (
-                        <button
-                          key={o.dir}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={active && sortDir === o.dir}
-                          className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700 ${active && sortDir === o.dir ? "font-bold text-slate-900 dark:text-white" : ""}`}
-                          onClick={() => { onSort(c.key as SortableItemKey, o.dir); setOpenMenu(null); }}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
+                  <AnchoredMenu
+                    open={openMenu === c.key}
+                    anchorRef={menuAnchorRef}
+                    onClose={() => setOpenMenu(null)}
+                    role="menu"
+                    ariaLabel={`Sort ${c.label}`}
+                    className="min-w-44 rounded-lg border border-slate-200 bg-white py-1 text-xs font-normal text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                  >
+                    {menuFor(c.kind, c.key).map((o) => (
                       <button
+                        key={o.dir}
                         type="button"
                         role="menuitemradio"
-                        aria-checked={!active || !sortDir}
-                        className="block w-full px-3 py-1.5 text-left text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700"
-                        onClick={() => { onSort(c.key as SortableItemKey, null); setOpenMenu(null); }}
+                        aria-checked={active && sortDir === o.dir}
+                        className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${active && sortDir === o.dir ? "font-bold text-slate-900 dark:text-white" : ""}`}
+                        onClick={() => { onSort(c.key as SortableItemKey, o.dir); setOpenMenu(null); }}
                       >
-                        Clear sort
+                        {o.label}
                       </button>
-                      {freezeMenu(c.key)}
-                    </div>
-                  )}
+                    ))}
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={!active || !sortDir}
+                      className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      onClick={() => { onSort(c.key as SortableItemKey, null); setOpenMenu(null); }}
+                    >
+                      Clear sort
+                    </button>
+                    {freezeMenu(c.key)}
+                  </AnchoredMenu>
                 </th>
               );
             })}
@@ -639,7 +640,10 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                     aria-haspopup="menu"
                     aria-expanded={openMenu === FLAGS_COL_KEY}
                     className="rounded p-0.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 dark:hover:text-zinc-200 hover:text-slate-900"
-                    onClick={() => setOpenMenu(openMenu === FLAGS_COL_KEY ? null : FLAGS_COL_KEY)}
+                    onClick={(e) => {
+                      menuAnchorRef.current = e.currentTarget;
+                      setOpenMenu(openMenu === FLAGS_COL_KEY ? null : FLAGS_COL_KEY);
+                    }}
                   >
                     <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -647,64 +651,69 @@ export function PriceGrid({ rows, page, pageSize, onEdit, onDelete, selected, on
                   </button>
                 </div>
               </div>
-              {openMenu === FLAGS_COL_KEY && (
-                <div ref={menuRef} role="menu" aria-label="Sort Flags" className="absolute left-0 top-full z-30 min-w-44 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 py-1 text-xs font-normal shadow-lg dark:text-zinc-200">
-                  {menuFor("flags", FLAGS_COL_KEY).map((o) => (
-                    <button
-                      key={o.dir}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={sortKey === FLAGS_COL_KEY && sortDir === o.dir}
-                      className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700 ${sortKey === FLAGS_COL_KEY && sortDir === o.dir ? "font-bold text-slate-900 dark:text-white" : ""}`}
-                      onClick={() => { onSort(FLAGS_COL_KEY, o.dir); setOpenMenu(null); }}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
+              <AnchoredMenu
+                open={openMenu === FLAGS_COL_KEY}
+                anchorRef={menuAnchorRef}
+                onClose={() => setOpenMenu(null)}
+                role="menu"
+                ariaLabel="Sort Flags"
+                className="min-w-44 rounded-lg border border-slate-200 bg-white py-1 text-xs font-normal text-slate-800 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+              >
+                {menuFor("flags", FLAGS_COL_KEY).map((o) => (
                   <button
+                    key={o.dir}
                     type="button"
                     role="menuitemradio"
-                    aria-checked={sortKey !== FLAGS_COL_KEY || !sortDir}
-                    className="block w-full px-3 py-1.5 text-left text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700"
-                    onClick={() => { onSort(FLAGS_COL_KEY, null); setOpenMenu(null); }}
+                    aria-checked={sortKey === FLAGS_COL_KEY && sortDir === o.dir}
+                    className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${sortKey === FLAGS_COL_KEY && sortDir === o.dir ? "font-bold text-slate-900 dark:text-white" : ""}`}
+                    onClick={() => { onSort(FLAGS_COL_KEY, o.dir); setOpenMenu(null); }}
                   >
-                    Clear sort
+                    {o.label}
                   </button>
-                  {freezeMenu(FLAGS_COL_KEY)}
-                  {availableFlags && availableFlags.length > 0 && (
-                    <div className="border-t border-slate-200 dark:border-zinc-700 pt-1 mt-1">
-                      <div className="px-3 py-1 font-semibold text-slate-700 dark:text-zinc-200">Filter by Flag:</div>
-                      {availableFlags.map((flag) => {
-                        const checked = selectedFlags?.has(flag) ?? false;
-                        return (
-                          <label
-                            key={flag}
-                            className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-slate-100 dark:hover:bg-zinc-700"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => onToggleFlag?.(flag)}
-                              className="rounded border-slate-300 text-indigo-600"
-                            />
-                            <span>{flag}</span>
-                          </label>
-                        );
-                      })}
-                      {selectedFlags && selectedFlags.size > 0 && (
-                        <button
-                          type="button"
-                          className="block w-full px-3 py-1 text-left text-blue-600 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-zinc-700"
-                          onClick={() => onClearFlags?.()}
+                ))}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sortKey !== FLAGS_COL_KEY || !sortDir}
+                  className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  onClick={() => { onSort(FLAGS_COL_KEY, null); setOpenMenu(null); }}
+                >
+                  Clear sort
+                </button>
+                {freezeMenu(FLAGS_COL_KEY)}
+                {availableFlags && availableFlags.length > 0 && (
+                  <div className="mt-1 border-t border-slate-200 pt-1 dark:border-zinc-700">
+                    <div className="px-3 py-1 font-semibold text-slate-700 dark:text-zinc-200">Filter by Flag:</div>
+                    {availableFlags.map((flag) => {
+                      const checked = selectedFlags?.has(flag) ?? false;
+                      return (
+                        <label
+                          key={flag}
+                          className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-slate-100 dark:hover:bg-zinc-800"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          Clear flag filter
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => onToggleFlag?.(flag)}
+                            className="rounded border-slate-300 text-indigo-600"
+                          />
+                          <span>{flag}</span>
+                        </label>
+                      );
+                    })}
+                    {selectedFlags && selectedFlags.size > 0 && (
+                      <button
+                        type="button"
+                        className="block w-full px-3 py-1 text-left text-blue-600 hover:bg-slate-100 dark:text-blue-400 dark:hover:bg-zinc-800"
+                        onClick={() => onClearFlags?.()}
+                      >
+                        Clear flag filter
+                      </button>
+                    )}
+                  </div>
+                )}
+              </AnchoredMenu>
               {/* Excel-style column resize handle: drag the divider. */}
               <span
                 role="separator"

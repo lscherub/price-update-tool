@@ -60,10 +60,10 @@ export function BatchCalc(p: { disc: DiscountState }) {
           </select>
         </Field>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
         <span>Discount:</span>
         <input
-          className="w-24 rounded border px-2 py-1"
+          className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-slate-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           value={manual ? dIn : auto.discount}
           onChange={(e) => {
             setTouched(true);
@@ -77,27 +77,27 @@ export function BatchCalc(p: { disc: DiscountState }) {
           <textarea className={`${inputCls} font-mono text-xs`} rows={5} value={text} onChange={(e) => setText(e.target.value)} />
         </Field>
       </div>
-      <div className="mt-3 max-h-64 overflow-auto rounded border">
-        <table className="w-full text-sm">
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200 dark:border-zinc-800">
+        <table className="density-table w-full text-sm">
           <thead>
-            <tr className="bg-slate-50 text-left text-xs text-slate-500">
+            <tr className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-zinc-950/60 dark:text-zinc-400">
               <th className="px-3 py-2">#</th>
               <th className="px-3 py-2">Raw cost</th>
               <th className="px-3 py-2">Net cost</th>
               <th className="px-3 py-2">Retail</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
             {rows.map((r) => (
-              <tr key={r.i} className="border-t">
-                <td className="px-3 py-1.5">{r.i + 1}</td>
-                <td className="px-3 py-1.5">${r.raw}</td>
-                <td className="px-3 py-1.5 font-semibold">{r.error ? <span className="text-red-600">{r.error}</span> : `$${r.net}`}</td>
-                <td className="px-3 py-1.5 font-semibold text-emerald-700">{r.retail ? `$${r.retail}` : "—"}</td>
+              <tr key={r.i} className="hover:bg-slate-50/70 dark:hover:bg-zinc-800/40">
+                <td className="px-3 py-1.5 text-slate-600 dark:text-zinc-400">{r.i + 1}</td>
+                <td className="px-3 py-1.5 font-mono text-slate-800 dark:text-zinc-200">${r.raw}</td>
+                <td className="px-3 py-1.5 font-mono font-semibold text-slate-900 dark:text-zinc-100">{r.error ? <span className="text-red-600 dark:text-red-400">{r.error}</span> : `$${r.net}`}</td>
+                <td className="px-3 py-1.5 font-mono font-semibold text-emerald-700 dark:text-emerald-400">{r.retail ? `$${r.retail}` : "—"}</td>
               </tr>
             ))}
             {rows.length === 0 ? (
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-500">Paste costs above.</td></tr>
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-500 dark:text-zinc-400">Paste costs above.</td></tr>
             ) : null}
           </tbody>
         </table>

@@ -344,7 +344,7 @@ export default function PosCleanerPage() {
           </div>
 
           <div className="overflow-x-auto max-h-96">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="density-table w-full text-left text-xs border-collapse">
               <thead className="sticky top-0 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200">
                 <tr>
                   {POS_OUTPUT_COLUMNS.map((col) => (

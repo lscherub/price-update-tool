@@ -152,13 +152,13 @@ export function BulkCalc() {
           </Field>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" disabled={busy} onClick={run} className="rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={run} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-indigo-600 dark:hover:bg-indigo-500">
             {busy ? "Calculating..." : "Process & preview"}
           </button>
-          <button type="button" disabled={!out.length} onClick={download} className="rounded border px-3 py-1.5 text-sm disabled:opacity-50">
+          <button type="button" disabled={!out.length} onClick={download} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">
             Download CSV
           </button>
-          <label className="cursor-pointer rounded border px-3 py-1.5 text-sm">
+          <label className="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">
             Import file
             <input
               type="file"
@@ -171,13 +171,13 @@ export function BulkCalc() {
             />
           </label>
         </div>
-        {msg ? <p className="mt-2 text-sm text-red-600">{msg}</p> : null}
+        {msg ? <p className="mt-2 text-sm text-red-600 dark:text-red-400">{msg}</p> : null}
       </Section>
       <Section title="POS-ready output preview">
-        <div className="overflow-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-auto rounded-lg border border-slate-200 dark:border-zinc-800">
+          <table className="density-table w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-slate-500">
+              <tr className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-zinc-950/60 dark:text-zinc-400">
                 <th className="px-2 py-1">Vendor</th>
                 <th className="px-2 py-1">Brand</th>
                 <th className="px-2 py-1">List</th>
@@ -186,19 +186,19 @@ export function BulkCalc() {
                 <th className="px-2 py-1">Retail</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
               {out.map((r) => (
-                <tr key={r.index} className="border-t">
-                  <td className="px-2 py-1">{r.vendor}</td>
-                  <td className="px-2 py-1">{r.brand}</td>
-                  <td className="px-2 py-1">{r.error ? <span className="text-red-600">{r.error}</span> : `$${r.listCost}`}</td>
-                  <td className="px-2 py-1">{r.discount ? `${r.discount}% (${r.discountSource})` : "—"}</td>
-                  <td className="px-2 py-1 font-semibold">{r.netCost ? `$${r.netCost}` : "—"}</td>
-                  <td className="px-2 py-1 font-semibold text-emerald-700">{r.retailRounded ? `$${r.retailRounded}` : "—"}</td>
+                <tr key={r.index} className="hover:bg-slate-50/70 dark:hover:bg-zinc-800/40">
+                  <td className="px-2 py-1 text-slate-900 dark:text-zinc-100">{r.vendor}</td>
+                  <td className="px-2 py-1 text-slate-700 dark:text-zinc-300">{r.brand}</td>
+                  <td className="px-2 py-1 font-mono text-slate-800 dark:text-zinc-200">{r.error ? <span className="text-red-600 dark:text-red-400">{r.error}</span> : `$${r.listCost}`}</td>
+                  <td className="px-2 py-1 text-slate-700 dark:text-zinc-300">{r.discount ? `${r.discount}% (${r.discountSource})` : "—"}</td>
+                  <td className="px-2 py-1 font-mono font-semibold text-slate-900 dark:text-zinc-100">{r.netCost ? `$${r.netCost}` : "—"}</td>
+                  <td className="px-2 py-1 font-mono font-semibold text-emerald-700 dark:text-emerald-400">{r.retailRounded ? `$${r.retailRounded}` : "—"}</td>
                 </tr>
               ))}
               {out.length === 0 ? (
-                <tr><td colSpan={6} className="px-2 py-4 text-center text-slate-500">Process the CSV to preview.</td></tr>
+                <tr><td colSpan={6} className="px-2 py-4 text-center text-slate-500 dark:text-zinc-400">Process the CSV to preview.</td></tr>
               ) : null}
             </tbody>
           </table>

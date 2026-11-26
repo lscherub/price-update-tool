@@ -273,7 +273,7 @@ export default function NewSessionPage() {
               </label>
               <textarea
                 id="paste-area-new"
-                className="h-44 w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 font-mono text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                className="h-44 w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 font-mono text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
                 value={text}
                 disabled={busy}
                 onChange={(e) => { setText(e.target.value); setMsg(""); }}

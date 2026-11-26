@@ -461,12 +461,13 @@ export default function Price99ManagerPage() {
                 className={`w-full rounded-xl border py-2.5 pl-10 pr-10 text-xs transition-all outline-none ${
                   isClassic
                     ? "border-slate-300 focus:border-slate-600 bg-white"
-                    : "border-slate-200 bg-slate-50/50 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white dark:focus:border-indigo-500"
+                    : "border-slate-200 bg-slate-50/50 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white dark:focus:border-indigo-500 dark:focus:bg-zinc-900"
                 }`}
               />
               {searchQuery && (
                 <button
                   type="button"
+                  aria-label="Clear search"
                   onClick={() => setSearchQuery("")}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:text-zinc-400 dark:hover:text-zinc-200"
                 >
@@ -611,7 +612,7 @@ export default function Price99ManagerPage() {
               </div>
             ) : (
               <div className="overflow-x-auto max-h-96">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="density-table w-full text-left text-xs border-collapse">
                   <thead className="sticky top-0 bg-slate-50 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300">
                     <tr>
                       <th className="px-4 py-2.5 font-bold border-b border-slate-200 dark:border-zinc-700">#</th>
@@ -740,7 +741,7 @@ export default function Price99ManagerPage() {
                   className={`w-full rounded-xl border py-2 px-3.5 text-xs transition-all outline-none ${
                     isClassic
                       ? "border-slate-300 focus:border-slate-600 bg-white"
-                      : "border-slate-200 bg-slate-50/50 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white"
+                      : "border-slate-200 bg-slate-50/50 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white dark:focus:bg-zinc-900"
                   }`}
                 />
               </div>
@@ -823,7 +824,7 @@ export default function Price99ManagerPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="density-table w-full text-left text-xs border-collapse">
                   <thead className="bg-slate-50 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300">
                     <tr>
                       <th className="px-3.5 py-2.5 font-bold border-b border-slate-200 dark:border-zinc-700 w-10 text-center">
@@ -944,6 +945,7 @@ export default function Price99ManagerPage() {
               </div>
               <button
                 type="button"
+                aria-label="Close bulk add dialog"
                 onClick={() => setBulkModalOpen(false)}
                 className="rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
               >
@@ -964,7 +966,7 @@ export default function Price99ManagerPage() {
                 className={`w-full rounded-xl border p-3 font-mono text-xs transition-all outline-none resize-y ${
                   isClassic
                     ? "border-slate-300 bg-white text-slate-900 focus:border-slate-600"
-                    : "border-slate-200 bg-slate-50/50 text-slate-900 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white dark:focus:border-indigo-500"
+                    : "border-slate-200 bg-slate-50/50 text-slate-900 focus:border-indigo-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-white dark:focus:border-indigo-500 dark:focus:bg-zinc-900"
                 }`}
               />
 

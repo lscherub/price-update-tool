@@ -62,7 +62,7 @@ export default function LoginPage() {
       )}
       <form className="flex flex-col gap-3" onSubmit={submit} aria-busy={busy || undefined}>
         <input
-          className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+          className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
           placeholder="Email"
           type="email"
           autoComplete="email"
@@ -72,7 +72,7 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
         <input
-          className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+          className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
           placeholder={mode === "login" ? "Password" : "Password (min 8 characters)"}
           type="password"
           autoComplete={mode === "login" ? "current-password" : "new-password"}

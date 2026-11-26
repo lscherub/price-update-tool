@@ -6,6 +6,7 @@ import { parseInventoryArrayBuffer } from "@/lib/importers";
 import { LoadingButton, Spinner } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { AddProductDialog, type AddProductInput } from "@/components/AddProductDialog";
+import { AnchoredMenu } from "@/components/AnchoredMenu";
 import { UnifiedPosImporterDialog } from "@/components/UnifiedPosImporterDialog";
 import { useUiMode } from "@/contexts/UiModeContext";
 
@@ -17,11 +18,12 @@ const MAX_ATTEMPTS = 3;
 /** Small "active filter" chip with an × to clear just that filter. */
 function FilterChip({ label, onClear, onApply }: { label: string; onClear: () => void; onApply: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 font-medium text-sky-900">
+    <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 font-medium text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200">
       {label}
       <button
+        type="button"
         aria-label={`Clear filter ${label}`}
-        className="rounded px-0.5 hover:bg-sky-200"
+        className="rounded px-0.5 hover:bg-sky-200 dark:hover:bg-sky-900"
         onClick={() => { onClear(); onApply(); }}
       >
         ×
@@ -31,52 +33,60 @@ function FilterChip({ label, onClear, onApply }: { label: string; onClear: () =>
 }
 
 /** Column dropdown (PriceGrid visual language): sort actions + custom body. */
-function InvHeader({ label, colKey, sortKey, sortDir, filtered, openMenu, onToggle, onSort, onClearSort, sortAscLabel, sortDescLabel, menuRef, children }: {
+function InvHeader({ label, colKey, sortKey, sortDir, filtered, openMenu, onToggle, onSort, onClearSort, sortAscLabel, sortDescLabel, children }: {
   label: string; colKey: string;
   sortKey: string | null; sortDir: "asc" | "desc" | null; filtered: boolean;
   openMenu: string | null; onToggle: (key: string) => void;
   onSort: (dir: "asc" | "desc") => void; onClearSort: () => void;
   sortAscLabel: string; sortDescLabel: string;
-  menuRef: React.RefObject<HTMLDivElement | null>; children?: React.ReactNode;
+  menuRef?: React.RefObject<HTMLDivElement | null>; children?: React.ReactNode;
 }) {
   const active = sortKey === colKey && !!sortDir;
+  const isOpen = openMenu === colKey;
+  const btnRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <th className="relative px-2 py-2 text-left font-semibold">
+    <th className="relative px-2 py-2 text-left font-semibold whitespace-nowrap">
       <span className="inline-flex items-center gap-0.5">
         {label}
-        {filtered && <span aria-label="Filtered" title="This column is filtered" className="text-sky-600">●</span>}
+        {filtered && <span aria-label="Filtered" title="This column is filtered" className="text-sky-600 dark:text-sky-400">●</span>}
         {active && <span aria-hidden="true">{sortDir === "asc" ? "▲" : "▼"}</span>}
         <button
+          ref={btnRef}
           type="button"
           aria-label={`Sort ${label}`}
           aria-haspopup="menu"
-          aria-expanded={openMenu === colKey}
-          className="rounded px-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
+          aria-expanded={isOpen}
+          className="rounded px-1 text-slate-500 hover:bg-slate-200 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
           onClick={() => onToggle(colKey)}
         >
           ▾
         </button>
       </span>
-      {openMenu === colKey && (
-        <div ref={menuRef} role="menu" aria-label={`Sort ${label}`} className="absolute left-0 top-full z-30 min-w-52 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
-          <button type="button" role="menuitemradio" aria-checked={active && sortDir === "asc"}
-            className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 ${active && sortDir === "asc" ? "font-bold" : ""}`}
-            onClick={() => onSort("asc")}>
-            {sortAscLabel}
-          </button>
-          <button type="button" role="menuitemradio" aria-checked={active && sortDir === "desc"}
-            className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 ${active && sortDir === "desc" ? "font-bold" : ""}`}
-            onClick={() => onSort("desc")}>
-            {sortDescLabel}
-          </button>
-          <button type="button" role="menuitemradio" aria-checked={!active || !sortDir}
-            className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100"
-            onClick={onClearSort}>
-            Clear sort
-          </button>
-          {children}
-        </div>
-      )}
+      <AnchoredMenu
+        open={isOpen}
+        anchorRef={btnRef}
+        onClose={() => { if (isOpen) onToggle(colKey); }}
+        role="menu"
+        ariaLabel={`Sort ${label}`}
+        className="min-w-56 rounded-xl border border-slate-200 bg-white py-1 text-xs font-normal text-slate-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+      >
+        <button type="button" role="menuitemradio" aria-checked={active && sortDir === "asc"}
+          className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${active && sortDir === "asc" ? "font-bold text-slate-950 dark:text-white" : ""}`}
+          onClick={() => onSort("asc")}>
+          {sortAscLabel}
+        </button>
+        <button type="button" role="menuitemradio" aria-checked={active && sortDir === "desc"}
+          className={`block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${active && sortDir === "desc" ? "font-bold text-slate-950 dark:text-white" : ""}`}
+          onClick={() => onSort("desc")}>
+          {sortDescLabel}
+        </button>
+        <button type="button" role="menuitemradio" aria-checked={!active || !sortDir}
+          className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          onClick={onClearSort}>
+          Clear sort
+        </button>
+        {children}
+      </AnchoredMenu>
     </th>
   );
 }
@@ -87,11 +97,11 @@ function ColumnSearchBox({ label, placeholder, value, onChange, onApply, onClear
   onChange: (v: string) => void; onApply: () => void; onClear: () => void;
 }) {
   return (
-    <div className="border-t px-3 py-2">
-      <div className="mb-1 font-semibold text-slate-600">{label}</div>
+    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-800">
+      <div className="mb-1 font-semibold text-slate-600 dark:text-zinc-300">{label}</div>
       <div className="flex gap-1">
         <input
-          className="w-full min-w-36 rounded border px-2 py-1"
+          className="w-full min-w-36 rounded border border-slate-300 bg-white px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -99,15 +109,16 @@ function ColumnSearchBox({ label, placeholder, value, onChange, onApply, onClear
         />
         {value && (
           <button
+            type="button"
             aria-label={`Clear ${label}`}
-            className="rounded border px-2 hover:bg-slate-100"
+            className="rounded border border-slate-300 px-2 text-slate-600 hover:bg-slate-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
             onClick={onClear}
           >
             ×
           </button>
         )}
       </div>
-      <button className="mt-1 rounded bg-slate-900 px-2 py-1 text-xs text-white" onClick={onApply}>
+      <button type="button" className="mt-1.5 rounded bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500" onClick={onApply}>
         Apply
       </button>
     </div>
@@ -121,28 +132,29 @@ function FacetList({ title, loading, rows, search, selected, onSearch, onPick }:
   onSearch: (v: string) => void; onPick: (v: string) => void;
 }) {
   return (
-    <div className="border-t px-3 py-2">
-      <div className="mb-1 font-semibold text-slate-600">{title}</div>
+    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-800">
+      <div className="mb-1 font-semibold text-slate-600 dark:text-zinc-300">{title}</div>
       <input
-        className="mb-1 w-full min-w-36 rounded border px-2 py-1"
+        className="mb-1 w-full min-w-36 rounded border border-slate-300 bg-white px-2 py-1 text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
         placeholder="Type to narrow..."
         value={search}
         onChange={(e) => onSearch(e.target.value)}
       />
-      {loading && <div className="py-1 text-slate-500">Loading...</div>}
+      {loading && <div className="py-1 text-slate-500 dark:text-zinc-400">Loading...</div>}
       {!loading && (
         <div className="max-h-44 overflow-auto">
           {rows.map((r) => (
             <button
               key={r.value}
-              className={`flex w-full items-center justify-between gap-2 rounded px-1 py-1 text-left hover:bg-slate-100 ${selected === r.value ? "font-bold" : ""}`}
+              type="button"
+              className={`flex w-full items-center justify-between gap-2 rounded px-1.5 py-1 text-left hover:bg-slate-100 dark:hover:bg-zinc-800 ${selected === r.value ? "font-bold text-indigo-600 dark:text-indigo-400" : "text-slate-800 dark:text-zinc-200"}`}
               onClick={() => onPick(r.value)}
             >
               <span className="truncate">{r.value}</span>
-              <span className="text-slate-400">{r.count.toLocaleString()}</span>
+              <span className="shrink-0 text-slate-400 dark:text-zinc-500">{r.count.toLocaleString()}</span>
             </button>
           ))}
-          {!rows.length && <div className="py-1 text-slate-500">No matches.</div>}
+          {!rows.length && <div className="py-1 text-slate-500 dark:text-zinc-400">No matches.</div>}
         </div>
       )}
     </div>
@@ -332,15 +344,7 @@ export default function InventoryPage() {
     return () => { active = false; };
   }, []);
 
-  /** Close the open column menu on outside click (PriceGrid pattern). */
-  useEffect(() => {
-    if (!openMenu) return;
-    const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [openMenu]);
+  const totalPages = Math.max(1, Math.ceil(total / 100));
 
   /** Load distinct Vendor/Brand values when that column menu opens. */
   const loadFacets = async (column: "vendor" | "brand", needle: string) => {
@@ -526,17 +530,19 @@ for (let i = 0; i < batches.length; i++) {
    * that spells out what is removed and what is kept, and the count is shown so
    * the user knows what they are about to lose.
    */
-  const clearInventory = async () => {
+  const clearInventory = async (skipBrowserConfirm = false) => {
     if (clearing) return;
-    const confirmed = window.confirm(
-      `Clear ALL inventory data?\n\n` +
-        `This permanently deletes all ${total.toLocaleString()} inventory products ` +
-        `(Active and Inactive alike).\n\n` +
-        `Price update history, price update sessions, exports and vendor discounts ` +
-        `are NOT deleted.\n\n` +
-        `You will need to re-import your full inventory file afterwards.`,
-    );
-    if (!confirmed) return;
+    if (!skipBrowserConfirm) {
+      const confirmed = window.confirm(
+        `Clear ALL inventory data?\n\n` +
+          `This permanently deletes all ${total.toLocaleString()} inventory products ` +
+          `(Active and Inactive alike).\n\n` +
+          `Price update history, price update sessions, exports and vendor discounts ` +
+          `are NOT deleted.\n\n` +
+          `You will need to re-import your full inventory file afterwards.`,
+      );
+      if (!confirmed) return;
+    }
     setClearing(true);
     setMsg("");
     try {
@@ -860,7 +866,7 @@ for (let i = 0; i < batches.length; i++) {
             busy={clearing}
             busyLabel="Clearing..."
             className="rounded border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
-            onClick={clearInventory}
+            onClick={() => void clearInventory(false)}
             title="Delete all inventory products. Price update history is kept."
           >
             Clear Inventory
@@ -1023,7 +1029,7 @@ for (let i = 0; i < batches.length; i++) {
         </div>
       )}
       <div className="overflow-auto rounded-xl border bg-white">
-        <table className="w-full min-w-[1020px] text-xs">
+        <table className="density-table w-full min-w-[1020px] text-xs">
           <thead className="bg-slate-50">
             <tr className="text-left">
               <th className="w-9 px-2 py-2 text-center">
@@ -1203,10 +1209,10 @@ for (let i = 0; i < batches.length; i++) {
           </tbody>
         </table>
       </div>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <button disabled={page <= 1} className="rounded border px-3 py-1 text-sm disabled:opacity-40" onClick={() => setPage(page - 1)}>Prev</button>
-        <span className="text-sm">Page {page}</span>
-        <button className="rounded border px-3 py-1 text-sm" onClick={() => setPage(page + 1)}>Next</button>
+        <span className="text-sm">Page {page} of {totalPages}</span>
+        <button disabled={page >= totalPages} className="rounded border px-3 py-1 text-sm disabled:opacity-40" onClick={() => setPage(page + 1)}>Next</button>
       </div>
       {showAddProduct && (
         <AddProductDialog
@@ -1225,19 +1231,19 @@ for (let i = 0; i < batches.length; i++) {
         />
       )}
       {showConfirmDeleteSelected && selectedIds.size > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selected products">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl text-slate-900">
-            <h2 className="text-base font-bold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-2xs" role="dialog" aria-modal="true" aria-label="Confirm delete selected products">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
               Delete {selectedIds.size.toLocaleString()} Selected Product{selectedIds.size === 1 ? "" : "s"}?
             </h2>
-            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+            <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-zinc-300">
               This will permanently remove the selected product{selectedIds.size === 1 ? "" : "s"} from All Inventory (this is permanent deletion, not marking them Inactive). Historical price update sheets, notes, and exports remain preserved.
             </p>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400">
               Products with active Old SKU / replacement links to remaining inventory products are protected and cannot be deleted unless both linked SKUs are selected together.
             </p>
             {deleteSelectedError && (
-              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                 {deleteSelectedError}
               </div>
             )}
@@ -1246,7 +1252,7 @@ for (let i = 0; i < batches.length; i++) {
                 type="button"
                 disabled={deletingSelected}
                 onClick={() => { setShowConfirmDeleteSelected(false); setDeleteSelectedError(""); }}
-                className="rounded border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
               >
                 Cancel
               </button>
@@ -1254,7 +1260,7 @@ for (let i = 0; i < batches.length; i++) {
                 busy={deletingSelected}
                 busyLabel="Deleting..."
                 onClick={() => void confirmDeleteSelected()}
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
               >
                 Delete Permanently
               </LoadingButton>
@@ -1558,7 +1564,7 @@ for (let i = 0; i < batches.length; i++) {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex min-w-64 flex-1 items-center gap-2 max-w-lg">
           <input
-            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
             placeholder="Search SKU, product #, description, vendor, brand..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -1660,7 +1666,7 @@ for (let i = 0; i < batches.length; i++) {
       {/* Inventory Products Table */}
       <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="density-table w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
                 <th className="w-10 px-3 py-2 text-center">
@@ -1915,18 +1921,21 @@ for (let i = 0; i < batches.length; i++) {
         {/* Pagination Bar */}
         <div className="flex items-center justify-between border-t border-slate-100 p-3.5 dark:border-zinc-800">
           <span className="text-xs text-slate-500 dark:text-zinc-400">
-            Showing Page <strong className="text-slate-800 dark:text-white">{page}</strong> (up to 100 per page)
+            Showing Page <strong className="text-slate-800 dark:text-white">{page}</strong> of <strong className="text-slate-800 dark:text-white">{totalPages}</strong> (up to 100 per page)
           </span>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               disabled={page <= 1}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
               onClick={() => setPage(page - 1)}
             >
               ← Previous
             </button>
             <button
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              type="button"
+              disabled={page >= totalPages}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
               onClick={() => setPage(page + 1)}
             >
               Next →
@@ -1979,7 +1988,7 @@ for (let i = 0; i < batches.length; i++) {
                 busy={clearing}
                 busyLabel="Clearing catalog..."
                 onClick={async () => {
-                  await clearInventory();
+                  await clearInventory(true);
                   setShowConfirmClear(false);
                 }}
                 className="rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-red-700"
@@ -2002,19 +2011,19 @@ for (let i = 0; i < batches.length; i++) {
         />
       )}
       {showConfirmDeleteSelected && selectedIds.size > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Confirm delete selected products">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl text-slate-900">
-            <h2 className="text-base font-bold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-2xs" role="dialog" aria-modal="true" aria-label="Confirm delete selected products">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
               Delete {selectedIds.size.toLocaleString()} Selected Product{selectedIds.size === 1 ? "" : "s"}?
             </h2>
-            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+            <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-zinc-300">
               This will permanently remove the selected product{selectedIds.size === 1 ? "" : "s"} from All Inventory (this is permanent deletion, not marking them Inactive). Historical price update sheets, notes, and exports remain preserved.
             </p>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400">
               Products with active Old SKU / replacement links to remaining inventory products are protected and cannot be deleted unless both linked SKUs are selected together.
             </p>
             {deleteSelectedError && (
-              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                 {deleteSelectedError}
               </div>
             )}
@@ -2023,7 +2032,7 @@ for (let i = 0; i < batches.length; i++) {
                 type="button"
                 disabled={deletingSelected}
                 onClick={() => { setShowConfirmDeleteSelected(false); setDeleteSelectedError(""); }}
-                className="rounded border px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
               >
                 Cancel
               </button>
@@ -2031,7 +2040,7 @@ for (let i = 0; i < batches.length; i++) {
                 busy={deletingSelected}
                 busyLabel="Deleting..."
                 onClick={() => void confirmDeleteSelected()}
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
               >
                 Delete Permanently
               </LoadingButton>

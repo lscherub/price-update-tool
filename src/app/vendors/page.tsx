@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
+import { AnchoredMenu } from "@/components/AnchoredMenu";
 import { useToast, InlineSpinner } from "@/components/Toast";
 import { useUiMode } from "@/contexts/UiModeContext";
 
@@ -16,9 +17,9 @@ const numOf = (v: string) => {
 
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-900">
+    <span className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200">
       {label}
-      <button aria-label={`Clear filter ${label}`} className="rounded px-0.5 hover:bg-sky-200" onClick={onClear}>x</button>
+      <button type="button" aria-label={`Clear filter ${label}`} className="rounded px-0.5 hover:bg-sky-200 dark:hover:bg-sky-900" onClick={onClear}>×</button>
     </span>
   );
 }
@@ -59,7 +60,7 @@ function NameSuggest({ label, value, onPick, endpoint, kind, disabled }: {
     <div ref={boxRef} className="relative">
       <input
         aria-label={label}
-        className="rounded border px-2 py-1 disabled:opacity-60"
+        className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 px-2.5 py-1 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder:text-zinc-500 dark:focus:bg-zinc-900"
         value={value}
         disabled={disabled}
         onChange={(e) => { onPick(e.target.value); setOpen(true); }}
@@ -68,19 +69,19 @@ function NameSuggest({ label, value, onPick, endpoint, kind, disabled }: {
         required
       />
       {open && (
-        <div className="absolute z-40 mt-1 max-h-56 w-64 overflow-auto rounded-lg border bg-white shadow-lg">
+        <div className="absolute z-40 mt-1 max-h-56 w-64 overflow-auto rounded-lg border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
           {rows.length === 0 && (
-            <div className="px-3 py-2 text-xs text-slate-500">No match — your typed {kind} will be used as-is.</div>
+            <div className="px-3 py-2 text-xs text-slate-500 dark:text-zinc-400">No match — your typed {kind} will be used as-is.</div>
           )}
           {rows.map((r) => (
             <button
               key={r.name}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-100"
+              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm text-slate-800 hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
               onMouseDown={(e) => { e.preventDefault(); onPick(r.name); setOpen(false); }}
             >
               <span className="truncate">{r.name}</span>
-              {r.count > 0 && <span className="shrink-0 text-xs text-slate-400">{r.count} products</span>}
+              {r.count > 0 && <span className="shrink-0 text-xs text-slate-400 dark:text-zinc-500">{r.count} products</span>}
             </button>
           ))}
         </div>
@@ -114,7 +115,8 @@ export default function VendorsPage() {
   const [fVendor, setFVendor] = useState("");
   const [fBrand, setFBrand] = useState("");
   const [fDiscount, setFDiscount] = useState("");
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const nameMenuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const discountMenuBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const fetchAll = useCallback(async (query: string, showSpinner = false) => {
     if (showSpinner) setLoading(true);
@@ -134,17 +136,6 @@ export default function VendorsPage() {
       if (showSpinner) setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    if (!openMenu) return;
-    const onDoc = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenMenu(null); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [openMenu]);
 
   // Initial load. The setState calls happen in the fetch callbacks, not
   // synchronously in the effect body.
@@ -431,48 +422,58 @@ export default function VendorsPage() {
           </div>
         )}
         <div className="overflow-auto rounded-xl border bg-white">
-          <table className="w-full text-sm">
+          <table className="density-table w-full text-sm">
             <thead className="bg-slate-50">
               <tr className="text-left">
                 <th className="relative px-4 py-2">
                   <span className="inline-flex items-center gap-1">
                     Vendor / Brand
                     {sortKey === "name" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "A" : "Z"}</span>}
-                    <button type="button" aria-label="Sort Vendor / Brand" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "name" ? null : "name")}>v</button>
+                    <button ref={nameMenuBtnRef} type="button" aria-label="Sort Vendor / Brand" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "name" ? null : "name")}>▾</button>
                   </span>
-                  {openMenu === "name" && (
-                    <div ref={menuRef} role="menu" aria-label="Sort Vendor / Brand" className="absolute left-0 top-full z-30 min-w-60 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
-                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
-                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
-                      <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
-                      <div className="border-t px-3 py-2">
-                        <label className="mb-1 block font-semibold">Filter Vendor</label>
-                        <input className="w-full rounded border px-2 py-1" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
-                      </div>
-                      <div className="border-t px-3 py-2">
-                        <label className="mb-1 block font-semibold">Filter Brand</label>
-                        <input className="w-full rounded border px-2 py-1" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
-                      </div>
+                  <AnchoredMenu
+                    open={openMenu === "name"}
+                    anchorRef={nameMenuBtnRef}
+                    onClose={() => setOpenMenu(null)}
+                    role="menu"
+                    ariaLabel="Sort Vendor / Brand"
+                    className="min-w-60 rounded-lg border border-slate-200 bg-white py-1 text-xs font-normal text-slate-800 shadow-lg"
+                  >
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                    <div className="border-t px-3 py-2">
+                      <label className="mb-1 block font-semibold">Filter Vendor</label>
+                      <input className="w-full rounded border px-2 py-1" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
                     </div>
-                  )}
+                    <div className="border-t px-3 py-2">
+                      <label className="mb-1 block font-semibold">Filter Brand</label>
+                      <input className="w-full rounded border px-2 py-1" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
+                    </div>
+                  </AnchoredMenu>
                 </th>
                 <th className="relative px-4 py-2">
                   <span className="inline-flex items-center gap-1">
                     Default Discount
                     {sortKey === "discount" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? "lo" : "hi"}</span>}
-                    <button type="button" aria-label="Sort Default Discount" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "discount" ? null : "discount")}>v</button>
+                    <button ref={discountMenuBtnRef} type="button" aria-label="Sort Default Discount" className="rounded px-1 text-slate-500 hover:bg-slate-200" onClick={() => setOpenMenu(openMenu === "discount" ? null : "discount")}>▾</button>
                   </span>
-                  {openMenu === "discount" && (
-                    <div ref={menuRef} role="menu" aria-label="Sort Default Discount" className="absolute left-0 top-full z-30 min-w-60 rounded-lg border bg-white py-1 text-xs font-normal shadow-lg">
-                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
-                      <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
-                      <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
-                      <div className="border-t px-3 py-2">
-                        <label className="mb-1 block font-semibold">Filter Discount</label>
-                        <input className="w-full rounded border px-2 py-1" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
-                      </div>
+                  <AnchoredMenu
+                    open={openMenu === "discount"}
+                    anchorRef={discountMenuBtnRef}
+                    onClose={() => setOpenMenu(null)}
+                    role="menu"
+                    ariaLabel="Sort Default Discount"
+                    className="min-w-60 rounded-lg border border-slate-200 bg-white py-1 text-xs font-normal text-slate-800 shadow-lg"
+                  >
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
+                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                    <div className="border-t px-3 py-2">
+                      <label className="mb-1 block font-semibold">Filter Discount</label>
+                      <input className="w-full rounded border px-2 py-1" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
                     </div>
-                  )}
+                  </AnchoredMenu>
                 </th>
                 <th className="px-4 py-2"><span className="sr-only">Actions</span></th>
               </tr>
@@ -500,7 +501,7 @@ export default function VendorsPage() {
                   )}
                   {g.brands.map((b) => (
                     <tr key={b.id} className="border-t border-slate-100 bg-white">
-                      <td className="px-4 py-2 pl-8 text-slate-700">{b.brand}</td>
+                      <td className="density-pl-indent px-4 py-2 pl-8 text-slate-700">{b.brand}</td>
                       <td className="px-4 py-2 text-slate-700">{b.defaultDiscount}%</td>
                       <td className="px-4 py-2 text-right">
                         <button disabled={!!deletingId} onClick={() => startBrandEdit(b)} className="mr-3 text-xs text-blue-700 underline disabled:opacity-40">Edit</button>
@@ -551,8 +552,8 @@ export default function VendorsPage() {
       )}
 
       {/* Add / Edit Form Card with Tabs */}
-      <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-        <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
+      <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex rounded-t-xl border-b border-slate-100 bg-slate-50/50 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
           <button
             type="button"
             onClick={() => { setActiveFormTab("vendor"); if (editing?.kind === "brand") cancelEditing(); }}
@@ -604,7 +605,7 @@ export default function VendorsPage() {
                 Default Discount (%)
                 <div className="relative">
                   <input
-                    className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 pl-2.5 pr-6 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 pl-2.5 pr-6 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
                     value={discount}
                     disabled={saving}
                     onChange={(e) => setDiscount(e.target.value)}
@@ -658,7 +659,7 @@ export default function VendorsPage() {
                 Brand Discount (%)
                 <div className="relative">
                   <input
-                    className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 pl-2.5 pr-6 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    className="h-8.5 rounded-lg border border-slate-200 bg-slate-50/50 pl-2.5 pr-6 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
                     value={brandDiscount}
                     disabled={savingBrand}
                     onChange={(e) => setBrandDiscount(e.target.value)}
@@ -695,7 +696,7 @@ export default function VendorsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-1 items-center gap-2 max-w-md">
           <input
-            className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+            className="h-8.5 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:bg-zinc-900"
             placeholder="Search vendors..."
             disabled={loading || saving}
             value={q}
@@ -731,7 +732,7 @@ export default function VendorsPage() {
 
       {/* Hierarchy Table */}
       <div className="overflow-auto rounded-xl border border-slate-200/90 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
-        <table className="w-full text-left text-xs">
+        <table className="density-table w-full text-left text-xs">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
               <th className="relative px-5 py-3">
@@ -739,64 +740,70 @@ export default function VendorsPage() {
                   Vendor / Brand
                   {sortKey === "name" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? " (A-Z)" : " (Z-A)"}</span>}
                   <button
+                    ref={nameMenuBtnRef}
                     type="button"
                     aria-label="Sort Vendor / Brand"
+                    aria-haspopup="menu"
+                    aria-expanded={openMenu === "name"}
                     className="rounded px-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700"
                     onClick={() => setOpenMenu(openMenu === "name" ? null : "name")}
                   >
                     ▾
                   </button>
                 </span>
-                {openMenu === "name" && (
-                  <div
-                    ref={menuRef}
-                    role="menu"
-                    aria-label="Sort Vendor / Brand"
-                    className="absolute left-0 top-full z-30 min-w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-normal shadow-xl dark:border-zinc-700 dark:bg-zinc-800"
-                  >
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
-                    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
-                      <label className="mb-1 block font-semibold text-[11px]">Filter Vendor</label>
-                      <input className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
-                    </div>
-                    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
-                      <label className="mb-1 block font-semibold text-[11px]">Filter Brand</label>
-                      <input className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
-                    </div>
+                <AnchoredMenu
+                  open={openMenu === "name"}
+                  anchorRef={nameMenuBtnRef}
+                  onClose={() => setOpenMenu(null)}
+                  role="menu"
+                  ariaLabel="Sort Vendor / Brand"
+                  className="min-w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-normal text-slate-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                >
+                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800" onClick={() => { setSortKey("name"); setSortDir("asc"); setOpenMenu(null); }}>Sort A to Z</button>
+                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800" onClick={() => { setSortKey("name"); setSortDir("desc"); setOpenMenu(null); }}>Sort Z to A</button>
+                  <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                  <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-800">
+                    <label className="mb-1 block text-[11px] font-semibold text-slate-700 dark:text-zinc-300">Filter Vendor</label>
+                    <input className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Search vendor..." value={fVendor} onChange={(e) => setFVendor(e.target.value)} />
                   </div>
-                )}
+                  <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-800">
+                    <label className="mb-1 block text-[11px] font-semibold text-slate-700 dark:text-zinc-300">Filter Brand</label>
+                    <input className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="Search brand..." value={fBrand} onChange={(e) => setFBrand(e.target.value)} />
+                  </div>
+                </AnchoredMenu>
               </th>
               <th className="relative px-5 py-3">
                 <span className="inline-flex items-center gap-1">
                   Default Discount
                   {sortKey === "discount" && sortDir && <span aria-hidden="true">{sortDir === "asc" ? " (Low-High)" : " (High-Low)"}</span>}
                   <button
+                    ref={discountMenuBtnRef}
                     type="button"
                     aria-label="Sort Default Discount"
+                    aria-haspopup="menu"
+                    aria-expanded={openMenu === "discount"}
                     className="rounded px-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700"
                     onClick={() => setOpenMenu(openMenu === "discount" ? null : "discount")}
                   >
                     ▾
                   </button>
                 </span>
-                {openMenu === "discount" && (
-                  <div
-                    ref={menuRef}
-                    role="menu"
-                    aria-label="Sort Default Discount"
-                    className="absolute left-0 top-full z-30 min-w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-normal shadow-xl dark:border-zinc-700 dark:bg-zinc-800"
-                  >
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
-                    <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-700" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
-                    <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-700">
-                      <label className="mb-1 block font-semibold text-[11px]">Filter Discount</label>
-                      <input className="w-full rounded border px-2 py-1 text-xs dark:bg-zinc-900" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
-                    </div>
+                <AnchoredMenu
+                  open={openMenu === "discount"}
+                  anchorRef={discountMenuBtnRef}
+                  onClose={() => setOpenMenu(null)}
+                  role="menu"
+                  ariaLabel="Sort Default Discount"
+                  className="min-w-60 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-normal text-slate-800 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                >
+                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800" onClick={() => { setSortKey("discount"); setSortDir("asc"); setOpenMenu(null); }}>Sort Smallest to Largest</button>
+                  <button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-zinc-800" onClick={() => { setSortKey("discount"); setSortDir("desc"); setOpenMenu(null); }}>Sort Largest to Smallest</button>
+                  <button type="button" className="block w-full px-3 py-1.5 text-left text-slate-500 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800" onClick={() => { setSortKey(null); setSortDir(null); setOpenMenu(null); }}>Clear sort</button>
+                  <div className="border-t border-slate-100 px-3 py-2 dark:border-zinc-800">
+                    <label className="mb-1 block text-[11px] font-semibold text-slate-700 dark:text-zinc-300">Filter Discount</label>
+                    <input className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 placeholder:text-slate-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500" placeholder="e.g. 10" value={fDiscount} onChange={(e) => setFDiscount(e.target.value)} />
                   </div>
-                )}
+                </AnchoredMenu>
               </th>
               <th className="px-5 py-3 text-right">Actions</th>
             </tr>
@@ -857,7 +864,7 @@ export default function VendorsPage() {
                 )}
                 {g.brands.map((b) => (
                   <tr key={b.id} className="transition-colors hover:bg-slate-50/50 dark:hover:bg-zinc-800/30">
-                    <td className="px-5 py-2.5 pl-12 text-slate-700 dark:text-zinc-300">
+                    <td className="density-pl-indent px-5 py-2.5 pl-12 text-slate-700 dark:text-zinc-300">
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400">└─</span>
                         <span className="font-medium">{b.brand}</span>

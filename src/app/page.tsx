@@ -200,7 +200,17 @@ export default function Home() {
                 Customize metrics →
               </Link>
             </div>
-            <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-${Math.min(visibleMetrics.length, 5)}`}>
+            <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${
+              visibleMetrics.length <= 1
+                ? "lg:grid-cols-1"
+                : visibleMetrics.length === 2
+                  ? "lg:grid-cols-2"
+                  : visibleMetrics.length === 3
+                    ? "lg:grid-cols-3"
+                    : visibleMetrics.length === 4
+                      ? "lg:grid-cols-4"
+                      : "lg:grid-cols-5"
+            }`}>
               {visibleMetrics.map((m) => (
                 <div
                   key={m.key}
@@ -348,7 +358,7 @@ export default function Home() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="density-table w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
                     <th className="px-5 py-3">Vendor</th>

@@ -351,8 +351,8 @@ export function BulkAddDialog({
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Input Mode Selector */}
-          <div className="flex items-center gap-4 border-b pb-3">
-            <label className="flex items-center gap-2 cursor-pointer font-medium text-sm text-slate-800">
+          <div className="flex items-center gap-4 border-b border-slate-200 pb-3 dark:border-zinc-800">
+            <label className="flex items-center gap-2 cursor-pointer font-medium text-sm text-slate-800 dark:text-zinc-200">
               <input
                 type="radio"
                 name="bulkMode"
@@ -363,7 +363,7 @@ export function BulkAddDialog({
               />
               Paste from Excel
             </label>
-            <label className="flex items-center gap-2 cursor-pointer font-medium text-sm text-slate-800">
+            <label className="flex items-center gap-2 cursor-pointer font-medium text-sm text-slate-800 dark:text-zinc-200">
               <input
                 type="radio"
                 name="bulkMode"
@@ -379,14 +379,14 @@ export function BulkAddDialog({
           {/* Paste Area */}
           {mode === "paste" && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400">
                 <span>Copy rows from Excel and paste here (tab-separated or comma-separated):</span>
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={headerCheckbox !== null ? headerCheckbox : hasHeader}
                     onChange={(e) => setHeaderCheckbox(e.target.checked)}
-                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-zinc-600"
                   />
                   <span>First row contains column headers</span>
                 </label>
@@ -396,7 +396,7 @@ export function BulkAddDialog({
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
                 placeholder={"Cleaned SKU\tVendor List Price (New)\n06895801011\t9.49\n62776501032\t13.54"}
-                className="w-full rounded border border-slate-300 p-2.5 font-mono text-xs text-slate-900 focus:border-emerald-500 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 font-mono text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
               />
             </div>
           )}
@@ -404,14 +404,14 @@ export function BulkAddDialog({
           {/* File Upload Area */}
           {mode === "file" && (
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400">
                 <span>Select an Excel (.xlsx, .xls) or CSV file:</span>
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={headerCheckbox !== null ? headerCheckbox : hasHeader}
                     onChange={(e) => setHeaderCheckbox(e.target.checked)}
-                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-zinc-600"
                   />
                   <span>First row contains column headers</span>
                 </label>
@@ -427,11 +427,11 @@ export function BulkAddDialog({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="rounded border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
                   Choose File...
                 </button>
-                <span className="text-xs text-slate-600">{fileName || "No file chosen"}</span>
+                <span className="text-xs text-slate-600 dark:text-zinc-400">{fileName || "No file chosen"}</span>
                 {fileName && (
                   <button
                     type="button"
@@ -440,7 +440,7 @@ export function BulkAddDialog({
                       setFileBuf(null);
                       if (fileInputRef.current) fileInputRef.current.value = "";
                     }}
-                    className="text-xs text-red-600 hover:underline"
+                    className="text-xs text-red-600 hover:underline dark:text-red-400"
                   >
                     Clear
                   </button>
@@ -451,19 +451,19 @@ export function BulkAddDialog({
 
           {/* Column Mapping Section */}
           {detectedColumns.length > 0 && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-2 dark:border-zinc-800 dark:bg-zinc-800/40">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-zinc-300">
                   Match Columns from Import
                 </span>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-500 dark:text-zinc-400">
                   {rawRows.length} data row{rawRows.length === 1 ? "" : "s"} detected
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 text-xs">
                 {TARGET_COLUMNS.map((target) => (
                   <label key={target.key} className="flex flex-col gap-1">
-                    <span className="font-medium text-slate-700 truncate" title={target.label}>
+                    <span className="font-medium text-slate-700 truncate dark:text-zinc-300" title={target.label}>
                       {target.label}
                     </span>
                     <select
@@ -471,7 +471,7 @@ export function BulkAddDialog({
                       onChange={(e) =>
                         setMapping((prev) => ({ ...prev, [target.key]: e.target.value }))
                       }
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:border-emerald-500 focus:outline-hidden"
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:border-emerald-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     >
                       <option value="">(None / Blank)</option>
                       {detectedColumns.map((col) => (
@@ -492,19 +492,19 @@ export function BulkAddDialog({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 {isFullVendor ? (
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-bold text-slate-800">Preview &amp; Validation:</span>
+                    <span className="font-bold text-slate-800 dark:text-zinc-200">Preview &amp; Validation:</span>
                     {rowsToUpdate > 0 && (
-                      <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800" title="Existing products in worksheet that will be updated">
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-950/60 dark:text-blue-300" title="Existing products in worksheet that will be updated">
                         ↻ {rowsToUpdate} to Update
                       </span>
                     )}
                     {rowsToAdd > 0 && (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800" title="Genuinely new products that will be added">
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300" title="Genuinely new products that will be added">
                         + {rowsToAdd} to Add
                       </span>
                     )}
                     {batchDuplicateCount > 0 && (
-                      <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800" title="SKUs appearing multiple times in pasted data">
+                      <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800 dark:bg-purple-950/60 dark:text-purple-300" title="SKUs appearing multiple times in pasted data">
                         ⧉ {batchDuplicateCount} Duplicate (Batch)
                       </span>
                     )}
@@ -549,19 +549,19 @@ export function BulkAddDialog({
                 )}
 
                 <div className="flex items-center gap-3 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-zinc-300">
                     <input
                       type="checkbox"
                       checked={skipDuplicates}
                       onChange={(e) => onToggleSkipDuplicates(e.target.checked)}
-                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-zinc-600"
                     />
                     <span>{isFullVendor ? "Skip duplicate SKUs in batch" : "Skip duplicate products"}</span>
                   </label>
                   <button
                     type="button"
                     onClick={() => onToggleSelectAll(selectedCount < validCount)}
-                    className="font-medium text-emerald-700 hover:underline"
+                    className="font-medium text-emerald-700 hover:underline dark:text-emerald-400"
                   >
                     {selectedCount === validCount ? "Deselect All" : "Select All Valid"}
                   </button>
@@ -569,15 +569,15 @@ export function BulkAddDialog({
               </div>
 
               {previewError && (
-                <div className="rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
+                <div className="rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
                   {previewError}
                 </div>
               )}
 
               {/* Preview Table */}
-              <div className="max-h-64 overflow-x-auto overflow-y-auto rounded border border-slate-200">
+              <div className="max-h-64 overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 dark:border-zinc-800">
                 <table className="w-full text-left text-xs">
-                  <thead className="sticky top-0 bg-slate-100 font-semibold text-slate-700 shadow-xs">
+                  <thead className="sticky top-0 bg-slate-100 font-semibold text-slate-700 shadow-xs dark:bg-zinc-950 dark:text-zinc-300">
                     <tr>
                       <th className="w-8 px-2 py-2 text-center">
                         <input
@@ -585,7 +585,7 @@ export function BulkAddDialog({
                           checked={validCount > 0 && selectedCount === validCount}
                           onChange={(e) => onToggleSelectAll(e.target.checked)}
                           aria-label="Select all valid rows"
-                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-zinc-600"
                         />
                       </th>
                       <th className="px-2 py-2">Status</th>
@@ -598,20 +598,20 @@ export function BulkAddDialog({
                       <th className="px-2 py-2 text-right">New List Price</th>
                       <th className="px-2 py-2 text-right">Divisor</th>
                       <th className="px-2 py-2 text-right">New Retail</th>
-                      <th className="px-2 py-2 text-right font-bold text-slate-900">Nearest 9</th>
+                      <th className="px-2 py-2 text-right font-bold text-slate-900 dark:text-white">Nearest 9</th>
                       <th className="px-2 py-2">Notes</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700 dark:divide-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
                     {previewLoading ? (
                       <tr>
-                        <td colSpan={13} className="py-8 text-center text-slate-500">
+                        <td colSpan={13} className="py-8 text-center text-slate-500 dark:text-zinc-400">
                           Calculating prices and looking up products...
                         </td>
                       </tr>
                     ) : previewItems.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="py-6 text-center text-slate-400">
+                        <td colSpan={13} className="py-6 text-center text-slate-400 dark:text-zinc-500">
                           No rows to preview yet.
                         </td>
                       </tr>
@@ -620,19 +620,19 @@ export function BulkAddDialog({
                         const isSelected = selectedIndices.has(idx);
                         let rowBg = "";
                         if (!item.isValid) {
-                          rowBg = "bg-red-50/40 text-slate-500";
+                          rowBg = "bg-red-50/40 text-slate-500 dark:bg-red-950/30 dark:text-zinc-400";
                         } else if (item.isDuplicateInBatch) {
-                          rowBg = "bg-purple-50/30";
+                          rowBg = "bg-purple-50/30 dark:bg-purple-950/25";
                         } else if (isFullVendor && item.targetAction === "update") {
-                          rowBg = "bg-blue-50/30";
+                          rowBg = "bg-blue-50/30 dark:bg-blue-950/25";
                         } else if (!isFullVendor && item.isDuplicateInWorksheet) {
-                          rowBg = "bg-purple-50/30";
+                          rowBg = "bg-purple-50/30 dark:bg-purple-950/25";
                         } else if (!item.matched) {
-                          rowBg = "bg-amber-50/30";
+                          rowBg = "bg-amber-50/30 dark:bg-amber-950/25";
                         }
 
                         return (
-                          <tr key={idx} className={`hover:bg-slate-50/80 ${rowBg}`}>
+                          <tr key={idx} className={`hover:bg-slate-50/80 dark:hover:bg-zinc-800/40 ${rowBg}`}>
                             <td className="px-2 py-1.5 text-center">
                               <input
                                 type="checkbox"
@@ -640,20 +640,20 @@ export function BulkAddDialog({
                                 checked={isSelected}
                                 onChange={() => toggleRow(idx)}
                                 aria-label={`Select row ${idx + 1}`}
-                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-30"
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-30 dark:border-zinc-600"
                               />
                             </td>
                             <td className="px-2 py-1.5 whitespace-nowrap">
                               {!item.isValid ? (
                                 <span
-                                  className="inline-flex items-center rounded-sm bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800"
+                                  className="inline-flex items-center rounded-sm bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 dark:bg-red-950/60 dark:text-red-300"
                                   title={item.validationError}
                                 >
                                   Invalid: {item.validationError}
                                 </span>
                               ) : item.isDuplicateInBatch ? (
                                 <span
-                                  className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800"
+                                  className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800 dark:bg-purple-950/60 dark:text-purple-300"
                                   title="This SKU appears multiple times in your pasted data"
                                 >
                                   Duplicate (Batch)
@@ -661,21 +661,21 @@ export function BulkAddDialog({
                               ) : isFullVendor ? (
                                 item.targetAction === "update" ? (
                                   <span
-                                    className="inline-flex items-center rounded-sm bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800"
+                                    className="inline-flex items-center rounded-sm bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
                                     title="Matches existing product in worksheet — will update row"
                                   >
                                     Update Existing
                                   </span>
                                 ) : !item.matched ? (
                                   <span
-                                    className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                                    className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
                                     title="Not found in inventory"
                                   >
                                     Add New (Unmatched)
                                   </span>
                                 ) : (
                                   <span
-                                    className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800"
+                                    className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
                                     title="New product — will add as new row"
                                   >
                                     Add New
@@ -683,30 +683,30 @@ export function BulkAddDialog({
                                 )
                               ) : item.isDuplicateInWorksheet ? (
                                 <span
-                                  className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800"
+                                  className="inline-flex items-center rounded-sm bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800 dark:bg-purple-950/60 dark:text-purple-300"
                                   title="This SKU already exists in this price update worksheet"
                                 >
                                   Duplicate (Worksheet)
                                 </span>
                               ) : !item.matched ? (
                                 <span
-                                  className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                                  className="inline-flex items-center rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
                                   title="Not found in inventory"
                                 >
                                   Unmatched
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                <span className="inline-flex items-center rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                                   Valid
                                 </span>
                               )}
                             </td>
                             <td className="px-2 py-1.5 font-mono">{item.cleanedSku || "—"}</td>
-                            <td className="px-2 py-1.5 font-mono text-slate-500">{item.rawVendorSku || "—"}</td>
+                            <td className="px-2 py-1.5 font-mono text-slate-500 dark:text-zinc-400">{item.rawVendorSku || "—"}</td>
                             <td className="px-2 py-1.5 max-w-44 truncate" title={item.productName}>
-                              {item.productName || (item.matched ? "—" : <span className="text-red-600 font-semibold">Not Found</span>)}
+                              {item.productName || (item.matched ? "—" : <span className="font-semibold text-red-600 dark:text-red-400">Not Found</span>)}
                             </td>
-                            <td className="px-2 py-1.5 text-slate-500 truncate max-w-28" title={`${item.vendor} ${item.brand}`}>
+                            <td className="px-2 py-1.5 text-slate-500 dark:text-zinc-400 truncate max-w-28" title={`${item.vendor} ${item.brand}`}>
                               {[item.vendor, item.brand].filter(Boolean).join(" / ") || "—"}
                             </td>
                             <td className="px-2 py-1.5 text-right font-mono">
@@ -718,16 +718,16 @@ export function BulkAddDialog({
                             <td className="px-2 py-1.5 text-right font-mono">
                               {item.ourNewListPrice ? `$${item.ourNewListPrice}` : "—"}
                             </td>
-                            <td className="px-2 py-1.5 text-right font-mono text-slate-500">
+                            <td className="px-2 py-1.5 text-right font-mono text-slate-500 dark:text-zinc-400">
                               {item.marginDivisor || "—"}
                             </td>
                             <td className="px-2 py-1.5 text-right font-mono">
                               {item.ourNewRetailPrice ? `$${item.ourNewRetailPrice}` : "—"}
                             </td>
-                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900">
+                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 dark:text-white">
                               {item.nearest9 ? `$${item.nearest9}` : "—"}
                             </td>
-                            <td className="px-2 py-1.5 max-w-28 truncate text-slate-500" title={item.notes}>
+                            <td className="px-2 py-1.5 max-w-28 truncate text-slate-500 dark:text-zinc-400" title={item.notes}>
                               {item.notes || "—"}
                             </td>
                           </tr>
@@ -742,22 +742,22 @@ export function BulkAddDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t bg-slate-50 px-6 py-3">
-          <div className="text-xs text-slate-600">
+        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/80">
+          <div className="text-xs text-slate-600 dark:text-zinc-400">
             {previewItems.length > 0 ? (
               isFullVendor ? (
                 <span>
-                  <strong className="text-slate-900">{selectedUpdates}</strong> to update,{" "}
-                  <strong className="text-slate-900">{selectedAdds}</strong> to add
+                  <strong className="text-slate-900 dark:text-white">{selectedUpdates}</strong> to update,{" "}
+                  <strong className="text-slate-900 dark:text-white">{selectedAdds}</strong> to add
                   {skippedCount > 0 && (
-                    <span className="text-slate-500"> ({skippedCount} will be skipped)</span>
+                    <span className="text-slate-500 dark:text-zinc-400"> ({skippedCount} will be skipped)</span>
                   )}
                 </span>
               ) : (
                 <span>
-                  <strong className="text-slate-900">{selectedCount}</strong> rows ready to add
+                  <strong className="text-slate-900 dark:text-white">{selectedCount}</strong> rows ready to add
                   {skippedCount > 0 && (
-                    <span className="text-slate-500"> ({skippedCount} will be skipped)</span>
+                    <span className="text-slate-500 dark:text-zinc-400"> ({skippedCount} will be skipped)</span>
                   )}
                 </span>
               )
@@ -770,7 +770,7 @@ export function BulkAddDialog({
               type="button"
               disabled={busy}
               onClick={onClose}
-              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
             >
               Cancel
             </button>
@@ -779,7 +779,7 @@ export function BulkAddDialog({
               busyLabel={isFullVendor ? "Applying changes..." : "Adding rows..."}
               disabled={selectedCount === 0 || busy}
               onClick={handleConfirm}
-              className="rounded bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
             >
               {isFullVendor
                 ? `Apply Changes (${selectedUpdates} update${selectedUpdates === 1 ? "" : "s"}, ${selectedAdds} addition${selectedAdds === 1 ? "" : "s"})`

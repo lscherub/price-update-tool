@@ -157,7 +157,7 @@ export function useToast(): ToastApi {
 /** Small inline spinner for non-button async regions (tables, panels). */
 export function InlineSpinner({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-2 text-sm text-slate-500">
+    <span className="inline-flex items-center gap-2 text-sm text-slate-500 dark:text-zinc-400">
       <Spinner /> {label}
     </span>
   );

@@ -20,7 +20,7 @@ import { renderMarkdown } from "@/lib/markdown";
 
 export function MarkdownDoc({ source, compact = false }: { source: string; compact?: boolean }) {
   const html = renderMarkdown(source);
-  if (!source.trim()) return <span className="text-slate-300">—</span>;
+  if (!source.trim()) return <span className="text-slate-300 dark:text-zinc-600">—</span>;
   return (
     <div
       className={`md-doc ${compact ? "md-doc-compact" : ""}`}

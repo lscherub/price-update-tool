@@ -127,7 +127,12 @@ export function SpreadsheetEditor({
   onSwitchToLegacy,
 }: SpreadsheetEditorProps) {
   const toast = useToast();
-  const { spreadsheetFullscreen: isFullscreen, setSpreadsheetFullscreen: setIsFullscreen } = useUiMode();
+  const {
+    spreadsheetFullscreen: isFullscreen,
+    setSpreadsheetFullscreen: setIsFullscreen,
+    density: appDensity,
+    setDensity: setAppDensity,
+  } = useUiMode();
 
   // Always exit full-screen cleanly when unmounting SpreadsheetEditor (e.g. route change / editor switch)
   useEffect(() => {
@@ -149,6 +154,11 @@ export function SpreadsheetEditor({
   useEffect(() => {
     saveSpreadsheetPrefs(userId, prefs);
   }, [userId, prefs]);
+
+  // Keep spreadsheet row density synced with the global Table & Interface Density preference.
+  useEffect(() => {
+    setPrefs((prev) => (prev.density === appDensity ? prev : { ...prev, density: appDensity }));
+  }, [appDensity]);
 
   // ---- Filtering, Multi-Sort, Frozen Top Rows, Full-Screen ----
   const [globalQuery, setGlobalQuery] = useState("");
@@ -873,7 +883,7 @@ export function SpreadsheetEditor({
       : !item.matched
         ? "var(--grid-unmatched-bg, #fef2f2)"
         : isPinnedTop
-          ? "#f8fafc"
+          ? "var(--grid-header-bg, #f8fafc)"
           : "var(--grid-bg, #ffffff)";
 
     const rowStyle: CSSProperties = isPinnedTop
@@ -1268,7 +1278,10 @@ export function SpreadsheetEditor({
         selectionStats={selectionStats}
         onOpenBulkEdit={() => setShowBulkModal(true)}
         density={prefs.density}
-        onDensityChange={(d: RowDensity) => setPrefs((prev) => ({ ...prev, density: d }))}
+        onDensityChange={(d: RowDensity) => {
+          setPrefs((prev) => ({ ...prev, density: d }));
+          setAppDensity(d);
+        }}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => setIsFullscreen((v) => !v)}
         saveStatus={saveStatus}

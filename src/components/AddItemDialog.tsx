@@ -242,24 +242,24 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
           {field("notes", "Notes", "optional")}
         </div>
         {boxMode ? (
-          <div ref={boxRef} className="mt-3 rounded-lg border bg-slate-50 p-3">
-            <p className="text-sm font-semibold">Box/case → single unit</p>
+          <div ref={boxRef} className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Box/case → single unit</p>
             {hits.length > 0 ? (
               <div className="mt-2">
                 <button
                   type="button"
-                  className="text-xs text-blue-700 underline"
+                  className="text-xs text-blue-700 underline dark:text-indigo-400"
                   onClick={() => setHitsOpen((o) => !o)}
                 >
                   {hitsOpen ? "Hide" : "Show"} matching products ({hits.length})
                 </button>
                 {hitsOpen ? (
-                  <ul className="mt-1 max-h-32 overflow-auto rounded border bg-white text-xs">
+                  <ul className="mt-1 max-h-32 overflow-auto rounded border border-slate-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-900">
                     {hits.map((h) => (
                       <li key={h.sku}>
                         <button
                           type="button"
-                          className="block w-full px-2 py-1 text-left hover:bg-slate-100"
+                          className="block w-full px-2 py-1 text-left text-slate-800 hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
                           onClick={() => pickHit(h)}
                         >
                           <span className="font-semibold">{h.sku}</span>
@@ -274,10 +274,10 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
               </div>
             ) : null}
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Quantity per box/case</span>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium text-slate-700 dark:text-zinc-300">Quantity per box/case</span>
                 <input
-                  className="rounded border px-3 py-1.5"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                   value={qtyPerBox}
                   inputMode="numeric"
                   placeholder="e.g. 24"
@@ -285,10 +285,10 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
                   onChange={(e) => setQtyPerBox(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Vendor list price per box/case</span>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium text-slate-700 dark:text-zinc-300">Vendor list price per box/case</span>
                 <input
-                  className="rounded border px-3 py-1.5"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                   value={boxPrice}
                   inputMode="decimal"
                   placeholder="e.g. 24.00"
@@ -296,20 +296,20 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
                   onChange={(e) => setBoxPrice(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Vendor (for discount)</span>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium text-slate-700 dark:text-zinc-300">Vendor (for discount)</span>
                 <input
-                  className="rounded border px-3 py-1.5"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                   value={boxVendor}
                   placeholder="From matched product or type it"
                   aria-label="Vendor (for discount)"
                   onChange={(e) => setBoxVendor(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-slate-700">Brand (for discount)</span>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium text-slate-700 dark:text-zinc-300">Brand (for discount)</span>
                 <input
-                  className="rounded border px-3 py-1.5"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                   value={boxBrand}
                   placeholder="From matched product or type it"
                   aria-label="Brand (for discount)"
@@ -318,36 +318,36 @@ export function AddItemDialog({ busy, onClose, onSubmit, existingSkus }: {
               </label>
             </div>
             {boxErr ? (
-              <p className="mt-2 text-sm text-amber-700">{boxErr}</p>
+              <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{boxErr}</p>
             ) : preview ? (
               <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                <dt className="text-slate-600">Per-unit list (before discount)</dt>
-                <dd className="text-right font-semibold">${preview.perUnitList}</dd>
-                <dt className="text-slate-600">Discount</dt>
-                <dd className="text-right font-semibold">
+                <dt className="text-slate-600 dark:text-zinc-400">Per-unit list (before discount)</dt>
+                <dd className="text-right font-semibold text-slate-900 dark:text-zinc-100">${preview.perUnitList}</dd>
+                <dt className="text-slate-600 dark:text-zinc-400">Discount</dt>
+                <dd className="text-right font-semibold text-slate-900 dark:text-zinc-100">
                   {preview.discount}% ({discountSourceLabel(preview.source)})
                 </dd>
-                <dt className="text-slate-600">Net cost (per unit)</dt>
-                <dd className="text-right font-semibold">${preview.netCost}</dd>
-                <dt className="text-slate-600">Suggested retail (nearest-9)</dt>
-                <dd className="text-right font-bold text-emerald-700">${preview.retail}</dd>
+                <dt className="text-slate-600 dark:text-zinc-400">Net cost (per unit)</dt>
+                <dd className="text-right font-semibold text-slate-900 dark:text-zinc-100">${preview.netCost}</dd>
+                <dt className="text-slate-600 dark:text-zinc-400">Suggested retail (nearest-9)</dt>
+                <dd className="text-right font-bold text-emerald-700 dark:text-emerald-400">${preview.retail}</dd>
               </dl>
             ) : (
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">
                 Enter the quantity and box price to preview the per-unit calculation.
               </p>
             )}
           </div>
         ) : null}
-        {discBad && <p className="mt-2 text-sm text-red-600">Discount must be 0-100.</p>}
-        {!hasId && <p className="mt-2 text-sm text-slate-500">Enter a Raw Vendor SKU/Code or a Cleaned SKU to continue.</p>}
+        {discBad && <p className="mt-2 text-sm text-red-600 dark:text-red-400">Discount must be 0-100.</p>}
+        {!hasId && <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">Enter a Raw Vendor SKU/Code or a Cleaned SKU to continue.</p>}
         {duplicate ? (
-          <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-sm text-amber-800">
+          <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
             This SKU is already on this price update. Adding it again will create a second row.
           </p>
         ) : null}
         {boxMode && hasId && !preview ? (
-          <p className="mt-2 text-sm text-slate-500">Complete the box/case fields to enable Add Row.</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">Complete the box/case fields to enable Add Row.</p>
         ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className="rounded-lg border border-slate-200 dark:border-zinc-700 px-3.5 py-1.5 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-60 transition-colors" disabled={busy} onClick={onClose}>

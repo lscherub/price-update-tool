@@ -1,6 +1,8 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #0f172a;
   --accent-primary: #4f46e5;
@@ -10,7 +12,12 @@
   --accent-text: #4338ca;
   --table-py: 0.5rem;
   --table-px: 0.75rem;
+  --table-th-py: 0.625rem;
   --table-text-size: 0.8125rem;
+  --table-line-height: 1.35;
+  --grid-cell-py: 0.375rem;
+  --grid-cell-px: 0.75rem;
+  --grid-text-size: 0.8125rem;
   --grid-bg: #ffffff;
   --grid-header-bg: #f8fafc;
   --grid-header-hover: #f1f5f9;
@@ -70,24 +77,79 @@
 [data-ui-density="compact"] {
   --table-py: 0.25rem;
   --table-px: 0.5rem;
+  --table-th-py: 0.375rem;
   --table-text-size: 0.75rem;
+  --table-line-height: 1.25;
+  --grid-cell-py: 0.1875rem;
+  --grid-cell-px: 0.5rem;
+  --grid-text-size: 0.75rem;
 }
 
 [data-ui-density="comfortable"] {
   --table-py: 0.5rem;
   --table-px: 0.75rem;
+  --table-th-py: 0.625rem;
   --table-text-size: 0.8125rem;
+  --table-line-height: 1.35;
+  --grid-cell-py: 0.375rem;
+  --grid-cell-px: 0.75rem;
+  --grid-text-size: 0.8125rem;
 }
 
 [data-ui-density="spacious"] {
   --table-py: 0.75rem;
   --table-px: 1rem;
+  --table-th-py: 0.875rem;
   --table-text-size: 0.875rem;
+  --table-line-height: 1.45;
+  --grid-cell-py: 0.625rem;
+  --grid-cell-px: 0.875rem;
+  --grid-text-size: 0.875rem;
+}
+
+/* Density-aware data tables */
+.density-table {
+  font-size: var(--table-text-size);
+  line-height: var(--table-line-height);
+}
+.density-table > thead > tr > th {
+  padding-top: var(--table-th-py);
+  padding-bottom: var(--table-th-py);
+  padding-left: var(--table-px);
+  padding-right: var(--table-px);
+}
+.density-table > tbody > tr > td {
+  padding-top: var(--table-py);
+  padding-bottom: var(--table-py);
+  padding-left: var(--table-px);
+  padding-right: var(--table-px);
+}
+.density-table > tbody > tr > td.density-pl-indent {
+  padding-left: calc(var(--table-px) + 2rem);
+}
+.density-table > tbody > tr > td.density-compact-cell,
+.density-table > thead > tr > th.density-compact-cell {
+  padding-left: calc(var(--table-px) * 0.65);
+  padding-right: calc(var(--table-px) * 0.65);
+}
+
+/* Density-aware Legacy PriceGrid (preserves sticky gutters & manual row-height drags) */
+.density-price-grid {
+  font-size: var(--grid-text-size);
+}
+.density-price-grid > thead > tr > th[data-col] {
+  padding-top: var(--grid-cell-py);
+  padding-bottom: var(--grid-cell-py);
+}
+.density-price-grid > tbody > tr > td[data-col] {
+  padding-top: var(--grid-cell-py);
+  padding-bottom: var(--grid-cell-py);
 }
 
 /* Dark Mode Tokens for New UI */
 html.dark[data-ui-mode="new"],
 html.dark {
+  color-scheme: dark;
   --background: #090d16;
   --foreground: #f1f5f9;
   --grid-bg: #0d121f;
@@ -104,7 +166,7 @@ html.dark {
   --grid-text-muted: #94a3b8;
 }
 
-html.dark[data-ui-mode="new"] [data-ui-accent="indigo"] {
+html.dark[data-ui-accent="indigo"] {
   --accent-primary: #6366f1;
   --accent-hover: #4f46e5;
   --accent-subtle: rgba(99, 102, 241, 0.15);
@@ -112,7 +174,7 @@ html.dark[data-ui-mode="new"] [data-ui-accent="indigo"] {
   --accent-text: #a5b4fc;
 }
 
-html.dark[data-ui-mode="new"] [data-ui-accent="blue"] {
+html.dark[data-ui-accent="blue"] {
   --accent-primary: #3b82f6;
   --accent-hover: #2563eb;
   --accent-subtle: rgba(59, 130, 246, 0.15);
@@ -120,7 +182,7 @@ html.dark[data-ui-mode="new"] [data-ui-accent="blue"] {
   --accent-text: #93c5fd;
 }
 
-html.dark[data-ui-mode="new"] [data-ui-accent="emerald"] {
+html.dark[data-ui-accent="emerald"] {
   --accent-primary: #10b981;
   --accent-hover: #059669;
   --accent-subtle: rgba(16, 185, 129, 0.15);
@@ -128,7 +190,7 @@ html.dark[data-ui-mode="new"] [data-ui-accent="emerald"] {
   --accent-text: #6ee7b7;
 }
 
-html.dark[data-ui-mode="new"] [data-ui-accent="violet"] {
+html.dark[data-ui-accent="violet"] {
   --accent-primary: #8b5cf6;
   --accent-hover: #7c3aed;
   --accent-subtle: rgba(139, 92, 246, 0.15);
@@ -136,7 +198,7 @@ html.dark[data-ui-mode="new"] [data-ui-accent="violet"] {
   --accent-text: #c4b5fd;
 }
 
-html.dark[data-ui-mode="new"] [data-ui-accent="slate"] {
+html.dark[data-ui-accent="slate"] {
   --accent-primary: #94a3b8;
   --accent-hover: #cbd5e1;
   --accent-subtle: rgba(148, 163, 184, 0.15);

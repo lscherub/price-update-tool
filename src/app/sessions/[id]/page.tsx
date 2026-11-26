@@ -80,9 +80,14 @@ function lowerCandidates(rows: Item[]): Item[] {
 export default function SessionDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const toast = useToast();
-  const { priceEditor, setPriceEditor, userId, spreadsheetFullscreen, setSpreadsheetFullscreen, registerUnsavedChecker } = useUiMode();
+  const { priceEditor, setPriceEditor, resetPriceEditorToDefault, userId, spreadsheetFullscreen, setSpreadsheetFullscreen, registerUnsavedChecker } = useUiMode();
   const isSpreadsheet = priceEditor === "spreadsheet";
   const isSheetFs = isSpreadsheet && spreadsheetFullscreen;
+
+  // Opening any price update worksheet starts in the user's saved Default Price Update Editor.
+  useEffect(() => {
+    resetPriceEditorToDefault();
+  }, [id, resetPriceEditorToDefault]);
   const [items, setItems] = useState<Item[]>([]);
   const [switchingEditor, setSwitchingEditor] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveQueueSnapshot>({
