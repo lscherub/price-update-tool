@@ -7,6 +7,7 @@ import { formatUpdateName } from "@/lib/pricing";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { VendorCombobox } from "@/components/VendorCombobox";
+import { ContextualHelpLink } from "@/components/help/ContextualHelpLink";
 import { useUiMode } from "@/contexts/UiModeContext";
 
 export default function NewSessionPage() {
@@ -156,13 +157,16 @@ export default function NewSessionPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-          Create New Price Update
-        </h1>
-        <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
-          Match incoming vendor cost changes against your master inventory and generate a working price sheet.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+            Create New Price Update
+          </h1>
+          <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
+            Match incoming vendor cost changes against your master inventory and generate a working price sheet.
+          </p>
+        </div>
+        <ContextualHelpLink contextKey="new-price-update" label="How to use" title="Open guide for creating a new price update" />
       </div>
 
       {/* Alternative Full Vendor Callout */}

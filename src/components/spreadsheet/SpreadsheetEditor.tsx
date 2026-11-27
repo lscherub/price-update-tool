@@ -82,6 +82,8 @@ export type SpreadsheetEditorProps = {
   onRetryFailed: () => void;
   /** Emits full multi-sorted ID order (across ALL session items) for exports. */
   onExportOrderChange?: (sortedAllIds: string[] | null, primarySort: SortRule | null) => void;
+  /** Emits currently displayed columns in visual order for raw worksheet exports. */
+  onVisibleColumnsChange?: (columns: { key: SortableItemKey; label: string }[]) => void;
   /** Optional toolbar actions mirrored in full-screen mode. */
   onUndo?: () => void;
   onRedo?: () => void;
@@ -112,6 +114,7 @@ export function SpreadsheetEditor({
   onFlushNow,
   onRetryFailed,
   onExportOrderChange,
+  onVisibleColumnsChange,
   onUndo,
   onRedo,
   canUndo,
@@ -275,6 +278,16 @@ export function SpreadsheetEditor({
     }
     return last;
   }, [visibleColKeys, pinnedSet]);
+
+  useEffect(() => {
+    if (!onVisibleColumnsChange) return;
+    onVisibleColumnsChange(
+      visibleColKeys.map((key) => ({
+        key,
+        label: SPREADSHEET_COL_MAP.get(key)?.label ?? key,
+      })),
+    );
+  }, [visibleColKeys, onVisibleColumnsChange]);
 
   // ---- TanStack Virtualizer (React 19 safe: useFlushSync: false) ----
   const rowHeight = rowHeightForDensity(prefs.density);

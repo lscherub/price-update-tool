@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useUiMode, type UiMode, type UiTheme, type UiAccent, type UiDensity, type DashboardSectionId, type MetricKey, type PriceEditorMode } from "@/contexts/UiModeContext";
 import { useToast } from "@/components/Toast";
 import { NotificationSettingsSection } from "@/components/NotificationSettingsSection";
+import { ContextualHelpLink } from "@/components/help/ContextualHelpLink";
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -86,11 +87,14 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings & Customization</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">
-          Personalize interface mode, appearance, theme, and dashboard layout.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Settings & Customization</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">
+            Personalize interface mode, appearance, theme, and dashboard layout.
+          </p>
+        </div>
+        <ContextualHelpLink contextKey="settings" label="Help" title="Open Settings, Editor, and Notification guides" />
       </div>
 
       {/* Tabs */}

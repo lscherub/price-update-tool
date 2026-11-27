@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LoadingButton } from "@/components/LoadingButton";
 import { ScheduleWorksheetModal } from "@/components/ScheduleWorksheetModal";
+import { ContextualHelpLink } from "@/components/help/ContextualHelpLink";
 import { useToast } from "@/components/Toast";
 import { apiErrorText } from "@/lib/apiError";
 import {
@@ -389,6 +390,7 @@ export default function CalendarPage() {
             <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-bold text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300">
               {stats.upcoming} upcoming
             </span>
+            <ContextualHelpLink contextKey="calendar" label="Help" title="Open Price Update Calendar and Reminder guides" />
           </div>
           <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
             Track scheduled vendor price update effective dates, reschedule worksheets, and monitor automated email reminders ({timeZone}).

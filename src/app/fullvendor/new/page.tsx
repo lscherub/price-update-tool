@@ -5,6 +5,7 @@ import { apiErrorText } from "@/lib/apiError";
 import { LoadingButton } from "@/components/LoadingButton";
 import { useToast } from "@/components/Toast";
 import { VendorCombobox } from "@/components/VendorCombobox";
+import { ContextualHelpLink } from "@/components/help/ContextualHelpLink";
 
 type VendorProduct = {
   id: string;
@@ -181,14 +182,17 @@ export default function FullVendorNewPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Full Vendor Price Update</h1>
-        <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
-          {step === "select-vendor" ? "Step 1 of 3"
-            : step === "preview" ? "Step 2 of 3"
-            : step === "paste" || step === "creating" ? "Step 3 of 3"
-            : ""}
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Full Vendor Price Update</h1>
+          <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
+            {step === "select-vendor" ? "Step 1 of 3"
+              : step === "preview" ? "Step 2 of 3"
+              : step === "paste" || step === "creating" ? "Step 3 of 3"
+              : ""}
+          </span>
+        </div>
+        <ContextualHelpLink contextKey="full-vendor-update" label="How to use" title="Open Full Vendor Price Update guide" />
       </div>
 
       {/* ---- Step 1: Select Vendor ---- */}

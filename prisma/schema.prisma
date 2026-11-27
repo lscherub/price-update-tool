@@ -240,4 +240,81 @@ model AdHocCountItem {
   @@index([orderIndex])
 }
 
+model HelpCategory {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  description String        @default("")
+  icon        String        @default("book")
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  articles    HelpArticle[]
+
+  @@index([sortOrder])
+}
+
+model HelpArticle {
+  id                    String                @id @default(cuid())
+  categoryId            String
+  category              HelpCategory          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  slug                  String                @unique
+  status                String                @default("DRAFT") // "DRAFT" | "PUBLISHED"
+  draftTitle            String
+  draftSummary          String                @default("")
+  draftContentJson      String                @db.Text
+  publishedTitle        String?
+  publishedSummary      String?
+  publishedContentJson  String?               @db.Text
+  hasUnpublishedChanges Boolean               @default(false)
+  relatedSlugsJson      String                @default("[]") @db.Text
+  contextKeysJson       String                @default("[]") @db.Text
+  needsReview           Boolean               @default(false)
+  sortOrder             Int                   @default(0)
+  authorEmail           String                @default("")
+  updatedByEmail        String                @default("")
+  publishedAt           DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  revisions             HelpArticleRevision[]
+
+  @@index([categoryId, sortOrder])
+  @@index([status])
+}
+
+model HelpArticleRevision {
+  id          String      @id @default(cuid())
+  articleId   String
+  article     HelpArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  version     Int
+  title       String
+  summary     String      @default("")
+  contentJson String      @db.Text
+  eventType   String      @default("DRAFT_SAVED")
+  editorEmail String      @default("")
+  note        String      @default("")
+  createdAt   DateTime    @default(now())
+
+  @@index([articleId, version])
+}
+
+model HelpImage {
+  id              String   @id @default(cuid())
+  filename        String
+  mimeType        String
+  sizeBytes       Int
+  storageProvider String   @default("database") // "supabase" | "database" | "local"
+  storagePath     String?
+  data            Bytes?
+  altText         String   @default("")
+  caption         String   @default("")
+  uploadedBy      String   @default("")
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+
 

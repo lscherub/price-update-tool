@@ -41,6 +41,71 @@ export type StoreShape = {
   reminders?: PriceUpdateReminderRow[];
   scheduleHistory?: PriceUpdateScheduleHistoryRow[];
   appSettings?: Record<string, string>;
+  /** Application-wide Help Centre / Knowledge Base (dev file-store parity) */
+  helpCategories?: HelpCategoryRow[];
+  helpArticles?: HelpArticleRow[];
+  helpRevisions?: HelpArticleRevisionRow[];
+  helpImages?: HelpImageRow[];
+};
+
+export type HelpCategoryRow = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HelpArticleRow = {
+  id: string;
+  categoryId: string;
+  slug: string;
+  status: "DRAFT" | "PUBLISHED";
+  draftTitle: string;
+  draftSummary: string;
+  draftContentJson: string;
+  publishedTitle: string | null;
+  publishedSummary: string | null;
+  publishedContentJson: string | null;
+  hasUnpublishedChanges: boolean;
+  relatedSlugsJson: string;
+  contextKeysJson: string;
+  needsReview: boolean;
+  sortOrder: number;
+  authorEmail: string;
+  updatedByEmail: string;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HelpArticleRevisionRow = {
+  id: string;
+  articleId: string;
+  version: number;
+  title: string;
+  summary: string;
+  contentJson: string;
+  eventType: string;
+  editorEmail: string;
+  note: string;
+  createdAt: string;
+};
+
+export type HelpImageRow = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageProvider: string;
+  storagePath: string | null;
+  altText: string;
+  caption: string;
+  uploadedBy: string;
+  createdAt: string;
 };
 
 export type PriceUpdateReminderRow = {
@@ -168,6 +233,10 @@ export function emptyStore(): StoreShape {
     reminders: [],
     scheduleHistory: [],
     appSettings: {},
+    helpCategories: [],
+    helpArticles: [],
+    helpRevisions: [],
+    helpImages: [],
   };
 }
 

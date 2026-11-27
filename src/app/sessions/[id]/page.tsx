@@ -16,6 +16,7 @@ import { getItemFlags, parseSortParam, sortItems } from "@/lib/itemSort";
 import { apiErrorText } from "@/lib/apiError";
 import { buildExportFilename, getFilenameFromContentDisposition } from "@/lib/exportFilename";
 import { LoadingButton } from "@/components/LoadingButton";
+import { ContextualHelpLink } from "@/components/help/ContextualHelpLink";
 import { useToast } from "@/components/Toast";
 import { useUiMode, type PriceEditorMode } from "@/contexts/UiModeContext";
 import { SpreadsheetEditor } from "@/components/spreadsheet/SpreadsheetEditor";
@@ -103,6 +104,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     ids: null,
     primarySort: null,
   });
+  const [sheetVisibleCols, setSheetVisibleCols] = useState<{ key: SortableItemKey; label: string }[]>([]);
   const [name, setName] = useState("");
   const [vendor, setVendor] = useState("");
   const [sheetStatus, setSheetStatus] = useState("");
@@ -462,6 +464,13 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
   const handleSheetExportOrderChange = useCallback(
     (sortedAllIds: string[] | null, primarySort: SortRule | null) => {
       setSheetExportOrder({ ids: sortedAllIds, primarySort });
+    },
+    [],
+  );
+
+  const handleSheetVisibleColsChange = useCallback(
+    (columns: { key: SortableItemKey; label: string }[]) => {
+      setSheetVisibleCols(columns);
     },
     [],
   );
@@ -1138,6 +1147,55 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
     return sortKey && sortDir ? { ids: filtered.map((r) => r.id), sortKey, sortDir } : {};
   }, [isSpreadsheet, sheetExportOrder, sortKey, sortDir, filtered]);
 
+  /** Read-only download of the complete raw worksheet as an editable Excel (.xlsx) file. */
+  const downloadRawWorksheet = async () => {
+    if (exportBusy) return;
+    if (savingCellRef.current) {
+      toast.info("A cell edit is still saving.", "Wait a moment for saving to finish, then try exporting again.");
+      return;
+    }
+    if (!(await ensureSavedBeforeAction("exporting the raw worksheet"))) return;
+    setExportBusy("raw-worksheet");
+    try {
+      const columns =
+        isSpreadsheet && sheetVisibleCols.length > 0
+          ? sheetVisibleCols
+          : [
+              ...COLS.map((c) => ({ key: c.key, label: c.label })),
+              { key: "flags", label: "Flags" },
+            ];
+      const body = {
+        ...buildExportOrderBody(),
+        columns,
+      };
+      const r = await fetch(`/api/sessions/${id}/raw-export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        const t = apiErrorText(d, "Raw worksheet export failed.");
+        setMsg(t);
+        toast.error("Raw worksheet export failed.", t);
+        return;
+      }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download =
+        getFilenameFromContentDisposition(r.headers.get("content-disposition")) ||
+        buildExportFilename(name, "Raw Worksheet", "xlsx");
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast.success("Raw worksheet exported.", "Editable Excel copy downloaded without modifying this sheet.");
+    } catch {
+      toast.error("Raw worksheet export failed.", "Could not reach the server while exporting.");
+    } finally {
+      setExportBusy(null);
+    }
+  };
+
   /** Fetch the Digital Store Count Excel for Full Vendor workflows. */
   const downloadFullVendorExcel = async (options?: DigitalStoreCountExportOptions) => {
     if (exportBusy) return;
@@ -1352,6 +1410,11 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
                 Full Vendor
               </span>
             )}
+            <ContextualHelpLink
+              contextKey={isSpreadsheet ? "spreadsheet-editor" : "worksheet"}
+              label="Help"
+              title="Open Spreadsheet Editor, editing, and export guides"
+            />
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
             <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -1501,6 +1564,16 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
               title="Generate printable Store Count PDF"
             >
               Generate Store Count PDF
+            </LoadingButton>
+            <div className="mx-0.5 h-4 w-px bg-slate-200 dark:bg-zinc-700" aria-hidden="true" />
+            <LoadingButton
+              busy={exportBusy === "raw-worksheet"}
+              busyLabel="Exporting..."
+              onClick={downloadRawWorksheet}
+              className="rounded-md px-2 py-1 font-medium text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-60"
+              title="Download an editable Excel (.xlsx) copy of all rows and displayed columns as currently shown (read-only)"
+            >
+              Export Raw Worksheet
             </LoadingButton>
           </div>
         </div>
@@ -1752,6 +1825,7 @@ export default function SessionDetail({ params }: { params: Promise<{ id: string
             onFlushNow={() => void saveQueueRef.current?.flushAll()}
             onRetryFailed={() => void saveQueueRef.current?.retryFailed()}
             onExportOrderChange={handleSheetExportOrderChange}
+            onVisibleColumnsChange={handleSheetVisibleColsChange}
             onUndo={() => void runHistory("undo")}
             onRedo={() => void runHistory("redo")}
             canUndo={canUndo(history) && !histBusy}

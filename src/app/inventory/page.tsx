@@ -8,6 +8,7 @@ import { useToast } from "@/components/Toast";
 import { AddProductDialog, type AddProductInput } from "@/components/AddProductDialog";
 import { AnchoredMenu } from "@/components/AnchoredMenu";
 import { UnifiedPosImporterDialog } from "@/components/UnifiedPosImporterDialog";
+import { ContextualHelpLink } from "@/components/help/ContextualHelpLink";
 import { useUiMode } from "@/contexts/UiModeContext";
 
 /** Rows per server request. Mirrors the server's MAX_BATCH_ROWS. */
@@ -1287,6 +1288,7 @@ for (let i = 0; i < batches.length; i++) {
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
               {total.toLocaleString()} products
             </span>
+            <ContextualHelpLink contextKey="inventory" label="Help" title="Open All Inventory search, filtering, and import guides" />
           </div>
           <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
             Master retail catalog database used for SKU matching, pricing rules, and digital store counts.
